@@ -220,11 +220,14 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-1 text-[11px] font-bold text-amber-300 hover:text-amber-200 transition-colors py-0.5"
           >
-            <MapPin size={13} className="text-amber-400 fill-amber-400/30 shrink-0" />
-            <span className="truncate max-w-[240px] sm:max-w-md">
-              Deliver to: <span className="font-black text-white">{location.area || location.label || 'Select Location'}</span>
+            <MapPin size={14} className="text-amber-400 fill-amber-400/40 shrink-0" />
+            <span className="truncate max-w-[280px] sm:max-w-md text-amber-300 font-extrabold">
+              Deliver to: <span className="font-black uppercase tracking-wider text-amber-300">{location.label ? location.label.toUpperCase() : 'SELECT LOCATION'}</span>
+              {(location.address || location.area) && (
+                <span className="font-medium text-white/90"> - {location.address || `${location.houseNumber ? location.houseNumber + ', ' : ''}${location.area || ''}, ${location.city || ''}`}</span>
+              )}
             </span>
-            <ChevronDown size={12} className="text-amber-400" />
+            <ChevronDown size={12} className="text-amber-400 shrink-0" />
           </button>
         </div>
 
