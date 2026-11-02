@@ -54,7 +54,11 @@ export const ProductCard = ({
 
   const tagLabel = isPreorder
     ? 'PRE-ORDER'
-    : tag || (effectiveDiscount > 10 ? 'BEST SELLER' : 'FRESH & HEALTHY');
+    : tag
+    ? tag
+    : effectiveDiscount > 0
+    ? `${effectiveDiscount}% OFF`
+    : null;
 
   return (
     <div className={`bg-white p-3.5 rounded-[24px] border shadow-sm flex flex-col h-full transition-all active:scale-[0.98] hover:shadow-md relative overflow-hidden ${isPreorder ? 'border-amber-300 ring-2 ring-amber-400/20' : 'border-gray-200/90'}`}>
@@ -69,13 +73,18 @@ export const ProductCard = ({
           className={`object-cover w-full h-full hover:scale-105 transition-all duration-300 ${!isOpen ? 'grayscale' : ''}`}
         />
         
-        {/* Top-Left Category Tag Pill */}
-        <div className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest z-10 shadow-sm flex items-center gap-1 ${
-          isPreorder ? 'bg-amber-400 text-emerald-950 border border-amber-300' :
-          tagLabel === 'BEST SELLER' ? 'bg-emerald-900 text-white' : 'bg-emerald-800 text-emerald-100'
-        }`}>
-          {isPreorder && <Sparkles size={10} />} {tagLabel}
-        </div>
+        {/* Top-Left Meaningful Badge Pill (Only rendered when tagLabel exists) */}
+        {tagLabel && (
+          <div className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest z-10 shadow-sm flex items-center gap-1 ${
+            isPreorder
+              ? 'bg-amber-400 text-emerald-950 border border-amber-300'
+              : effectiveDiscount > 0
+              ? 'bg-amber-500 text-emerald-950 border border-amber-300'
+              : 'bg-emerald-900 text-white'
+          }`}>
+            {isPreorder && <Sparkles size={10} />} {tagLabel}
+          </div>
+        )}
 
         {/* Top-Right Wishlist Heart Button */}
         <button
