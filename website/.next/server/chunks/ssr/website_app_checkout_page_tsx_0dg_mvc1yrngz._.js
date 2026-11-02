@@ -1,0 +1,3 @@
+module.exports=[10026,a=>{"use strict";var b=a.i(87924),c=a.i(72131),d=a.i(50944);a.s(["default",0,function(){let a=(0,d.useRouter)();return(0,c.useEffect)(()=>{a.replace("/cart")},[a]),(0,b.jsxs)("div",{className:"min-h-screen bg-[#022c22] flex flex-col items-center justify-center text-white space-y-4",children:[(0,b.jsx)("div",{className:"w-10 h-10 border-4 border-amber-400 border-t-emerald-800 rounded-full animate-spin"}),(0,b.jsx)("p",{className:"text-xs font-black uppercase tracking-widest text-amber-300",children:"Redirecting to 1-Page Express Checkout..."})]})}])}];
+
+//# sourceMappingURL=website_app_checkout_page_tsx_0dg_mvc1yrngz._.js.map

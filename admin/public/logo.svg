@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A1810"/>
+      <stop offset="100%" stop-color="#143B25"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFE259"/>
+      <stop offset="100%" stop-color="#FFA751"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#bgGrad)" stroke="url(#goldGrad)" stroke-width="12"/>
+
+  <!-- Inner Decorative Ring -->
+  <circle cx="256" cy="256" r="220" fill="none" stroke="#10B981" stroke-width="2" stroke-dasharray="8 6" opacity="0.6"/>
+
+  <!-- Crown / Regal Top Crest -->
+  <path d="M 216 110 L 236 130 L 256 100 L 276 130 L 296 110 L 286 145 L 226 145 Z" fill="url(#goldGrad)" />
+  <circle cx="216" cy="104" r="5" fill="#FFE259"/>
+  <circle cx="256" cy="94" r="6" fill="#FFE259"/>
+  <circle cx="296" cy="104" r="5" fill="#FFE259"/>
+
+  <!-- Royal Bengal Tiger Face Silhouette -->
+  <path d="M 160 210 Q 140 160 190 170 Q 220 185 256 185 Q 292 185 322 170 Q 372 160 352 210 Q 370 260 340 310 Q 300 370 256 385 Q 212 370 172 310 Q 142 260 160 210 Z" fill="none" stroke="url(#goldGrad)" stroke-width="8" stroke-linejoin="round"/>
+
+  <!-- Shield Backdrop -->
+  <path d="M 180 210 Q 256 195 332 210 Q 345 260 315 300 Q 256 360 256 360 Q 256 360 197 300 Q 167 260 180 210 Z" fill="url(#goldGrad)" opacity="0.15"/>
+
+  <!-- Tiger Eyes -->
+  <polygon points="195,240 235,250 205,260" fill="url(#goldGrad)"/>
+  <polygon points="317,240 277,250 307,260" fill="url(#goldGrad)"/>
+
+  <!-- Stripes -->
+  <path d="M 256 200 L 256 230 M 240 210 L 248 232 M 272 210 L 264 232" stroke="url(#goldGrad)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 175 250 L 205 270 M 168 275 L 198 288 M 337 250 L 307 270 M 344 275 L 314 288" stroke="url(#goldGrad)" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Nose & Muzzle -->
+  <polygon points="256,280 242,295 270,295" fill="url(#goldGrad)"/>
+  <path d="M 256 295 L 256 315 Q 240 325 225 315 M 256 315 Q 272 325 287 315" fill="none" stroke="url(#goldGrad)" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Text Banner -->
+  <text x="256" y="425" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="900" fill="url(#goldGrad)" text-anchor="middle" letter-spacing="4">ROYAL BENGAL</text>
+  <text x="256" y="450" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" fill="#10B981" text-anchor="middle" letter-spacing="6">PREMIUM</text>
+</svg>

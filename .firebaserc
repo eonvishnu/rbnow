@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "rbnowin"
+  },
+  "targets": {
+    "rbnowin": {
+      "hosting": {
+        "admin": [
+          "adminrbnowin"
+        ]
+      }
+    }
+  }
+}
