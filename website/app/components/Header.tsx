@@ -16,7 +16,9 @@ import {
   Search,
   Calendar,
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  MessageCircle,
+  Phone
 } from 'lucide-react';
 
 const STATIC_OPTS = [
@@ -36,6 +38,7 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
   const { cart } = useCart();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [dynamicCategories, setDynamicCategories] = useState<any[]>([]);
   const [preorderCampaigns, setPreorderCampaigns] = useState<any[]>([]);
   const [storeStatus, setStoreStatus] = useState({ isOpen: true, message: "" });
@@ -141,66 +144,61 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
             </div>
           </div>
 
-          {/* Right Action Icons: Customer Support Hotline & Profile Avatar */}
-          <div className="flex items-center gap-2.5">
-            {/* Customer Support Hotline Icon */}
-            <a
-              href="https://wa.me/919876543210"
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Customer Support Concierge"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-emerald-900/80 border border-amber-400/40 flex items-center justify-center text-amber-300 shadow-sm hover:bg-emerald-800 transition-all active:scale-95"
+          {/* Right Action: Customer Support Popover (Matching rbnow.in screenshot) */}
+          <div className="relative">
+            <button
+              onClick={() => setIsSupportOpen(!isSupportOpen)}
+              aria-label="Customer Support Concierge"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#004d3b] border-2 border-[#ffc400] flex items-center justify-center text-[#ffc400] shadow-md hover:bg-[#00382b] transition-transform active:scale-95"
             >
               <Headphones size={18} />
-            </a>
+            </button>
 
-            {/* Profile Avatar */}
-            <div className="relative">
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-400 text-emerald-950 flex items-center justify-center font-black shadow-md border border-amber-300 transition-transform active:scale-95"
-              >
-                <User size={18} />
-              </button>
-
-              {isMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)} />
-                  <div className="absolute right-0 mt-3 w-60 bg-white text-gray-900 border border-amber-200 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    {user ? (
-                      <div className="flex flex-col">
-                        <div className="p-3.5 bg-emerald-950 text-white border-b border-emerald-800">
-                          <p className="text-[9px] font-bold text-amber-300 uppercase tracking-widest">Signed in as</p>
-                          <p className="text-xs font-bold text-emerald-100 truncate mt-0.5">{user.email}</p>
-
-                          <div className="mt-2.5 bg-emerald-900/80 border border-amber-400/30 rounded-xl p-2 flex items-center gap-2.5">
-                            <Wallet size={16} className="text-amber-400" />
-                            <div>
-                              <span className="text-[8px] font-bold uppercase text-amber-300 block">Store Credit</span>
-                              <span className="text-sm font-black text-amber-400 leading-none">₹{storeCredit}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="p-1 text-xs font-semibold text-gray-700">
-                          <Link href="/account" className="flex items-center gap-2.5 px-3 py-2.5 text-emerald-800 font-bold hover:bg-emerald-50 rounded-xl"><span>👑</span> My Account</Link>
-                          <button onClick={() => { setIsModalOpen(true); setIsMenuOpen(false); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 hover:bg-emerald-50 rounded-xl"><span>📍</span> Change Location</button>
-                          <Link href="/orders" className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-emerald-50 rounded-xl"><span>📦</span> My Orders</Link>
-                          <Link href="/address" className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-emerald-50 rounded-xl"><span>📍</span> Saved Addresses</Link>
-                          <div className="h-px bg-gray-100 my-1 mx-2" />
-                          <button onClick={handleLogout} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-rose-600 font-bold hover:bg-rose-50 rounded-xl"><span>🚪</span> Sign Out</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-1 text-xs font-bold">
-                        <button onClick={() => { setIsModalOpen(true); setIsMenuOpen(false); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-gray-700 hover:bg-emerald-50 rounded-xl"><span>📍</span> Change Location</button>
-                        <Link href="/login" className="flex items-center gap-2.5 px-3 py-3 text-emerald-800 hover:bg-emerald-50 rounded-xl"><span>🔑</span> Login / Sign Up</Link>
-                      </div>
-                    )}
+            {isSupportOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsSupportOpen(false)} />
+                <div className="absolute right-0 mt-3 w-64 bg-white text-gray-900 border-2 border-amber-300 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="p-3.5 bg-[#00382b] text-white">
+                    <p className="text-[9px] font-black uppercase text-[#ffc400] tracking-widest">ROYAL CONCIERGE</p>
+                    <h3 className="text-xs font-black uppercase text-white mt-0.5">Customer Support</h3>
                   </div>
-                </>
-              )}
-            </div>
+
+                  <div className="p-2 space-y-1">
+                    {/* WHATSAPP US */}
+                    <a
+                      href="https://wa.me/919876543210"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsSupportOpen(false)}
+                      className="p-3 rounded-xl hover:bg-emerald-50 flex items-center gap-3 transition-colors text-left block"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-[#e5f5ef] text-[#006b50] flex items-center justify-center shrink-0">
+                        <MessageCircle size={16} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase text-gray-900 leading-tight">WHATSAPP US</p>
+                        <p className="text-[10px] text-gray-500 font-medium">Instant chat support</p>
+                      </div>
+                    </a>
+
+                    {/* CALL US */}
+                    <a
+                      href="tel:+919876543210"
+                      onClick={() => setIsSupportOpen(false)}
+                      className="p-3 rounded-xl hover:bg-emerald-50 flex items-center gap-3 transition-colors text-left block"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-[#fefce8] text-[#854d0e] flex items-center justify-center shrink-0">
+                        <Phone size={16} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase text-gray-900 leading-tight">CALL US</p>
+                        <p className="text-[10px] text-gray-500 font-medium">Direct phone support</p>
+                      </div>
+                    </a>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
         </div>
