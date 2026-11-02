@@ -11,6 +11,26 @@ export const BottomNav = () => {
   const pathname = usePathname();
   const { cart } = useCart();
   const { user } = useAuth();
+  const [isVisible, setIsVisible] = React.useState(true);
+  const [lastScrollY, setLastScrollY] = React.useState(0);
+
+  // Scroll direction listener to hide BottomNav on scroll down
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY && currentScrollY > 60) {
+        setIsVisible(false);
+      } else {
+        setIsVisible(true);
+      }
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
 
   // Hide BottomNav on admin routes
   if (pathname.startsWith('/admin')) {
@@ -48,7 +68,9 @@ export const BottomNav = () => {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-emerald-950/95 backdrop-blur-2xl border-t border-amber-400/20 px-2 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.4)] transition-all">
+    <nav className={`fixed bottom-0 left-0 right-0 z-40 md:hidden bg-emerald-950/95 backdrop-blur-2xl border-t border-amber-400/20 px-2 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.4)] transition-all duration-300 ${
+      isVisible ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
+    }`}>
       <div className="flex items-center justify-around max-w-md mx-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
