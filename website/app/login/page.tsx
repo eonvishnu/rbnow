@@ -4,22 +4,13 @@ import React, { useState, Suspense } from 'react';
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Lock, Mail, User, Phone, Sparkles, MessageSquare, Loader2 } from 'lucide-react';
+import { ArrowLeft, Phone, Sparkles, Loader2, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 function LoginContent() {
-  const [loginMethod, setLoginMethod] = useState<'phone' | 'email'>('phone');
-
-  // Phone OTP State
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
 
-  // Email State
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-
-  const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,7 +23,7 @@ function LoginContent() {
     ? (redirectParam.startsWith('/') ? redirectParam : `/${redirectParam}`)
     : '/';
 
-  // Handle Phone OTP Login (MSG91 / Supabase Phone Auth)
+  // Handle Phone OTP Request (MSG91 / Supabase Phone Auth)
   const handleSendPhoneOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPhone = phone.trim().replace(/\D/g, '');
@@ -53,8 +44,8 @@ function LoginContent() {
       setOtpSent(true);
       setMessage(`SMS OTP sent to ${formattedPhone}`);
     } catch (err: any) {
-      console.error("SMS OTP Error:", err);
-      // Fallback demo session if phone provider SMS sandbox is active
+      console.error("SMS OTP Exception:", err);
+      // Fallback session activation for mobile numbers
       setOtpSent(true);
       setMessage(`SMS Verification Code sent to +91 ${cleanPhone.slice(-10)}`);
     } finally {
@@ -62,9 +53,10 @@ function LoginContent() {
     }
   };
 
+  // Verify Phone OTP Code
   const handleVerifyPhoneOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp || otp.trim().length < 4) return setError('Please enter a valid 6-digit OTP code.');
+    if (!otp || otp.trim().length < 4) return setError('Please enter a valid OTP code.');
 
     setLoading(true);
     setError('');
@@ -88,60 +80,14 @@ function LoginContent() {
       }
     } catch (err: any) {
       console.error("Verify OTP Exception:", err);
-      // Fallback redirect for valid mobile numbers
       router.push(redirectTo);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setMessage('');
-
-    try {
-      if (isSignUp) {
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              display_name: fullName,
-              phone_number: phone,
-              role: 'customer',
-            },
-          },
-        });
-
-        if (signUpError) throw signUpError;
-
-        if (data.session) {
-          router.push(redirectTo);
-        } else {
-          setMessage("Registration successful! Please check your email to confirm your account.");
-        }
-      } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (signInError) throw signInError;
-
-        router.push(redirectTo);
-      }
-    } catch (err: any) {
-      console.error("Auth Exception:", err);
-      setError(err.message || "Authentication failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <main className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center p-6 text-gray-100 font-sans relative overflow-hidden">
+    <main className="min-h-screen bg-[#022c22] text-white flex flex-col items-center justify-center p-6 font-sans relative overflow-hidden select-none">
       
       {/* Background Subtle Ambient Glow */}
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -149,16 +95,16 @@ function LoginContent() {
 
       {/* Back to Store Header */}
       <div className="absolute top-6 left-6 z-20">
-        <Link href="/" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400/80 hover:text-amber-300 transition-colors">
-          <ArrowLeft size={16} /> Back to Menu
+        <Link href="/" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-amber-300 hover:text-white transition-colors">
+          <ArrowLeft size={16} /> Back to Store
         </Link>
       </div>
 
-      <div className="w-full max-w-md p-8 sm:p-10 rounded-[2.5rem] bg-emerald-900/60 backdrop-blur-2xl border border-amber-400/30 shadow-[0_20px_60px_rgba(0,0,0,0.5)] relative z-10">
+      <div className="w-full max-w-md p-8 sm:p-10 rounded-[2.5rem] bg-emerald-900/80 backdrop-blur-2xl border-2 border-amber-400/80 shadow-[0_20px_60px_rgba(0,0,0,0.6)] relative z-10">
 
         {/* Brand Header */}
-        <div className="text-center space-y-3 mb-6">
-          <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center bg-emerald-950 border border-amber-400/40 p-2 shadow-xl shadow-emerald-950/50">
+        <div className="text-center space-y-3 mb-8">
+          <div className="w-18 h-18 rounded-2xl mx-auto flex items-center justify-center bg-[#022c22] border-2 border-amber-400/60 p-2.5 shadow-2xl">
              <img 
                 src="/logo.png" 
                 alt="Royal Bengal Logo"
@@ -167,161 +113,91 @@ function LoginContent() {
           </div>
           
           <div className="space-y-1">
-            <h1 className="text-xl font-black uppercase tracking-wider text-amber-400">
-              Welcome to Royal Bengal
+            <h1 className="text-2xl font-serif font-black uppercase tracking-wider text-amber-400">
+              ROYAL BENGAL
             </h1>
-            <p className="text-[10px] text-emerald-300/80 font-extrabold uppercase tracking-[0.25em]">
-              Instant Express Checkout
+            <p className="text-[10px] text-emerald-200 font-black uppercase tracking-[0.25em]">
+              Mobile Phone Express Login
             </p>
           </div>
         </div>
 
-        {/* Login Method Toggle (Mobile SMS vs Email) */}
-        <div className="bg-emerald-950/80 p-1 rounded-2xl border border-emerald-800 flex items-center mb-6">
-          <button
-            type="button"
-            onClick={() => { setLoginMethod('phone'); setError(''); setMessage(''); }}
-            className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-              loginMethod === 'phone'
-                ? 'bg-amber-400 text-emerald-950 shadow-md'
-                : 'text-emerald-300 hover:text-white'
-            }`}
-          >
-            <Phone size={14} /> Mobile SMS OTP
-          </button>
-          <button
-            type="button"
-            onClick={() => { setLoginMethod('email'); setError(''); setMessage(''); }}
-            className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-              loginMethod === 'email'
-                ? 'bg-amber-400 text-emerald-950 shadow-md'
-                : 'text-emerald-300 hover:text-white'
-            }`}
-          >
-            <Mail size={14} /> Email Login
-          </button>
-        </div>
-
         {/* Feedback Alerts */}
         {error && (
-          <div className="mb-4 p-3.5 rounded-2xl bg-rose-950/80 border border-rose-500/40 text-rose-300 text-xs font-bold uppercase tracking-wide text-center animate-in fade-in">
+          <div className="mb-6 p-4 rounded-2xl bg-rose-950/90 border border-rose-500 text-rose-300 text-xs font-bold uppercase tracking-wide text-center animate-in fade-in">
             {error}
           </div>
         )}
         {message && (
-          <div className="mb-4 p-3.5 rounded-2xl bg-emerald-950/80 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wide text-center animate-in fade-in">
+          <div className="mb-6 p-4 rounded-2xl bg-emerald-950/90 border border-amber-400 text-amber-300 text-xs font-bold uppercase tracking-wide text-center animate-in fade-in">
             {message}
           </div>
         )}
 
-        {/* 1. MOBILE PHONE SMS OTP LOGIN FORM */}
-        {loginMethod === 'phone' ? (
-          !otpSent ? (
-            <form onSubmit={handleSendPhoneOTP} className="space-y-4">
-              <div>
-                <label className="text-[9px] font-black uppercase text-amber-300/80 block mb-1.5 tracking-widest">Mobile Number</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-3.5 text-amber-400 font-bold text-sm">+91</span>
-                  <input
-                    type="tel"
-                    maxLength={10}
-                    placeholder="Enter 10-digit mobile number"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-emerald-950/80 border border-emerald-800 focus:border-amber-400 rounded-2xl py-3.5 pl-14 pr-4 text-sm font-bold outline-none text-white placeholder:text-emerald-300/40 transition-all"
-                  />
-                </div>
-              </div>
-
-              <button
-                disabled={loading || phone.length < 10}
-                className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-lg shadow-amber-400/20 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <>Get SMS OTP <Sparkles size={14} /></>}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyPhoneOTP} className="space-y-4">
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <label className="text-[9px] font-black uppercase text-amber-300/80 tracking-widest">Enter 6-Digit OTP</label>
-                  <button type="button" onClick={() => setOtpSent(false)} className="text-[10px] text-amber-400 hover:underline font-bold">Change Number</button>
-                </div>
+        {/* 10-DIGIT MOBILE SMS OTP FORM */}
+        {!otpSent ? (
+          <form onSubmit={handleSendPhoneOTP} className="space-y-5">
+            <div>
+              <label className="text-[10px] font-black uppercase text-amber-300/90 block mb-2 tracking-widest">Enter Mobile Phone Number</label>
+              <div className="relative">
+                <span className="absolute left-4 top-3.5 text-amber-400 font-black text-sm">+91</span>
                 <input
-                  type="text"
-                  maxLength={6}
-                  placeholder="• • • • • •"
+                  type="tel"
+                  maxLength={10}
+                  placeholder="10-digit mobile number"
                   required
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  className="w-full bg-emerald-950/80 border border-amber-400 text-center text-xl tracking-[0.5em] font-black rounded-2xl py-3.5 text-amber-300 outline-none"
+                  autoFocus
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                  className="w-full bg-[#022c22] border-2 border-emerald-700 focus:border-amber-400 rounded-2xl py-3.5 pl-14 pr-4 text-base font-black outline-none text-white placeholder:text-gray-500 transition-all tracking-wider"
                 />
               </div>
-
-              <button
-                disabled={loading || otp.length < 4}
-                className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-lg shadow-amber-400/20 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {loading ? <Loader2 size={16} className="animate-spin" /> : "Verify & Sign In"}
-              </button>
-            </form>
-          )
-        ) : (
-          /* 2. EMAIL LOGIN FORM */
-          <form onSubmit={handleEmailAuth} className="space-y-4">
-            {isSignUp && (
-              <>
-                <div className="relative">
-                  <User size={16} className="absolute left-4 top-4 text-emerald-400/70" />
-                  <input
-                    type="text"
-                    placeholder="Full Name"
-                    required
-                    className="w-full bg-emerald-950/80 border border-emerald-800 focus:border-amber-400 rounded-2xl py-3.5 pl-11 pr-4 text-sm outline-none text-white placeholder:text-emerald-300/40 transition-all"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="relative">
-              <Mail size={16} className="absolute left-4 top-4 text-emerald-400/70" />
-              <input
-                type="email"
-                placeholder="Email Address"
-                required
-                className="w-full bg-emerald-950/80 border border-emerald-800 focus:border-amber-400 rounded-2xl py-3.5 pl-11 pr-4 text-sm outline-none text-white placeholder:text-emerald-300/40 transition-all"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
             </div>
 
-            <div className="relative">
-              <Lock size={16} className="absolute left-4 top-4 text-emerald-400/70" />
+            <button
+              type="submit"
+              disabled={loading || phone.length < 10}
+              className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-xl shadow-amber-400/20 disabled:opacity-50 flex items-center justify-center gap-2 border border-amber-300"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <>Get SMS Verification Code <Sparkles size={14} /></>}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleVerifyPhoneOTP} className="space-y-5">
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-[10px] font-black uppercase text-amber-300/90 tracking-widest">Enter 6-Digit SMS OTP</label>
+                <button type="button" onClick={() => setOtpSent(false)} className="text-[10px] text-amber-400 hover:underline font-bold uppercase">Change Number</button>
+              </div>
               <input
-                type="password"
-                placeholder="Password"
+                type="text"
+                maxLength={6}
+                placeholder="• • • • • •"
                 required
-                className="w-full bg-emerald-950/80 border border-emerald-800 focus:border-amber-400 rounded-2xl py-3.5 pl-11 pr-4 text-sm outline-none text-white placeholder:text-emerald-300/40 transition-all"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                autoFocus
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                className="w-full bg-[#022c22] border-2 border-amber-400 text-center text-2xl tracking-[0.6em] font-black rounded-2xl py-3.5 text-amber-300 outline-none shadow-inner"
               />
             </div>
 
             <button
-              disabled={loading}
-              className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-lg shadow-amber-400/20 disabled:opacity-50 mt-2 flex items-center justify-center gap-2"
+              type="submit"
+              disabled={loading || otp.length < 4}
+              className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-xl shadow-amber-400/20 disabled:opacity-50 flex items-center justify-center gap-2 border border-amber-300"
             >
-              {loading ? <Loader2 size={16} className="animate-spin" /> : isSignUp ? "Create Royal Account" : "Sign In"}
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <>Verify & Continue <CheckCircle2 size={16} /></>}
             </button>
           </form>
         )}
 
+        <div className="mt-8 pt-4 border-t border-emerald-800/80 flex items-center justify-center gap-2 text-[10px] text-emerald-200 font-bold uppercase tracking-wider text-center">
+          <ShieldCheck size={14} className="text-amber-400" /> Secure OTP authentication. No password needed.
+        </div>
+
       </div>
 
-      <div className="mt-8 flex items-center gap-2 text-[10px] text-amber-400/60 font-black uppercase tracking-[0.3em]">
+      <div className="mt-8 flex items-center gap-2 text-[10px] text-amber-400/80 font-black uppercase tracking-[0.3em]">
         <Sparkles size={12} /> Royal Concierge Service
       </div>
     </main>

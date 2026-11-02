@@ -230,8 +230,8 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
 
       </div>
 
-      {/* CATEGORY CIRCLES WITH GLOWING GOLD ACTIVE RING */}
-      <div className="bg-white text-gray-900 pt-3.5 pb-3 border-b border-amber-100">
+      {/* CATEGORY CIRCLES WITH GLOWING GOLD ACTIVE RING - STICKY TOP */}
+      <div className="bg-white text-gray-900 pt-3.5 pb-3 border-b border-amber-100 sticky top-0 z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 flex gap-3.5 sm:gap-5 overflow-x-auto no-scrollbar snap-x">
           {displayCategories.map((cat) => {
             const isActive = activeCategory === cat.id || activeCategory === cat.name;

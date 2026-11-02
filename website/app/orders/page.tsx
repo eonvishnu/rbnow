@@ -187,107 +187,114 @@ export default function OrdersPage() {
 
                 <div className="space-y-4">
                   {activeOrders.map((order) => {
-                    const isOutForDelivery = order.status === 'out_for_delivery';
+                    const statusVal = order.status || 'pending';
+                    const isPlaced = true;
+                    const isProcessing = ['processing', 'ready_for_dispatch', 'out_for_delivery', 'delivered'].includes(statusVal);
+                    const isPacked = ['ready_for_dispatch', 'out_for_delivery', 'delivered'].includes(statusVal);
+                    const isOut = ['out_for_delivery', 'delivered'].includes(statusVal);
+                    const isDelivered = statusVal === 'delivered';
 
                     return (
-                      <div key={order.id} className="bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400/80 rounded-[28px] overflow-hidden shadow-2xl">
+                      <div key={order.id} className="bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400/80 rounded-[28px] overflow-hidden shadow-2xl space-y-0">
 
-                        {/* Header */}
-                        <div className="p-5 border-b border-emerald-800/80 flex justify-between items-start">
+                        {/* Compact Header */}
+                        <div className="p-4 sm:p-5 border-b border-emerald-800/80 flex justify-between items-center bg-emerald-950/80">
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="text-amber-300 font-black text-base">{order.orderId}</span>
-                              <span className="bg-amber-400 text-emerald-950 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                                {order.status === 'out_for_delivery' ? 'Out for Delivery 🚚' : 'Processing ⚡'}
+                              <span className="bg-amber-400 text-emerald-950 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                {statusVal.replace(/_/g, ' ')}
                               </span>
                             </div>
-                            <p className="text-[11px] text-emerald-200 mt-0.5 font-medium">
-                              Estimated Arrival: <span className="font-bold text-amber-300">20 - 30 Mins</span>
+                            <p className="text-[10px] text-emerald-300/80 font-bold mt-0.5">
+                              {order.createdAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                             </p>
                           </div>
 
                           <a
                             href="tel:+919876543210"
-                            className="bg-emerald-800/80 hover:bg-emerald-700 text-amber-300 border border-amber-400/30 px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all"
+                            className="bg-emerald-800/80 hover:bg-emerald-700 text-amber-300 border border-amber-400/40 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all"
                           >
                             <PhoneCall size={12} /> Call Support
                           </a>
                         </div>
 
-                        {/* Live Delivery Progress Tracker */}
-                        <div className="p-5 bg-emerald-900/60 border-b border-emerald-800/80 space-y-3">
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300 flex items-center gap-1">
-                            <Sparkles size={12} /> Real-Time Live Status
+                        {/* Compact 5-Stage Stepper Bar */}
+                        <div className="p-4 bg-emerald-900/60 border-b border-emerald-800/80 space-y-2">
+                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-300/90 flex items-center gap-1">
+                            <Sparkles size={11} /> Live Order Progress
                           </p>
 
-                          <div className="grid grid-cols-3 gap-2 text-center relative">
-                            <div className="flex flex-col items-center">
-                              <div className="w-9 h-9 rounded-full bg-amber-400 text-emerald-950 flex items-center justify-center font-black text-xs shadow-lg shadow-amber-400/20">
-                                ✓
-                              </div>
-                              <span className="text-[9px] font-black uppercase tracking-wider mt-1 text-amber-300">Packed</span>
-                            </div>
-
-                            <div className="flex flex-col items-center">
-                              <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-xs border ${
-                                isOutForDelivery ? 'bg-amber-400 text-emerald-950 border-amber-300 shadow-lg' : 'bg-emerald-950/80 text-emerald-400 border-emerald-700'
-                              }`}>
-                                🚚
-                              </div>
-                              <span className="text-[9px] font-black uppercase tracking-wider mt-1 text-emerald-200">On The Way</span>
-                            </div>
-
-                            <div className="flex flex-col items-center">
-                              <div className="w-9 h-9 rounded-full bg-emerald-950/80 text-emerald-500 border border-emerald-700 flex items-center justify-center font-bold text-xs">
-                                🏠
-                              </div>
-                              <span className="text-[9px] font-bold uppercase tracking-wider mt-1 text-emerald-400">Delivered</span>
-                            </div>
-                          </div>
-
-                          {/* Audit History Timeline */}
-                          {order.history && order.history.length > 0 && (
-                            <div className="mt-4 pt-3 border-t border-emerald-800/80 space-y-1 text-[10px] text-emerald-200">
-                              <p className="font-bold uppercase text-amber-300 flex items-center gap-1">
-                                <History size={11} /> Order Audit Log
-                              </p>
-                              {order.history.map((h: any, i: number) => (
-                                <div key={i} className="flex justify-between items-center text-[10px]">
-                                  <span className="capitalize">{h.status}: {h.notes || 'Status updated'}</span>
-                                  <span className="text-emerald-400">{new Date(h.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <div className="grid grid-cols-5 gap-1 text-center items-center">
+                            {[
+                              { label: 'Placed', active: isPlaced },
+                              { label: 'Processing', active: isProcessing },
+                              { label: 'Packed', active: isPacked },
+                              { label: 'On The Way', active: isOut },
+                              { label: 'Delivered', active: isDelivered },
+                            ].map((st, i) => (
+                              <div key={i} className="flex flex-col items-center">
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center font-black text-[10px] border transition-all ${
+                                  st.active
+                                    ? 'bg-amber-400 text-emerald-950 border-amber-300 shadow-md scale-105'
+                                    : 'bg-emerald-950/80 text-emerald-600 border-emerald-800'
+                                }`}>
+                                  {st.active ? '✓' : i + 1}
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                                <span className={`text-[8px] font-black uppercase tracking-tight mt-1 ${st.active ? 'text-amber-300' : 'text-emerald-500'}`}>
+                                  {st.label}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
 
-                        {/* Items */}
-                        <div className="p-5 space-y-3 divide-y divide-emerald-800/50">
+                        {/* Product Summary List */}
+                        <div className="p-4 sm:p-5 space-y-2.5 divide-y divide-emerald-800/50">
                           {order.items.map((item: any, idx: number) => (
                             <div key={idx} className="flex justify-between items-center text-xs pt-2">
                               <div className="flex items-center gap-3">
-                                <img src={item.img} className="w-10 h-10 rounded-xl object-cover border border-amber-400/20 shrink-0" alt={item.name} />
+                                <img src={item.img} className="w-11 h-11 rounded-xl object-cover border border-amber-400/20 shrink-0" alt={item.name} />
                                 <div>
-                                  <p className="font-bold text-white">{item.name}</p>
-                                  <p className="text-[10px] text-amber-300 font-bold uppercase">{item.qty} x {item.unit}</p>
+                                  <p className="font-bold text-white text-xs sm:text-sm">{item.name}</p>
+                                  <p className="text-[10px] text-amber-300/90 font-bold uppercase">{item.qty} × {item.unit}</p>
                                 </div>
                               </div>
-                              <span className="font-black text-amber-300 text-sm">{formatCurrency(item.subtotal)}</span>
+                              <span className="font-black text-amber-300 text-xs sm:text-sm">{formatCurrency(item.subtotal)}</span>
                             </div>
                           ))}
                         </div>
 
-                        {/* Address & Total */}
-                        <div className="p-5 bg-emerald-950/90 border-t border-emerald-800/80 flex justify-between items-center">
-                          {order.deliveryAddress && (
-                            <div className="flex items-center gap-1.5 text-xs text-emerald-200 truncate max-w-[220px]">
-                              <MapPin size={14} className="text-amber-400 shrink-0" />
-                              <span className="truncate">{order.deliveryAddress.houseNumber ? `${order.deliveryAddress.houseNumber}, ` : ''}{order.deliveryAddress.address}</span>
+                        {/* Payment & Bill Summary Breakdown */}
+                        <div className="p-4 sm:p-5 bg-emerald-950/90 border-t border-emerald-800/80 space-y-2 text-xs">
+                          <div className="flex justify-between text-emerald-200/80 font-bold text-[11px]">
+                            <span>Items Subtotal</span>
+                            <span className="text-white font-black">{formatCurrency(order.subtotal || order.total)}</span>
+                          </div>
+
+                          {order.discount > 0 && (
+                            <div className="flex justify-between text-amber-300 font-bold text-[11px]">
+                              <span>Promo Discount</span>
+                              <span className="font-black">- {formatCurrency(order.discount)}</span>
                             </div>
                           )}
-                          <div className="text-right">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-300 block">Total Paid</span>
-                            <span className="text-xl font-black text-amber-400 tracking-tight">{formatCurrency(order.total)}</span>
+
+                          <div className="flex justify-between text-emerald-200/80 font-bold text-[11px]">
+                            <span>Express Delivery Fee</span>
+                            <span className="text-white font-black">{order.deliveryFee > 0 ? formatCurrency(order.deliveryFee) : 'FREE'}</span>
+                          </div>
+
+                          <div className="pt-2 border-t border-emerald-800 flex justify-between items-center">
+                            {order.deliveryAddress && (
+                              <div className="flex items-center gap-1.5 text-[11px] text-emerald-200 truncate max-w-[200px] sm:max-w-[260px]">
+                                <MapPin size={13} className="text-amber-400 shrink-0" />
+                                <span className="truncate">{order.deliveryAddress.houseNumber || order.deliveryAddress.houseNo ? `${order.deliveryAddress.houseNumber || order.deliveryAddress.houseNo}, ` : ''}{order.deliveryAddress.address}</span>
+                              </div>
+                            )}
+                            <div className="text-right">
+                              <span className="text-[8px] font-black uppercase tracking-wider text-amber-300 block">Total Paid</span>
+                              <span className="text-lg sm:text-xl font-black text-amber-400 tracking-tight">{formatCurrency(order.total)}</span>
+                            </div>
                           </div>
                         </div>
 

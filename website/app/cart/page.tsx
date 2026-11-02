@@ -263,13 +263,17 @@ export default function CartPage() {
         throw new Error((data && data.error) || (edgeError && edgeError.message) || 'Failed to place order');
       }
 
+      if (!data.keyId || !data.razorpayOrderId) {
+        throw new Error("Invalid payment initialization response from server.");
+      }
+
       // 2. Launch Razorpay Payment Gateway
       if (!(window as any).Razorpay) {
         throw new Error('Razorpay payment gateway script not loaded. Please refresh.');
       }
 
       const options = {
-        key: data.keyId || data.razorpayKeyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '',
+        key: data.keyId,
         amount: data.amount,
         currency: 'INR',
         name: 'Royal Bengal',
