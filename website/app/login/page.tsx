@@ -209,8 +209,8 @@ function LoginContent() {
             <h1 className="text-2xl font-serif font-black uppercase tracking-wider text-amber-400">
               ROYAL BENGAL
             </h1>
-            <p className="text-[11px] text-emerald-200 font-bold">
-              Enter your mobile number to sign in
+            <p className="text-[12px] text-emerald-200 font-bold tracking-wide">
+              রুচিশীল বাঙালির রাজকীয় স্বাদ
             </p>
           </div>
         </div>

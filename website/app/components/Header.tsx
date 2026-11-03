@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 
 const STATIC_OPTS = [
-  { id: 'featured', name: "Featured", icon: "✨", isStatic: true },
   { id: 'all', name: "All", icon: "🛍️", isStatic: true },
 ];
 
@@ -138,8 +137,8 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
               <h1 className="text-base sm:text-xl font-serif font-black tracking-widest text-amber-400 leading-tight uppercase">
                 ROYAL BENGAL
               </h1>
-              <p className="text-[9px] text-amber-200/90 font-medium tracking-[0.18em] uppercase flex items-center gap-1">
-                <span>Pure</span> • <span>Fresh</span> • <span>Trusted</span>
+              <p className="text-[10px] text-amber-200 font-semibold tracking-wide flex items-center gap-1">
+                <span>রুচিশীল বাঙালির রাজকীয় স্বাদ</span>
               </p>
             </div>
           </div>
@@ -257,12 +256,6 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
                       <span className="text-xl sm:text-2xl">{cat.icon || "🍽️"}</span>
                     )}
                   </div>
-
-                  {isActive && (
-                    <span className="absolute -bottom-1 bg-amber-400 text-emerald-950 text-[8px] font-black uppercase px-1.5 py-0.2 rounded-full shadow-sm">
-                      Active
-                    </span>
-                  )}
                 </div>
 
                 <span className={`text-[11px] font-bold text-center max-w-[70px] truncate transition-colors ${
