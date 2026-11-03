@@ -7,11 +7,13 @@ import { Facebook, Instagram, Twitter, ShieldCheck, Truck, Sparkles, Phone, Mail
 export const Footer = () => {
   const pathname = usePathname();
 
-  // Hide footer on orders, cart, checkout, and admin routes
+  // Hide footer on orders, cart, checkout, account, login, and admin routes
   if (
     pathname.startsWith('/orders') ||
     pathname.startsWith('/cart') ||
     pathname.startsWith('/checkout') ||
+    pathname.startsWith('/account') ||
+    pathname.startsWith('/login') ||
     pathname.startsWith('/admin')
   ) {
     return null;
