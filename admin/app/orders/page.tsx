@@ -493,6 +493,128 @@ export default function AdminOrders() {
     w.document.close();
   };
 
+  const handleBulkPrint = () => {
+    if (selected.size === 0) return;
+    const selectedOrdersList = orders.filter((o) => selected.has(o.id));
+    if (selectedOrdersList.length === 0) return;
+
+    const w = window.open('', '_blank', 'width=800,height=950');
+    if (!w) return flash('error', 'Allow pop-ups to print invoices.');
+
+    const htmlContent = selectedOrdersList.map((o, idx) => {
+      const subtotal = o.subtotal || o.items.reduce((s, i) => s + (Number(i.subtotal) || 0), 0);
+      const deliveryFee = Number(o.deliveryFee || 0);
+      const discount = Number(o.discount || 0);
+      const total = Number(o.total || 0);
+
+      return `
+        <div class="page ${idx < selectedOrdersList.length - 1 ? 'page-break' : ''}">
+          <div class="header">
+            <div class="brand">ROYAL BENGAL</div>
+            <div class="subtitle">Pure • Fresh • Trusted | Gourmet Sourcing</div>
+            <div class="invoice-title">INVOICE & PACKING SLIP: #${esc(o.orderId)}</div>
+          </div>
+
+          <div class="meta-grid">
+            <div class="box">
+              <div class="box-title">Order Information</div>
+              <div class="box-text">
+                Date: ${esc(fmtDate(o.createdAt))}<br/>
+                Status: <span class="badge">${esc(pretty(o.status))}</span><br/>
+                Channel: ${esc(sourceLabel(String(o.orderSource)))}
+              </div>
+            </div>
+
+            <div class="box">
+              <div class="box-title">Delivery Customer</div>
+              <div class="box-text">
+                <strong>${esc(customerName(o))}</strong><br/>
+                Phone: ${esc(o.shipping?.phone || o.userPhone || '—')}<br/>
+                ${esc([o.shipping?.houseNumber || (o.shipping as any)?.houseNo, o.shipping?.address].filter(Boolean).join(', '))}<br/>
+                ${esc([o.shipping?.city, o.shipping?.pincode].filter(Boolean).join(' - '))}
+              </div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Item Description</th>
+                <th>Unit</th>
+                <th class="r">Qty</th>
+                <th class="r">Unit Price</th>
+                <th class="r">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${o.items.map((i) => `
+                <tr>
+                  <td><strong>${esc(i.name)}</strong></td>
+                  <td>${esc(i.unit)}</td>
+                  <td class="r">${esc(i.qty)}</td>
+                  <td class="r">₹${esc(i.price)}</td>
+                  <td class="r"><strong>₹${esc(i.subtotal)}</strong></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <table class="totals-table">
+            <tr>
+              <td>Items Subtotal:</td>
+              <td class="r">₹${esc(subtotal)}</td>
+            </tr>
+            ${discount > 0 ? `<tr><td>Discount Saved:</td><td class="r">- ₹${esc(discount)}</td></tr>` : ''}
+            <tr>
+              <td>Delivery Fee:</td>
+              <td class="r">${deliveryFee === 0 ? 'FREE' : `₹${esc(deliveryFee)}`}</td>
+            </tr>
+            <tr class="grand-tot">
+              <td>TOTAL PAID:</td>
+              <td class="r">₹${esc(total)}</td>
+            </tr>
+          </table>
+
+          <div class="footer">
+            100% Temperature-Controlled Cold Chain Packaging Guarantee.<br/>
+            Thank you for choosing Royal Bengal! For support, call +91 98765 43210.
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    w.document.write(`<!doctype html><html><head><title>Bulk Orders Invoice Print (${selectedOrdersList.length})</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #17211d; padding: 24px; max-width: 760px; margin: auto; background: #fff; }
+        .page { margin-bottom: 40px; }
+        .page-break { page-break-after: always; break-after: page; }
+        .header { text-align: center; border-bottom: 2px solid #004d3b; padding-bottom: 16px; margin-bottom: 20px; }
+        .brand { font-family: Georgia, serif; font-size: 24px; font-weight: 900; color: #004d3b; letter-spacing: 2px; text-transform: uppercase; }
+        .subtitle { font-size: 10px; font-weight: 700; color: #b48312; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px; }
+        .invoice-title { font-size: 13px; font-weight: 800; color: #303030; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; background: #f5f7f6; display: inline-block; padding: 4px 16px; border-radius: 8px; border: 1px solid #e3eae6; }
+        .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; font-size: 12px; }
+        .box { background: #fafafa; border: 1px solid #e3eae6; border-radius: 12px; padding: 14px; }
+        .box-title { font-size: 10px; font-weight: 800; color: #75817b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .box-text { color: #17211d; font-size: 12px; line-height: 1.5; font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
+        th { background: #004d3b; color: #fff; font-weight: 700; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; padding: 10px 12px; text-align: left; }
+        td { padding: 10px 12px; border-bottom: 1px solid #e3eae6; font-size: 12px; color: #17211d; }
+        .r { text-align: right; }
+        .totals-table { width: 280px; margin-left: auto; margin-top: 16px; font-size: 12px; }
+        .totals-table td { padding: 4px 8px; border-bottom: none; }
+        .totals-table .grand-tot { font-size: 15px; font-weight: 900; color: #004d3b; border-top: 2px solid #004d3b; padding-top: 8px; }
+        .footer { margin-top: 36px; padding-top: 16px; border-top: 1px solid #e3eae6; text-align: center; font-size: 10px; color: #75817b; font-weight: 600; }
+        .badge { background: #cdfed4; color: #014b40; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+      </style>
+      </head>
+      <body>
+        ${htmlContent}
+        <script>window.onload = function() { window.print(); }</script>
+      </body>
+      </html>`);
+    w.document.close();
+  };
+
   const copyAddress = async (o: AdminOrder) => {
     const text = [o.shipping?.name || o.userName, o.shipping?.phone || o.userPhone, [o.shipping?.houseNumber, o.shipping?.address].filter(Boolean).join(', '), [o.shipping?.city, o.shipping?.pincode].filter(Boolean).join(' - ')]
       .filter(Boolean).join('\n');
@@ -796,6 +918,14 @@ export default function AdminOrders() {
         {selected.size > 0 && (
           <div className="mt-3 mx-3 sm:mx-4 px-3 py-2 rounded-lg bg-[#f1f1f1] flex flex-wrap items-center gap-3">
             <span className="text-sm sm:text-[13px] font-medium text-[#1a1a1a]">{selected.size} selected</span>
+
+            <button
+              onClick={handleBulkPrint}
+              className="min-h-9 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#004d3b] hover:bg-[#00382b] text-white text-sm sm:text-[13px] font-semibold shadow-sm transition-colors"
+            >
+              <Printer size={14} /> Print Invoices ({selected.size})
+            </button>
+
             <div className="relative">
               <select
                 value=""
