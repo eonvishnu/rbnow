@@ -7,6 +7,8 @@ export const dashboardOrderRowsSchema = z.array(z.object({
   status: z.string().nullable().optional(),
   order_source: z.string().nullable().optional(),
   created_at: z.string(),
+  customer_name: z.string().nullable().optional(),
+  customer_phone: z.string().nullable().optional(),
   user_name: z.string().nullable().optional(),
   user_phone: z.string().nullable().optional(),
   delivery_address: z.object({

@@ -16,22 +16,30 @@ export async function getDashboardOrders(): Promise<DashboardOrder[]> {
     status: order.status || 'pending',
     source: order.order_source || 'online_web',
     createdAt: new Date(order.created_at).getTime(),
-    userName: order.user_name || order.delivery_address?.name || 'Customer',
-    userPhone: order.user_phone || order.delivery_address?.phone || '',
+    userName: order.customer_name || order.user_name || order.delivery_address?.name || 'Customer',
+    userPhone: order.customer_phone || order.user_phone || order.delivery_address?.phone || '',
     itemCount: (order.order_items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0),
   }));
 }
 
 export async function getDashboardFunnel(): Promise<DashboardFunnel> {
-  const [carts, checkouts] = await Promise.all([
-    listDashboardCartStatuses(),
-    listDashboardCheckouts(),
-  ]);
-  return {
-    activeCarts: carts.filter((cart) => cart.status === 'active').length,
-    convertedCarts: carts.filter((cart) => cart.status === 'converted').length,
-    totalCheckouts: checkouts.length,
-  };
+  try {
+    const [carts, checkouts] = await Promise.all([
+      listDashboardCartStatuses(),
+      listDashboardCheckouts(),
+    ]);
+    return {
+      activeCarts: carts.filter((cart) => cart.status === 'active').length,
+      convertedCarts: carts.filter((cart) => cart.status === 'converted').length,
+      totalCheckouts: checkouts.length,
+    };
+  } catch (err) {
+    return {
+      activeCarts: 0,
+      convertedCarts: 0,
+      totalCheckouts: 0,
+    };
+  }
 }
 
 export { getStoreOpenStatus, updateStoreOpenStatus };

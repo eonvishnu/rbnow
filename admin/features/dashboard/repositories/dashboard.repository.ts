@@ -8,7 +8,7 @@ import {
 
 export async function listDashboardOrders() {
   const { data, error } = await supabase.from('orders')
-    .select('id, order_number, total, status, order_source, created_at, user_name, user_phone, delivery_address, order_items(quantity)')
+    .select('id, order_number, total, status, order_source, created_at, customer_name, customer_phone, user_name, user_phone, delivery_address, order_items(quantity)')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return dashboardOrderRowsSchema.parse(data);
@@ -31,13 +31,21 @@ export async function updateStoreOpenStatus(isOpen: boolean) {
 }
 
 export async function listDashboardCartStatuses() {
-  const { data, error } = await supabase.from('carts').select('id, status');
-  if (error) throw error;
-  return cartStatusRowsSchema.parse(data);
+  try {
+    const { data, error } = await supabase.from('carts').select('id, status');
+    if (error || !data) return [];
+    return cartStatusRowsSchema.parse(data);
+  } catch (e) {
+    return [];
+  }
 }
 
 export async function listDashboardCheckouts() {
-  const { data, error } = await supabase.from('checkout_sessions').select('id, status');
-  if (error) throw error;
-  return checkoutRowsSchema.parse(data);
+  try {
+    const { data, error } = await supabase.from('checkouts').select('id, status');
+    if (error || !data) return [];
+    return checkoutRowsSchema.parse(data);
+  } catch (e) {
+    return [];
+  }
 }
