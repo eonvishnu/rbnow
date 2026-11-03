@@ -32,8 +32,8 @@ export const BottomNav = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [lastScrollY]);
 
-  // Hide BottomNav on admin routes
-  if (pathname.startsWith('/admin')) {
+  // Hide BottomNav on login and admin routes
+  if (pathname.startsWith('/login') || pathname.startsWith('/admin')) {
     return null;
   }
 

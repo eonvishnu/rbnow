@@ -67,12 +67,32 @@ export default function AccountPage() {
     router.push('/');
   };
 
-  if (authLoading || !user) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center space-y-4">
         <div className="w-10 h-10 border-4 border-amber-400 border-t-emerald-800 rounded-full animate-spin" />
         <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Loading Account...</p>
       </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center text-gray-900">
+        <div className="w-20 h-20 bg-emerald-50 rounded-3xl border border-emerald-100 flex items-center justify-center mb-6 shadow-md">
+          <User className="text-emerald-800" size={36} />
+        </div>
+        <h2 className="text-2xl font-black text-emerald-950 uppercase tracking-tight">Sign In to Your Account</h2>
+        <p className="text-gray-500 text-xs font-medium uppercase tracking-widest mt-2 mb-8 max-w-xs">
+          Manage saved addresses, view receipts & access store credit
+        </p>
+        <Link
+          href="/login?redirect=/account"
+          className="bg-emerald-800 text-amber-300 font-black px-8 py-4 rounded-2xl text-xs uppercase tracking-[0.2em] shadow-lg shadow-emerald-900/20 hover:bg-emerald-900 transition-all flex items-center gap-2"
+        >
+          <Crown size={16} /> Sign In / Register
+        </Link>
+      </main>
     );
   }
 
