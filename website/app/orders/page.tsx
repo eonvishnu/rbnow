@@ -21,7 +21,9 @@ import {
   Bike,
   CheckCircle2,
   XCircle,
-  Leaf
+  Leaf,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 export default function OrdersPage() {
@@ -32,6 +34,9 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [reorderSuccessMsg, setReorderSuccessMsg] = useState('');
+
+  // Accordion Expand/Collapse Map
+  const [expandedOrderMap, setExpandedOrderMap] = useState<Record<string, boolean>>({});
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -57,7 +62,7 @@ export default function OrdersPage() {
           .order('created_at', { ascending: false });
 
         if (!ordersError && ordersData) {
-          setOrders(ordersData.map(o => ({
+          const mappedOrders = ordersData.map(o => ({
             id: o.id,
             orderId: `RB-${o.order_number || o.id.slice(0, 6).toUpperCase()}`,
             status: o.status || 'pending',
@@ -77,7 +82,16 @@ export default function OrdersPage() {
               unit: item.variant_unit || 'pack',
               img: item.product_image || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80',
             })),
-          })));
+          }));
+
+          setOrders(mappedOrders);
+
+          // Smart Accordion Expansion Logic:
+          // If exactly 1 active order, expand by default; if multiple active orders, keep collapsed to reduce scrolling.
+          const activeList = mappedOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
+          if (activeList.length === 1) {
+            setExpandedOrderMap({ [activeList[0].id]: true });
+          }
         }
       } catch (err) {
         console.error('Error fetching orders:', err);
@@ -96,6 +110,13 @@ export default function OrdersPage() {
   const pastOrders = useMemo(() => {
     return orders.filter(o => o.status === 'delivered' || o.status === 'cancelled');
   }, [orders]);
+
+  const toggleOrderExpand = (orderId: string) => {
+    setExpandedOrderMap(prev => ({
+      ...prev,
+      [orderId]: !prev[orderId],
+    }));
+  };
 
   const handleReorder = (items: any[]) => {
     items.forEach(item => {
@@ -187,7 +208,7 @@ export default function OrdersPage() {
 
       <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6">
 
-        {/* ACTIVE / PAST TABS SWITCHER MATCHING SCREENSHOTS */}
+        {/* ACTIVE / PAST TABS SWITCHER */}
         <div className="flex border-b border-gray-200 text-xs font-black tracking-wider uppercase">
           <button
             onClick={() => setActiveTab('active')}
@@ -216,11 +237,12 @@ export default function OrdersPage() {
 
         {/* TAB 1: ACTIVE ORDERS */}
         {activeTab === 'active' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {activeOrders.length === 0 ? (
               renderEmptyState()
             ) : (
               activeOrders.map((order) => {
+                const isExpanded = !!expandedOrderMap[order.id];
                 const statusVal = order.status || 'pending';
                 const isPlaced = true;
                 const isProcessing = ['processing', 'ready_for_dispatch', 'out_for_delivery', 'delivered'].includes(statusVal);
@@ -228,154 +250,201 @@ export default function OrdersPage() {
                 const isOut = ['out_for_delivery', 'delivered'].includes(statusVal);
                 const isDelivered = statusVal === 'delivered';
 
+                const totalItemsCount = order.items.reduce((s: number, i: any) => s + (Number(i.qty) || 1), 0);
+
                 return (
-                  <div key={order.id} className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm p-5 space-y-5">
+                  <div key={order.id} className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm hover:shadow-md transition-all">
 
-                    {/* Top Header Row */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl font-black text-[#004d3b] font-mono tracking-tight">{order.orderId}</span>
-                        <span className="bg-[#fef08a] text-[#854d0e] text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1">
-                          <Clock size={12} /> {statusVal === 'out_for_delivery' ? 'Out for Delivery' : 'Processing & Packing'}
-                        </span>
-                      </div>
-
-                      <a
-                        href="tel:+919876543210"
-                        className="border-2 border-[#004d3b] text-[#004d3b] hover:bg-[#e5f5ef] px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shrink-0"
-                      >
-                        <PhoneCall size={13} /> Call Support
-                      </a>
-                    </div>
-
-                    {/* Status Heading & Description */}
-                    <div className="space-y-1">
-                      <h2 className="text-base font-black text-[#004d3b] leading-snug">
-                        {isOut ? "Your order is on the way!" : "We're preparing your order."}
-                      </h2>
-                      <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                        Your payment is confirmed. We'll notify you when your order is ready for dispatch.
-                      </p>
-                    </div>
-
-                    {/* 5-Stage Vertical Timeline matching rbnow.in screenshot */}
-                    <div className="space-y-4 pt-1 relative">
-
-                      {/* Stage 1: Placed & Paid */}
-                      <div className="flex items-start justify-between gap-3 relative">
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full bg-[#006b50] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10">
-                            ✓
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-black text-gray-900">Placed & Paid</h4>
-                            <p className="text-[11px] text-gray-500 font-medium">Payment confirmed successfully.</p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-bold text-[#006b50] bg-[#e5f5ef] px-2.5 py-1 rounded-full shrink-0">
-                          {order.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-
-                      {/* Stage 2: Processing & Packing */}
-                      <div className="flex items-start justify-between gap-3 relative">
-                        <div className="flex items-start gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
-                            isProcessing ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
-                          }`}>
-                            <Box size={15} />
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-black text-gray-900">Processing & Packing</h4>
-                            <p className="text-[11px] text-gray-500 font-medium">Your items are being checked and packed.</p>
-                          </div>
-                        </div>
-                        {isProcessing && !isReady && (
-                          <span className="text-[10px] font-bold text-[#854d0e] bg-[#fef08a] px-2.5 py-1 rounded-full shrink-0">
-                            In Progress
+                    {/* COLLAPSED / HEADER ROW (Clickable to Toggle Expand) */}
+                    <div
+                      onClick={() => toggleOrderExpand(order.id)}
+                      className="p-5 cursor-pointer flex items-center justify-between gap-3 hover:bg-gray-50/60 transition-colors"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl font-black text-[#004d3b] font-mono tracking-tight">{order.orderId}</span>
+                          <span className="bg-[#fef08a] text-[#854d0e] text-[11px] font-black px-3 py-0.5 rounded-full flex items-center gap-1 uppercase">
+                            <Clock size={12} /> {statusVal.replace(/_/g, ' ')}
                           </span>
+                        </div>
+
+                        <p className="text-xs text-gray-500 font-medium">
+                          Placed {order.createdAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {order.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+
+                        {!isExpanded && (
+                          <p className="text-[11px] font-bold text-[#006b50] pt-0.5">
+                            {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'items'} · Payment confirmed
+                          </p>
                         )}
                       </div>
 
-                      {/* Stage 3: Ready for Dispatch */}
-                      <div className="flex items-start justify-between gap-3 relative">
-                        <div className="flex items-start gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
-                            isReady ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
-                          }`}>
-                            <Truck size={15} />
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-black text-gray-900">Ready for Dispatch</h4>
-                            <p className="text-[11px] text-gray-500 font-medium">Your order is ready for delivery assignment.</p>
-                          </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <span className="text-lg font-black text-[#004d3b] leading-none block">₹{order.total}</span>
+                          <button className="text-[10px] font-black uppercase text-[#004d3b] tracking-wider mt-1 inline-flex items-center gap-0.5">
+                            {isExpanded ? <>Collapse <ChevronUp size={12} /></> : <>Track order <ChevronDown size={12} /></>}
+                          </button>
                         </div>
                       </div>
-
-                      {/* Stage 4: Out for Delivery */}
-                      <div className="flex items-start justify-between gap-3 relative">
-                        <div className="flex items-start gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
-                            isOut ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
-                          }`}>
-                            <Bike size={15} />
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-black text-gray-900">Out for Delivery</h4>
-                            <p className="text-[11px] text-gray-500 font-medium">Your order has been handed to a delivery partner.</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Stage 5: Delivered */}
-                      <div className="flex items-start justify-between gap-3 relative">
-                        <div className="flex items-start gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
-                            isDelivered ? 'bg-[#006b50] text-white' : 'bg-gray-100 text-gray-400 border border-gray-200'
-                          }`}>
-                            ✓
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-black text-gray-900">Delivered</h4>
-                            <p className="text-[11px] text-gray-500 font-medium">Your order has been delivered.</p>
-                          </div>
-                        </div>
-                      </div>
-
                     </div>
 
-                    {/* Order Items List */}
-                    <div className="pt-4 border-t border-gray-100 space-y-3">
-                      {order.items.map((item: any, idx: number) => (
-                        <div key={idx} className="flex justify-between items-center text-xs">
-                          <div className="flex items-center gap-3">
-                            <img src={item.img} className="w-14 h-14 rounded-2xl object-cover border border-gray-100 shrink-0" alt={item.name} />
-                            <div>
-                              <p className="font-black text-gray-900 text-xs sm:text-sm">{item.name}</p>
-                              <p className="text-[11px] text-gray-500 font-bold">{item.qty} x {item.unit}</p>
+                    {/* EXPANDED DETAILS AREA */}
+                    {isExpanded && (
+                      <div className="p-5 pt-0 space-y-5 border-t border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
+
+                        {/* Status Heading & Call Support Button */}
+                        <div className="pt-4 flex justify-between items-start gap-3">
+                          <div className="space-y-1">
+                            <h2 className="text-base font-black text-[#004d3b] leading-snug">
+                              {isOut ? "Your order is on the way!" : "We're preparing your order."}
+                            </h2>
+                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                              Your payment is confirmed. We'll notify you when your order is ready for dispatch.
+                            </p>
+                          </div>
+
+                          <a
+                            href="tel:+919876543210"
+                            onClick={(e) => e.stopPropagation()}
+                            className="border-2 border-[#004d3b] text-[#004d3b] hover:bg-[#e5f5ef] px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shrink-0 shadow-xs"
+                          >
+                            <PhoneCall size={13} /> Call Support
+                          </a>
+                        </div>
+
+                        {/* 5-Stage Vertical Timeline matching rbnow.in screenshot */}
+                        <div className="space-y-4 pt-1 relative">
+
+                          {/* Stage 1: Placed & Paid */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 rounded-full bg-[#006b50] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10">
+                                ✓
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Placed & Paid</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Payment confirmed successfully.</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-[#006b50] bg-[#e5f5ef] px-2.5 py-1 rounded-full shrink-0">
+                              {order.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          {/* Stage 2: Processing & Packing */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
+                                isProcessing ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                              }`}>
+                                <Box size={15} />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Processing & Packing</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Your items are being checked and packed.</p>
+                              </div>
+                            </div>
+                            {isProcessing && !isReady && (
+                              <span className="text-[10px] font-bold text-[#854d0e] bg-[#fef08a] px-2.5 py-1 rounded-full shrink-0">
+                                In Progress
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Stage 3: Ready for Dispatch */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
+                                isReady ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                              }`}>
+                                <Truck size={15} />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Ready for Dispatch</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Your order is ready for delivery assignment.</p>
+                              </div>
                             </div>
                           </div>
-                          <span className="font-black text-[#004d3b] text-base">₹{item.subtotal}</span>
+
+                          {/* Stage 4: Out for Delivery */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
+                                isOut ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                              }`}>
+                                <Bike size={15} />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Out for Delivery</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Your order has been handed to a delivery partner.</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Stage 5: Delivered */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
+                                isDelivered ? 'bg-[#006b50] text-white' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                              }`}>
+                                ✓
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Delivered</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Your order has been delivered.</p>
+                              </div>
+                            </div>
+                          </div>
+
                         </div>
-                      ))}
-                    </div>
 
-                    {/* Bottom Summary Bar matching rbnow.in screenshot */}
-                    <div className="bg-[#e5f5ef] border border-[#bce2d3] rounded-2xl p-3.5 flex items-center justify-between text-xs gap-3">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <MapPin size={16} className="text-[#006b50] shrink-0 fill-[#006b50]/30" />
-                        <p className="text-[11px] font-bold text-gray-700 truncate">
-                          {order.deliveryAddress?.houseNumber || order.deliveryAddress?.houseNo ? `${order.deliveryAddress.houseNumber || order.deliveryAddress.houseNo}, ` : ''}{order.deliveryAddress?.address || 'Delivery Address'}
-                        </p>
+                        {/* Order Items List */}
+                        <div className="pt-4 border-t border-gray-100 space-y-3">
+                          {order.items.map((item: any, idx: number) => (
+                            <div key={idx} className="flex justify-between items-center text-xs">
+                              <div className="flex items-center gap-3">
+                                <img src={item.img} className="w-14 h-14 rounded-2xl object-cover border border-gray-100 shrink-0" alt={item.name} />
+                                <div>
+                                  <p className="font-black text-gray-900 text-xs sm:text-sm">{item.name}</p>
+                                  <p className="text-[11px] text-gray-500 font-bold">{item.qty} x {item.unit}</p>
+                                </div>
+                              </div>
+                              <span className="font-black text-[#004d3b] text-base">₹{item.subtotal}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Bottom Summary Bar matching rbnow.in screenshot */}
+                        <div className="bg-[#e5f5ef] border border-[#bce2d3] rounded-2xl p-3.5 flex items-center justify-between text-xs gap-3">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <MapPin size={16} className="text-[#006b50] shrink-0 fill-[#006b50]/30" />
+                            <p className="text-[11px] font-bold text-gray-700 truncate">
+                              {order.deliveryAddress?.houseNumber || order.deliveryAddress?.houseNo ? `${order.deliveryAddress.houseNumber || order.deliveryAddress.houseNo}, ` : ''}{order.deliveryAddress?.address || 'Delivery Address'}
+                            </p>
+                          </div>
+
+                          <div className="h-8 w-px bg-[#bce2d3] shrink-0" />
+
+                          <div className="text-right shrink-0">
+                            <span className="text-[10px] font-bold text-gray-500 block uppercase">Total Paid</span>
+                            <span className="text-base font-black text-[#004d3b]">₹{order.total}</span>
+                          </div>
+                        </div>
+
+                        {/* Tap to Collapse Footer Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleOrderExpand(order.id);
+                          }}
+                          className="w-full text-center py-2 text-[10px] font-black uppercase tracking-wider text-gray-400 hover:text-[#004d3b] flex items-center justify-center gap-1 pt-3 border-t border-gray-100"
+                        >
+                          <span>Tap to collapse</span> <ChevronUp size={14} />
+                        </button>
+
                       </div>
-
-                      <div className="h-8 w-px bg-[#bce2d3] shrink-0" />
-
-                      <div className="text-right shrink-0">
-                        <span className="text-[10px] font-bold text-gray-500 block uppercase">Total Paid</span>
-                        <span className="text-base font-black text-[#004d3b]">₹{order.total}</span>
-                      </div>
-                    </div>
+                    )}
 
                   </div>
                 );
@@ -391,13 +460,17 @@ export default function OrdersPage() {
               renderEmptyState()
             ) : (
               pastOrders.map((order) => {
+                const isExpanded = !!expandedOrderMap[order.id];
                 const isDelivered = order.status === 'delivered';
 
                 return (
-                  <div key={order.id} className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm p-5 space-y-4">
+                  <div key={order.id} className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm hover:shadow-md transition-all">
 
-                    {/* Header */}
-                    <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                    {/* Header Row */}
+                    <div
+                      onClick={() => toggleOrderExpand(order.id)}
+                      className="p-5 cursor-pointer flex justify-between items-center bg-gray-50/60 hover:bg-gray-100/60 transition-colors"
+                    >
                       <div className="flex items-center gap-3">
                         <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                           isDelivered ? 'bg-[#e5f5ef] text-[#006b50]' : 'bg-rose-50 text-rose-600'
@@ -420,16 +493,21 @@ export default function OrdersPage() {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => handleReorder(order.items)}
-                        className="bg-[#004d3b] hover:bg-[#00382b] text-[#ffc400] px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
-                      >
-                        <RefreshCw size={12} /> Reorder
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleReorder(order.items);
+                          }}
+                          className="bg-[#004d3b] hover:bg-[#00382b] text-[#ffc400] px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                        >
+                          <RefreshCw size={12} /> Reorder
+                        </button>
+                      </div>
                     </div>
 
                     {/* Items */}
-                    <div className="space-y-2.5">
+                    <div className="p-5 space-y-2.5">
                       {order.items.map((item: any, idx: number) => (
                         <div key={idx} className="flex justify-between items-center text-xs">
                           <div className="flex items-center gap-3">
@@ -445,7 +523,7 @@ export default function OrdersPage() {
                     </div>
 
                     {/* Footer */}
-                    <div className="pt-3 border-t border-gray-100 flex justify-between items-center text-xs">
+                    <div className="px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex justify-between items-center text-xs">
                       <span className="font-bold text-gray-400 uppercase">Amount Paid</span>
                       <span className="text-base font-black text-gray-900">{formatCurrency(order.total)}</span>
                     </div>
