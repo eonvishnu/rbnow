@@ -172,11 +172,15 @@ function LoginContent() {
               }
             });
 
-            if (authData?.tokenHash) {
-              await supabase.auth.verifyOtp({
-                token_hash: authData.tokenHash,
-                type: 'magiclink',
-              }).catch(() => {});
+            if (authData?.email && authData?.password) {
+              const { error: loginErr } = await supabase.auth.signInWithPassword({
+                email: authData.email,
+                password: authData.password,
+              });
+
+              if (loginErr) {
+                console.warn("Direct password login warning:", loginErr);
+              }
             }
 
             router.push(redirectTo);

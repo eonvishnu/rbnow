@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { action, phone, accessToken } = body;
 
-    // 1. ACTION: SERVER-SIDE MSG91 ACCESS TOKEN VERIFICATION & SESSION ISSUANCE
+    // 1. ACTION: SERVER-SIDE MSG91 ACCESS TOKEN VERIFICATION & AUTHENTICATION
     if (action === 'verify_token' || accessToken) {
       console.log("Verifying MSG91 Access Token on server...");
 
@@ -56,33 +56,39 @@ Deno.serve(async (req: Request) => {
       if (verifyRes.ok && tenDigitPhone) {
         const verifiedPhone = `+91${tenDigitPhone}`;
         const syntheticEmail = `user_${tenDigitPhone}@royalbengal.internal`;
+        const userPassword = `rb_pass_${tenDigitPhone}_2026_secured`;
 
-        // Create or get Supabase Auth user with confirmed phone/email
-        const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
-          type: 'magiclink',
+        // Create or get Supabase Auth user with confirmed email
+        const { data: newUser } = await supabase.auth.admin.createUser({
           email: syntheticEmail,
-          options: {
-            data: {
-              phone_number: tenDigitPhone,
-              display_name: `Member ${tenDigitPhone.slice(-4)}`,
-              role: 'customer',
-            }
+          password: userPassword,
+          email_confirm: true,
+          user_metadata: {
+            phone_number: tenDigitPhone,
+            display_name: `Member ${tenDigitPhone.slice(-4)}`,
+            role: 'customer',
           }
-        });
+        }).catch(() => ({ data: null }));
 
-        if (linkErr) {
-          console.error("Generate Magic Link Error:", linkErr);
-          throw linkErr;
+        if (!newUser?.user) {
+          const { data: usersData } = await supabase.auth.admin.listUsers();
+          const existingUser = usersData?.users?.find((u: any) => u.email === syntheticEmail);
+
+          if (existingUser) {
+            await supabase.auth.admin.updateUserById(existingUser.id, {
+              password: userPassword,
+              email_confirm: true,
+            });
+          }
         }
 
         return new Response(JSON.stringify({
           success: true,
           verified: true,
-          message: "MSG91 Access Token Verified & Session Issued Successfully",
-          tokenHash: linkData?.properties?.hashed_token,
-          actionLink: linkData?.properties?.action_link,
-          phone: verifiedPhone,
+          message: "MSG91 Access Token Verified & User Session Ready",
           email: syntheticEmail,
+          password: userPassword,
+          phone: verifiedPhone,
         }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
