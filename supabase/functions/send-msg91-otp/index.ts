@@ -12,12 +12,94 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const msg91AuthKey = Deno.env.get("MSG91_AUTH_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(JSON.stringify({ error: "Server configuration missing: SUPABASE_SERVICE_ROLE_KEY" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const msg91AuthKey = Deno.env.get("MSG91_AUTH_KEY") || "462554AbqVLm5Vl6ae70734P1";
     const msg91TemplateId = Deno.env.get("MSG91_TEMPLATE_ID");
 
-    const body = await req.json();
-    const { phone } = body;
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+    const body = await req.json();
+    const { action, phone, accessToken } = body;
+
+    // 1. ACTION: SERVER-SIDE MSG91 ACCESS TOKEN VERIFICATION & SESSION ISSUANCE
+    if (action === 'verify_token' || accessToken) {
+      console.log("Verifying MSG91 Access Token on server...");
+
+      const verifyRes = await fetch("https://control.msg91.com/api/v5/widget/verifyAccessToken", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({
+          "authkey": msg91AuthKey,
+          "access-token": accessToken,
+        }),
+      });
+
+      const verifyData = await verifyRes.json();
+      console.log("MSG91 Server Token Verification Response:", verifyData);
+
+      // Extract verified mobile number from MSG91 or body fallback
+      const rawMobile = String(verifyData?.mobile || verifyData?.message || phone || '').replace(/\D/g, '');
+      const tenDigitPhone = rawMobile.length >= 10 ? rawMobile.slice(-10) : '';
+
+      if (verifyRes.ok && tenDigitPhone) {
+        const verifiedPhone = `+91${tenDigitPhone}`;
+        const syntheticEmail = `user_${tenDigitPhone}@royalbengal.internal`;
+
+        // Create or get Supabase Auth user with confirmed phone/email
+        const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+          type: 'magiclink',
+          email: syntheticEmail,
+          options: {
+            data: {
+              phone_number: tenDigitPhone,
+              display_name: `Member ${tenDigitPhone.slice(-4)}`,
+              role: 'customer',
+            }
+          }
+        });
+
+        if (linkErr) {
+          console.error("Generate Magic Link Error:", linkErr);
+          throw linkErr;
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          verified: true,
+          message: "MSG91 Access Token Verified & Session Issued Successfully",
+          tokenHash: linkData?.properties?.hashed_token,
+          actionLink: linkData?.properties?.action_link,
+          phone: verifiedPhone,
+          email: syntheticEmail,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: false,
+        error: verifyData?.message || "Invalid or expired MSG91 access token",
+        data: verifyData,
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 2. ACTION: DISPATCH MSG91 SMS OTP TO MOBILE NUMBER
     const cleanPhone = String(phone || '').replace(/\D/g, '');
     const tenDigitPhone = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : '';
 
@@ -31,7 +113,6 @@ Deno.serve(async (req: Request) => {
     const formattedMobile = `91${tenDigitPhone}`;
 
     if (msg91AuthKey && msg91TemplateId) {
-      // Call MSG91 v5 OTP API
       const msg91Res = await fetch(`https://control.msg91.com/api/v5/otp?template_id=${msg91TemplateId}&mobile=${formattedMobile}`, {
         method: "POST",
         headers: {
@@ -67,7 +148,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (error: any) {
     console.error("Error in MSG91 Edge Function:", error);
-    return new Response(JSON.stringify({ error: error.message || "Failed to send MSG91 SMS OTP" }), {
+    return new Response(JSON.stringify({ error: error.message || "Failed to process MSG91 request" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

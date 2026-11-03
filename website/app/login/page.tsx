@@ -154,16 +154,31 @@ function LoginContent() {
     setError('');
 
     try {
+      const cleanPhone = phone.trim().replace(/\D/g, '');
+      const tenDigitPhone = cleanPhone.slice(-10);
+
       if ((window as any).verifyOtp) {
         (window as any).verifyOtp(
           otp.trim(),
           async (data: any) => {
             console.log('MSG91 OTP Verified Success:', data);
 
-            const cleanPhone = phone.trim().replace(/\D/g, '');
-            const formattedPhone = `+91${cleanPhone.slice(-10)}`;
+            // Invoke server-side Edge Function to verify token & issue authenticated Supabase session
+            const { data: authData, error: authErr } = await supabase.functions.invoke('send-msg91-otp', {
+              body: {
+                action: 'verify_token',
+                phone: tenDigitPhone,
+                accessToken: data?.message || data?.token || data,
+              }
+            });
 
-            await supabase.auth.signInWithOtp({ phone: formattedPhone }).catch(() => {});
+            if (authData?.tokenHash) {
+              await supabase.auth.verifyOtp({
+                token_hash: authData.tokenHash,
+                type: 'magiclink',
+              }).catch(() => {});
+            }
+
             router.push(redirectTo);
           },
           (err: any) => {
