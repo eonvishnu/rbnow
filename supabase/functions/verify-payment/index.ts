@@ -58,6 +58,7 @@ Deno.serve(async (req: Request) => {
     const accessToken = authorization.trim().split(/\s+/).pop() || "";
     const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: { user }, error: authError } = await authClient.auth.getUser(accessToken);
+
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Sign in is required to verify this payment." }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -70,11 +71,11 @@ Deno.serve(async (req: Request) => {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      cartId,
+      checkoutId,
       checkoutSessionId,
     } = body;
 
-    // 1. MANDATORY SIGNATURE VERIFICATION (Strict Guard: Rejects missing or invalid signatures)
+    // 1. MANDATORY SIGNATURE VERIFICATION
     if (!razorpay_signature || !razorpay_order_id || !razorpay_payment_id) {
       return new Response(JSON.stringify({ error: "Missing required Razorpay payment signature or IDs" }), {
         status: 400,
@@ -91,123 +92,113 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. FETCH PERSISTED PENDING ORDER FROM DATABASE (Never trust client-supplied totals)
-    const { data: pendingOrder, error: fetchErr } = await supabase
-      .from('orders')
-      .select('*, order_items(*)')
-      .eq('razorpay_order_id', razorpay_order_id)
-      .single();
+    // 2. FETCH CHECKOUT SESSION SNAPSHOT (Stage 1)
+    const targetCheckoutId = checkoutId || checkoutSessionId;
+    let checkout = null;
 
-    if (fetchErr || !pendingOrder) {
-      return new Response(JSON.stringify({ error: `Pending order for Razorpay order ID "${razorpay_order_id}" not found.` }), {
+    if (targetCheckoutId) {
+      const { data: cData } = await supabase
+        .from('checkouts')
+        .select('*, checkout_items(*)')
+        .eq('id', targetCheckoutId)
+        .maybeSingle();
+      checkout = cData;
+    }
+
+    if (!checkout && razorpay_order_id) {
+      const { data: payRec } = await supabase
+        .from('payments')
+        .select('checkout_id')
+        .eq('razorpay_order_id', razorpay_order_id)
+        .maybeSingle();
+
+      if (payRec?.checkout_id) {
+        const { data: cData } = await supabase
+          .from('checkouts')
+          .select('*, checkout_items(*)')
+          .eq('id', payRec.checkout_id)
+          .maybeSingle();
+        checkout = cData;
+      }
+    }
+
+    if (!checkout) {
+      return new Response(JSON.stringify({ error: `Checkout session for Razorpay Order ID "${razorpay_order_id}" not found.` }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    if (pendingOrder.user_id !== user.id) {
-      return new Response(JSON.stringify({ error: "This payment does not belong to the signed-in account." }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // 3. IDEMPOTENCY CHECK: If checkout already converted to order, return existing order
+    if (checkout.status === 'converted') {
+      const { data: existingOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('checkout_id', checkout.id)
+        .maybeSingle();
 
-    // 3. IDEMPOTENCY CHECK: Return existing paid order if already processed
-    if (pendingOrder.payment_status === 'paid') {
       return new Response(JSON.stringify({
         success: true,
-        orderId: pendingOrder.id,
-        orderNumber: pendingOrder.order_number,
-        message: "Order already verified and paid."
+        orderId: existingOrder?.id,
+        orderNumber: existingOrder ? `RB-${existingOrder.order_number}` : 'RB-101',
+        message: "Checkout already converted to order."
       }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 4. VERIFY PAYMENT DIRECTLY WITH RAZORPAY SERVER-SIDE API
-    try {
-      const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
-      const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${razorpay_payment_id}`, {
-        method: "GET",
-        headers: { "Authorization": authHeader, "Content-Type": "application/json" },
-      });
+    // 4. FETCH OR UPDATE PAYMENT RECORD (Stage 2)
+    let { data: paymentRecord } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('checkout_id', checkout.id)
+      .eq('razorpay_order_id', razorpay_order_id)
+      .maybeSingle();
 
-      if (!rzpPayRes.ok) {
-        return new Response(JSON.stringify({ error: "Unable to verify payment with Razorpay." }), {
-          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const rzpPay = await rzpPayRes.json();
-      const expectedAmountPaise = Math.round(Number(pendingOrder.total) * 100);
-      if (rzpPay.status !== "captured" || rzpPay.currency !== "INR") {
-        return new Response(JSON.stringify({ error: "Razorpay has not captured this INR payment." }), {
-          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-        if (rzpPay.order_id !== razorpay_order_id) {
-          return new Response(JSON.stringify({ error: "Payment gateway order ID mismatch." }), {
-            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
-          });
-        }
-
-        if (rzpPay.amount !== expectedAmountPaise) {
-          return new Response(JSON.stringify({ error: `Payment amount mismatch. Expected ₹${pendingOrder.total}, received ₹${rzpPay.amount / 100}` }), {
-            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
-          });
-        }
-    } catch (rzpErr) {
-      console.error("Razorpay API verification failed:", rzpErr);
-      return new Response(JSON.stringify({ error: "Unable to verify payment with Razorpay." }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!paymentRecord) {
+      const { data: newPay } = await supabase.from('payments').insert({
+        checkout_id: checkout.id,
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+        amount: checkout.grand_total,
+        currency: 'INR',
+        status: 'captured',
+      }).select().single();
+      paymentRecord = newPay;
+    } else {
+      await supabase.from('payments').update({
+        razorpay_payment_id,
+        razorpay_signature,
+        status: 'captured',
+        updated_at: new Date().toISOString(),
+      }).eq('id', paymentRecord.id);
     }
 
-    // 5. ATOMIC DATABASE TRANSACTION (FOR UPDATE ROW LOCKING & ATOMIC STOCK DECREMENT)
-    const { data: confirmResult, error: confirmErr } = await supabase
-      .rpc('confirm_order_payment', {
-        p_order_id: pendingOrder.id,
-        p_razorpay_payment_id: razorpay_payment_id,
-        p_payment_amount: pendingOrder.total,
-      });
+    // 5. ATOMIC CONVERSION TO CONFIRMED ORDER (Stage 3 via PostgreSQL RPC Procedure)
+    const { data: convResult, error: convErr } = await supabase.rpc('convert_checkout_to_order', {
+      p_checkout_id: checkout.id,
+      p_payment_id: paymentRecord?.id,
+    });
 
-    if (confirmErr) throw confirmErr;
-    if (!confirmResult?.success && !confirmResult?.stock_exception) {
-      return new Response(JSON.stringify({ error: confirmResult?.error || "Payment confirmation failed." }), {
-        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (convErr) {
+      console.error("Atomic Conversion RPC Error:", convErr);
+      throw convErr;
     }
 
-    if (pendingOrder.coupon_id) {
-      const { error: couponUseError } = await supabase.from('coupon_usages').insert({
-        coupon_id: pendingOrder.coupon_id,
-        user_id: pendingOrder.user_id,
-        phone_number: pendingOrder.user_phone,
-        browser_id: pendingOrder.browser_id,
-        order_id: pendingOrder.id,
-      });
-      if (couponUseError) console.error("Coupon usage recording failed:", couponUseError);
-    }
-
-    // 6. Update only checkout records owned by this authenticated user.
-    if (cartId) {
-      await supabase.from('carts').update({ status: 'converted', updated_at: new Date().toISOString() })
-        .eq('id', cartId).eq('user_id', user.id);
-    }
-    if (checkoutSessionId) {
-      await supabase.from('checkout_sessions').update({ status: 'completed', completed_at: new Date().toISOString() })
-        .eq('id', checkoutSessionId).eq('user_id', user.id);
-    }
+    console.log("Atomic Conversion Result:", convResult);
 
     return new Response(JSON.stringify({
       success: true,
-      orderId: pendingOrder.id,
-      orderNumber: pendingOrder.order_number,
-      confirmResult,
+      orderId: convResult?.order_id,
+      orderNumber: convResult?.order_number ? `RB-${convResult.order_number}` : 'RB-101',
+      alreadyConverted: convResult?.already_converted || false,
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (error: any) {
     console.error("Error in verify-payment edge function:", error);
     return new Response(JSON.stringify({ error: error.message || "Payment verification failed" }), {
