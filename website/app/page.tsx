@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCart } from "../context/CartProvider";
 import { Header } from "./components/Header";
+import { CategoryNav } from "./components/CategoryNav";
 import { ProductCard } from "./components/ProductCard";
 import { PreorderCarousel } from "./components/PreorderCarousel";
 import { CartBar } from "./components/CartBar";
@@ -206,6 +207,15 @@ export default function Home() {
       <Header 
         activeCategory={activeCategory} 
         onCategoryChange={(id: string, name: string) => {
+             setActiveCategory(name);
+             setActiveCategoryTitle(name);
+        }}
+      />
+
+      {/* TOP STICKY CATEGORY CIRCLES BAR */}
+      <CategoryNav
+        activeCategory={activeCategory}
+        onCategoryChange={(id: string, name: string) => {
              setActiveCategory(name); 
              setActiveCategoryTitle(name);
         }}
@@ -213,7 +223,7 @@ export default function Home() {
 
       {/* STICKY SUBCATEGORIES FILTER BAR MATCHING SCREENSHOT */}
       {currentSubCategories.length > 0 && (
-        <div className="sticky top-0 z-30 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
+        <div className="sticky top-[86px] z-20 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
           <div className="max-w-7xl mx-auto flex gap-2.5 overflow-x-auto no-scrollbar items-center">
             <button
               onClick={() => setActiveSubCategory("all")}
