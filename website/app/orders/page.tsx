@@ -8,22 +8,27 @@ import Link from 'next/link';
 import { 
   ArrowLeft, 
   Package, 
-  Clock,
-  CheckCircle2,
-  XCircle, 
+  Check,
+  X,
   ShoppingBag,
   MapPin,
   Sparkles,
   RefreshCw,
   Truck,
   PhoneCall,
-  History
+  Clock,
+  Box,
+  Bike,
+  CheckCircle2,
+  XCircle,
+  Leaf
 } from 'lucide-react';
 
 export default function OrdersPage() {
   const { user, loading: authLoading } = useAuth();
   const { addToCart } = useCart();
 
+  const [activeTab, setActiveTab] = useState<'active' | 'past'>('active');
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [reorderSuccessMsg, setReorderSuccessMsg] = useState('');
@@ -109,7 +114,7 @@ export default function OrdersPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center space-y-4">
-        <div className="w-10 h-10 border-4 border-amber-400 border-t-emerald-800 rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-[#ffc400] border-t-[#004d3b] rounded-full animate-spin" />
         <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Loading Your Orders...</p>
       </div>
     );
@@ -118,12 +123,12 @@ export default function OrdersPage() {
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-20 h-20 bg-emerald-50 rounded-3xl border border-emerald-100 flex items-center justify-center mb-6 shadow-md">
-          <ShoppingBag className="text-emerald-800" size={36} />
+        <div className="w-20 h-20 bg-[#e5f5ef] rounded-3xl border border-[#bce2d3] flex items-center justify-center mb-6 shadow-md">
+          <ShoppingBag className="text-[#004d3b]" size={36} />
         </div>
         <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Sign In to View Orders</h2>
         <p className="text-gray-500 text-xs font-medium uppercase tracking-widest mt-2 mb-8">Access live tracking and order receipts</p>
-        <Link href="/login" className="bg-emerald-800 text-amber-300 px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-900/20 hover:bg-emerald-900 transition-all">
+        <Link href="/login" className="bg-[#004d3b] text-[#ffc400] px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-[#004d3b]/20 hover:bg-[#00382b] transition-all">
           Login Now
         </Link>
       </div>
@@ -131,236 +136,303 @@ export default function OrdersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 pb-28 text-gray-900">
+    <main className="min-h-screen bg-gray-50 pb-28 text-[#17211D] select-none">
       
       {/* Toast Notification */}
       {reorderSuccessMsg && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] bg-emerald-950 text-amber-300 border border-amber-400/50 px-6 py-3 rounded-2xl shadow-2xl text-xs font-bold uppercase tracking-wider animate-in fade-in slide-in-from-top duration-300 flex items-center gap-2">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] bg-[#004d3b] text-[#ffc400] border border-amber-300 px-6 py-3 rounded-2xl shadow-2xl text-xs font-bold uppercase tracking-wider animate-in fade-in slide-in-from-top duration-300 flex items-center gap-2">
           <Sparkles size={16} /> {reorderSuccessMsg}
         </div>
       )}
 
-      {/* Header Bar */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-amber-100 px-4 sm:px-6 py-4 shadow-sm">
+      {/* Header Bar matching rbnow.in screenshot */}
+      <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 sm:px-6 py-3.5 shadow-xs">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                <Link href="/" className="p-2 -ml-2 text-gray-500 hover:text-emerald-800 hover:bg-emerald-50 rounded-full transition-all">
-                    <ArrowLeft size={20} />
-                </Link>
-                <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-emerald-950">Royal Orders</h1>
-            </div>
-            <Link href="/" className="text-[10px] font-black text-emerald-800 bg-emerald-50 border border-amber-200 px-4 py-2 rounded-full uppercase tracking-widest hover:bg-emerald-100 transition-colors">
-                Shop Fresh
+          <div className="flex items-center gap-3">
+            <Link href="/" className="p-1.5 -ml-2 text-gray-700 hover:text-[#004d3b] hover:bg-[#e5f5ef] rounded-full transition-all">
+              <ArrowLeft size={22} />
             </Link>
+            <h1 className="text-lg sm:text-xl font-black uppercase tracking-wider text-[#004d3b] font-serif">ROYAL BENGAL</h1>
+          </div>
+
+          <Link href="/" className="bg-[#e5f5ef] hover:bg-[#d5efe5] text-[#006b50] border border-[#bce2d3] px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all">
+            <Leaf size={14} className="fill-[#006b50]" /> SHOP FRESH
+          </Link>
         </div>
       </header>
 
-      <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-8">
+      <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6">
+
+        {/* ACTIVE / PAST TABS SWITCHER */}
+        <div className="flex border-b border-gray-200 text-xs font-black tracking-wider uppercase">
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`pb-3 px-4 relative transition-colors ${
+              activeTab === 'active' ? 'text-[#004d3b]' : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            ACTIVE ORDERS ({activeOrders.length})
+            {activeTab === 'active' && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#004d3b] rounded-t-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('past')}
+            className={`pb-3 px-4 relative transition-colors ${
+              activeTab === 'past' ? 'text-[#004d3b]' : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            PAST ORDERS
+            {activeTab === 'past' && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#004d3b] rounded-t-full" />
+            )}
+          </button>
+        </div>
 
         {orders.length === 0 ? (
           <div className="text-center py-20 bg-white border border-gray-200 rounded-[32px] p-8 shadow-sm">
-             <div className="w-20 h-20 bg-emerald-50 rounded-3xl border border-emerald-100 flex items-center justify-center mx-auto mb-6">
-                <Package className="text-emerald-700" size={40} />
+             <div className="w-20 h-20 bg-[#e5f5ef] rounded-3xl border border-[#bce2d3] flex items-center justify-center mx-auto mb-6">
+                <Package className="text-[#004d3b]" size={40} />
              </div>
              <h3 className="text-gray-900 font-black text-xl uppercase tracking-tight">No Royal Orders Yet</h3>
              <p className="text-gray-500 text-xs font-medium uppercase tracking-widest mt-2 mb-8">
                Explore fresh river fish, mutton & authentic Bengal groceries.
              </p>
-             <Link href="/" className="bg-emerald-800 text-amber-300 font-black px-8 py-4 rounded-2xl text-xs uppercase tracking-[0.2em] shadow-lg shadow-emerald-900/20 hover:bg-emerald-900 transition-all">
+             <Link href="/" className="bg-[#004d3b] text-[#ffc400] font-black px-8 py-4 rounded-2xl text-xs uppercase tracking-[0.2em] shadow-lg shadow-[#004d3b]/20 hover:bg-[#00382b] transition-all">
                 Browse Menu
              </Link>
           </div>
         ) : (
           <>
-            {/* SECTION 1: ACTIVE / IN-PROGRESS ORDERS */}
-            {activeOrders.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-900 flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-                    Active Orders ({activeOrders.length})
-                  </h2>
-                  <span className="text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
-                    ⚡ Delivering Soon
-                  </span>
-                </div>
-
-                <div className="space-y-4">
-                  {activeOrders.map((order) => {
+            {/* TAB 1: ACTIVE ORDERS */}
+            {activeTab === 'active' && (
+              <div className="space-y-6">
+                {activeOrders.length === 0 ? (
+                  <div className="bg-white border border-gray-200 rounded-3xl p-10 text-center space-y-2">
+                    <p className="text-sm font-black text-gray-800 uppercase">No Active Orders Currently</p>
+                    <p className="text-xs text-gray-500">Your active fresh dispatches will appear here.</p>
+                  </div>
+                ) : (
+                  activeOrders.map((order) => {
                     const statusVal = order.status || 'pending';
                     const isPlaced = true;
                     const isProcessing = ['processing', 'ready_for_dispatch', 'out_for_delivery', 'delivered'].includes(statusVal);
-                    const isPacked = ['ready_for_dispatch', 'out_for_delivery', 'delivered'].includes(statusVal);
+                    const isReady = ['ready_for_dispatch', 'out_for_delivery', 'delivered'].includes(statusVal);
                     const isOut = ['out_for_delivery', 'delivered'].includes(statusVal);
                     const isDelivered = statusVal === 'delivered';
 
                     return (
-                      <div key={order.id} className="bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400/80 rounded-[28px] overflow-hidden shadow-2xl space-y-0">
+                      <div key={order.id} className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm p-5 space-y-5">
 
-                        {/* Compact Header */}
-                        <div className="p-4 sm:p-5 border-b border-emerald-800/80 flex justify-between items-center bg-emerald-950/80">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-amber-300 font-black text-base">{order.orderId}</span>
-                              <span className="bg-amber-400 text-emerald-950 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                                {statusVal.replace(/_/g, ' ')}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-emerald-300/80 font-bold mt-0.5">
-                              {order.createdAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                            </p>
+                        {/* Top Header Row */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl font-black text-[#004d3b] font-mono tracking-tight">{order.orderId}</span>
+                            <span className="bg-[#fef08a] text-[#854d0e] text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1">
+                              <Clock size={12} /> {statusVal === 'out_for_delivery' ? 'Out for Delivery' : 'Processing & Packing'}
+                            </span>
                           </div>
 
                           <a
                             href="tel:+919876543210"
-                            className="bg-emerald-800/80 hover:bg-emerald-700 text-amber-300 border border-amber-400/40 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all"
+                            className="border-2 border-[#004d3b] text-[#004d3b] hover:bg-[#e5f5ef] px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shrink-0"
                           >
-                            <PhoneCall size={12} /> Call Support
+                            <PhoneCall size={13} /> Call Support
                           </a>
                         </div>
 
-                        {/* Compact 5-Stage Stepper Bar */}
-                        <div className="p-4 bg-emerald-900/60 border-b border-emerald-800/80 space-y-2">
-                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-300/90 flex items-center gap-1">
-                            <Sparkles size={11} /> Live Order Progress
+                        {/* Status Heading & Description */}
+                        <div className="space-y-1">
+                          <h2 className="text-base font-black text-[#004d3b] leading-snug">
+                            {isOut ? "Your order is on the way!" : "We're preparing your order."}
+                          </h2>
+                          <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                            Your payment is confirmed. We'll notify you when your order is ready for dispatch.
                           </p>
-
-                          <div className="grid grid-cols-5 gap-1 text-center items-center">
-                            {[
-                              { label: 'Placed', active: isPlaced },
-                              { label: 'Processing', active: isProcessing },
-                              { label: 'Packed', active: isPacked },
-                              { label: 'On The Way', active: isOut },
-                              { label: 'Delivered', active: isDelivered },
-                            ].map((st, i) => (
-                              <div key={i} className="flex flex-col items-center">
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center font-black text-[10px] border transition-all ${
-                                  st.active
-                                    ? 'bg-amber-400 text-emerald-950 border-amber-300 shadow-md scale-105'
-                                    : 'bg-emerald-950/80 text-emerald-600 border-emerald-800'
-                                }`}>
-                                  {st.active ? '✓' : i + 1}
-                                </div>
-                                <span className={`text-[8px] font-black uppercase tracking-tight mt-1 ${st.active ? 'text-amber-300' : 'text-emerald-500'}`}>
-                                  {st.label}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
                         </div>
 
-                        {/* Product Summary List */}
-                        <div className="p-4 sm:p-5 space-y-2.5 divide-y divide-emerald-800/50">
+                        {/* 5-Stage Vertical Timeline matching rbnow.in screenshot */}
+                        <div className="space-y-4 pt-1 relative">
+
+                          {/* Stage 1: Placed & Paid */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 rounded-full bg-[#006b50] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10">
+                                ✓
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Placed & Paid</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Payment confirmed successfully.</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-[#006b50] bg-[#e5f5ef] px-2.5 py-1 rounded-full shrink-0">
+                              {order.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          {/* Stage 2: Processing & Packing */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
+                                isProcessing ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                              }`}>
+                                <Box size={15} />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Processing & Packing</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Your items are being checked and packed.</p>
+                              </div>
+                            </div>
+                            {isProcessing && !isReady && (
+                              <span className="text-[10px] font-bold text-[#854d0e] bg-[#fef08a] px-2.5 py-1 rounded-full shrink-0">
+                                In Progress
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Stage 3: Ready for Dispatch */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
+                                isReady ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                              }`}>
+                                <Truck size={15} />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Ready for Dispatch</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Your order is ready for delivery assignment.</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Stage 4: Out for Delivery */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
+                                isOut ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                              }`}>
+                                <Bike size={15} />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Out for Delivery</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Your order has been handed to a delivery partner.</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Stage 5: Delivered */}
+                          <div className="flex items-start justify-between gap-3 relative">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-sm z-10 ${
+                                isDelivered ? 'bg-[#006b50] text-white' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                              }`}>
+                                ✓
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-gray-900">Delivered</h4>
+                                <p className="text-[11px] text-gray-500 font-medium">Your order has been delivered.</p>
+                              </div>
+                            </div>
+                          </div>
+
+                        </div>
+
+                        {/* Order Items List */}
+                        <div className="pt-4 border-t border-gray-100 space-y-3">
                           {order.items.map((item: any, idx: number) => (
-                            <div key={idx} className="flex justify-between items-center text-xs pt-2">
+                            <div key={idx} className="flex justify-between items-center text-xs">
                               <div className="flex items-center gap-3">
-                                <img src={item.img} className="w-11 h-11 rounded-xl object-cover border border-amber-400/20 shrink-0" alt={item.name} />
+                                <img src={item.img} className="w-14 h-14 rounded-2xl object-cover border border-gray-100 shrink-0" alt={item.name} />
                                 <div>
-                                  <p className="font-bold text-white text-xs sm:text-sm">{item.name}</p>
-                                  <p className="text-[10px] text-amber-300/90 font-bold uppercase">{item.qty} × {item.unit}</p>
+                                  <p className="font-black text-gray-900 text-xs sm:text-sm">{item.name}</p>
+                                  <p className="text-[11px] text-gray-500 font-bold">{item.qty} x {item.unit}</p>
                                 </div>
                               </div>
-                              <span className="font-black text-amber-300 text-xs sm:text-sm">{formatCurrency(item.subtotal)}</span>
+                              <span className="font-black text-[#004d3b] text-base">₹{item.subtotal}</span>
                             </div>
                           ))}
                         </div>
 
-                        {/* Payment & Bill Summary Breakdown */}
-                        <div className="p-4 sm:p-5 bg-emerald-950/90 border-t border-emerald-800/80 space-y-2 text-xs">
-                          <div className="flex justify-between text-emerald-200/80 font-bold text-[11px]">
-                            <span>Items Subtotal</span>
-                            <span className="text-white font-black">{formatCurrency(order.subtotal || order.total)}</span>
+                        {/* Bottom Summary Bar matching rbnow.in screenshot */}
+                        <div className="bg-[#e5f5ef] border border-[#bce2d3] rounded-2xl p-3.5 flex items-center justify-between text-xs gap-3">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <MapPin size={16} className="text-[#006b50] shrink-0 fill-[#006b50]/30" />
+                            <p className="text-[11px] font-bold text-gray-700 truncate">
+                              {order.deliveryAddress?.houseNumber || order.deliveryAddress?.houseNo ? `${order.deliveryAddress.houseNumber || order.deliveryAddress.houseNo}, ` : ''}{order.deliveryAddress?.address || 'Delivery Address'}
+                            </p>
                           </div>
 
-                          {order.discount > 0 && (
-                            <div className="flex justify-between text-amber-300 font-bold text-[11px]">
-                              <span>Promo Discount</span>
-                              <span className="font-black">- {formatCurrency(order.discount)}</span>
-                            </div>
-                          )}
+                          <div className="h-8 w-px bg-[#bce2d3] shrink-0" />
 
-                          <div className="flex justify-between text-emerald-200/80 font-bold text-[11px]">
-                            <span>Express Delivery Fee</span>
-                            <span className="text-white font-black">{order.deliveryFee > 0 ? formatCurrency(order.deliveryFee) : 'FREE'}</span>
-                          </div>
-
-                          <div className="pt-2 border-t border-emerald-800 flex justify-between items-center">
-                            {order.deliveryAddress && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-emerald-200 truncate max-w-[200px] sm:max-w-[260px]">
-                                <MapPin size={13} className="text-amber-400 shrink-0" />
-                                <span className="truncate">{order.deliveryAddress.houseNumber || order.deliveryAddress.houseNo ? `${order.deliveryAddress.houseNumber || order.deliveryAddress.houseNo}, ` : ''}{order.deliveryAddress.address}</span>
-                              </div>
-                            )}
-                            <div className="text-right">
-                              <span className="text-[8px] font-black uppercase tracking-wider text-amber-300 block">Total Paid</span>
-                              <span className="text-lg sm:text-xl font-black text-amber-400 tracking-tight">{formatCurrency(order.total)}</span>
-                            </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-[10px] font-bold text-gray-500 block uppercase">Total Paid</span>
+                            <span className="text-base font-black text-[#004d3b]">₹{order.total}</span>
                           </div>
                         </div>
 
                       </div>
                     );
-                  })}
-                </div>
-              </section>
+                  })
+                )}
+              </div>
             )}
 
-            {/* SECTION 2: PAST / DELIVERED ORDERS */}
-            {pastOrders.length > 0 && (
-              <section className="space-y-4">
-                <h2 className="text-xs font-black uppercase tracking-[0.2em] text-gray-400 pt-2">
-                  Past Orders ({pastOrders.length})
-                </h2>
-
-                <div className="space-y-4">
-                  {pastOrders.map((order) => {
+            {/* TAB 2: PAST ORDERS */}
+            {activeTab === 'past' && (
+              <div className="space-y-4">
+                {pastOrders.length === 0 ? (
+                  <div className="bg-white border border-gray-200 rounded-3xl p-10 text-center space-y-2">
+                    <p className="text-sm font-black text-gray-800 uppercase">No Past Orders</p>
+                    <p className="text-xs text-gray-500">Delivered orders will appear here for 1-tap reordering.</p>
+                  </div>
+                ) : (
+                  pastOrders.map((order) => {
                     const isDelivered = order.status === 'delivered';
 
                     return (
-                      <div key={order.id} className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                      <div key={order.id} className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm p-5 space-y-4">
 
-                        {/* Order Header */}
-                        <div className="p-4 sm:p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/60">
+                        {/* Header */}
+                        <div className="flex justify-between items-center pb-3 border-b border-gray-100">
                           <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
-                              isDelivered ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-600 border border-rose-200'
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              isDelivered ? 'bg-[#e5f5ef] text-[#006b50]' : 'bg-rose-50 text-rose-600'
                             }`}>
-                              {isDelivered ? <CheckCircle2 size={20} /> : <XCircle size={20} />}
+                              {isDelivered ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
                             </div>
 
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-extrabold text-gray-900 text-sm">{order.orderId}</span>
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                                  isDelivered ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                  isDelivered ? 'bg-[#e5f5ef] text-[#006b50]' : 'bg-rose-50 text-rose-700'
                                 }`}>
                                   {isDelivered ? 'Delivered Fresh' : 'Cancelled'}
                                 </span>
                               </div>
                               <p className="text-[11px] text-gray-400 font-medium mt-0.5">
-                                {order.createdAt.toLocaleDateString('en-IN', {
-                                  day: 'numeric', month: 'short', year: 'numeric'
-                                })}
+                                {order.createdAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                               </p>
                             </div>
                           </div>
 
                           <button
                             onClick={() => handleReorder(order.items)}
-                            className="bg-emerald-800 hover:bg-emerald-900 text-amber-300 px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                            className="bg-[#004d3b] hover:bg-[#00382b] text-[#ffc400] px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
                           >
                             <RefreshCw size={12} /> Reorder
                           </button>
                         </div>
 
-                        {/* Order Items */}
-                        <div className="p-4 sm:p-5 space-y-2.5 divide-y divide-gray-50">
+                        {/* Items */}
+                        <div className="space-y-2.5">
                           {order.items.map((item: any, idx: number) => (
-                            <div key={idx} className="flex justify-between items-center text-xs pt-1.5">
+                            <div key={idx} className="flex justify-between items-center text-xs">
                               <div className="flex items-center gap-3">
-                                <img src={item.img} className="w-9 h-9 rounded-xl object-cover border border-gray-100 shrink-0" alt={item.name} />
+                                <img src={item.img} className="w-10 h-10 rounded-xl object-cover border border-gray-100 shrink-0" alt={item.name} />
                                 <div>
-                                  <p className="font-extrabold text-gray-800">{item.name}</p>
+                                  <p className="font-bold text-gray-800">{item.name}</p>
                                   <p className="text-[10px] text-gray-400 font-bold uppercase">{item.qty} x {item.unit}</p>
                                 </div>
                               </div>
@@ -369,17 +441,17 @@ export default function OrdersPage() {
                           ))}
                         </div>
 
-                        {/* Total Footer */}
-                        <div className="px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Amount Paid</span>
-                          <span className="text-lg font-black text-gray-900 tracking-tight">{formatCurrency(order.total)}</span>
+                        {/* Footer */}
+                        <div className="pt-3 border-t border-gray-100 flex justify-between items-center text-xs">
+                          <span className="font-bold text-gray-400 uppercase">Amount Paid</span>
+                          <span className="text-base font-black text-gray-900">{formatCurrency(order.total)}</span>
                         </div>
 
                       </div>
                     );
-                  })}
-                </div>
-              </section>
+                  })
+                )}
+              </div>
             )}
           </>
         )}
