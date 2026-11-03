@@ -77,13 +77,17 @@ function LoginContent() {
   const handleSendPhoneOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPhone = phone.trim().replace(/\D/g, '');
-    if (cleanPhone.length < 10) return setError('Please enter a valid 10-digit mobile number.');
+    const tenDigitPhone = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    if (!/^[6-9]\d{9}$/.test(tenDigitPhone)) {
+      return setError('Please enter a valid 10-digit mobile number starting with 6, 7, 8 or 9.');
+    }
 
     setLoading(true);
     setError('');
     setMessage('');
 
-    const formattedIdentifier = `91${cleanPhone.slice(-10)}`;
+    const formattedIdentifier = `91${tenDigitPhone}`;
 
     try {
       const isSecureContext = typeof window !== 'undefined' && window.crypto && window.crypto.subtle;
@@ -197,11 +201,11 @@ function LoginContent() {
 
         {/* Brand Header */}
         <div className="text-center space-y-3 mb-8">
-          <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center bg-[#022c22] border-2 border-amber-400/60 p-2.5 shadow-2xl">
+          <div className="w-18 h-18 rounded-full mx-auto flex items-center justify-center bg-[#022c22] border-2 border-amber-400 p-0.5 shadow-2xl overflow-hidden">
              <img 
                 src="/logo.png" 
                 alt="Royal Bengal Logo"
-                className="w-full h-full object-contain"
+                className="w-full h-full object-cover rounded-full scale-105"
              />
           </div>
           
@@ -295,7 +299,19 @@ function LoginContent() {
           </form>
         )}
 
-        <div className="mt-8 pt-4 border-t border-emerald-800/80 flex items-center justify-center gap-2 text-[10px] text-emerald-200 font-bold uppercase tracking-wider text-center">
+        {/* Terms & Privacy Policy Disclosure */}
+        <p className="mt-4 text-[10px] text-center text-emerald-200/80 font-medium leading-relaxed">
+          By continuing, you agree to Royal Bengal's{' '}
+          <Link href="/privacy" className="text-amber-300 underline font-bold hover:text-amber-200">
+            Terms of Service
+          </Link>{' '}
+          &{' '}
+          <Link href="/privacy" className="text-amber-300 underline font-bold hover:text-amber-200">
+            Privacy Policy
+          </Link>.
+        </p>
+
+        <div className="mt-6 pt-4 border-t border-emerald-800/80 flex items-center justify-center gap-2 text-[10px] text-emerald-200 font-bold uppercase tracking-wider text-center">
           <ShieldCheck size={14} className="text-amber-400" /> 100% Secure & Confidential
         </div>
 
