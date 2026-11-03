@@ -64,6 +64,37 @@ export default function CartPage() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
 
+  // Helper to load Razorpay SDK dynamically
+  const loadRazorpaySDK = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (typeof window !== 'undefined' && (window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const scriptId = 'razorpay-checkout-js';
+      const existingScript = document.getElementById(scriptId);
+      if (existingScript) {
+        if ((window as any).Razorpay) {
+          resolve(true);
+        } else {
+          existingScript.addEventListener('load', () => resolve(true));
+        }
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  // Pre-load Razorpay SDK on Cart Page Mount
+  useEffect(() => {
+    loadRazorpaySDK();
+  }, []);
+
   // Dynamic Delivery Settings State
   const [deliverySettings, setDeliverySettings] = useState<any>(null);
 
@@ -306,8 +337,10 @@ export default function CartPage() {
         throw new Error("Invalid payment initialization response from server.");
       }
 
-      if (!(window as any).Razorpay) {
-        throw new Error('Razorpay payment gateway script not loaded. Please refresh.');
+      // Ensure Razorpay SDK is loaded
+      const isLoaded = await loadRazorpaySDK();
+      if (!isLoaded || !(window as any).Razorpay) {
+        throw new Error('Could not load Razorpay payment gateway. Please check internet connection and try again.');
       }
 
       const options = {
