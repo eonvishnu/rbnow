@@ -208,6 +208,29 @@ export default function AdminCouponsPage() {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1">Min Order Value (₹)</label>
+                      <input
+                        type="number"
+                        value={formData.minOrderValue}
+                        onChange={e => setFormData({...formData, minOrderValue: e.target.value})}
+                        placeholder="e.g. 299"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-semibold outline-none focus:border-[#005bd3]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1">Max Discount Cap (₹)</label>
+                      <input
+                        type="number"
+                        value={formData.maxDiscount}
+                        onChange={e => setFormData({...formData, maxDiscount: e.target.value})}
+                        placeholder="e.g. 150 (Optional)"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-semibold outline-none focus:border-[#005bd3]"
+                      />
+                    </div>
+                  </div>
+
                   <button
                     type="submit"
                     disabled={submitting}
@@ -239,6 +262,10 @@ export default function AdminCouponsPage() {
                       </div>
                       <div className="text-2xl font-semibold text-gray-900">
                         {coupon.type === 'fixed' ? `₹${coupon.value}` : `${coupon.value}%`} <span className="text-xs text-gray-400 font-medium ">OFF</span>
+                      </div>
+                      <div className="text-xs text-gray-500 font-medium space-y-0.5 pt-1 border-t border-gray-100">
+                        {coupon.minOrderValue > 0 && <p>Min Order Value: <strong className="text-gray-800">₹{coupon.minOrderValue}</strong></p>}
+                        {coupon.maxDiscount && <p>Max Discount Cap: <strong className="text-gray-800">₹{coupon.maxDiscount}</strong></p>}
                       </div>
                     </div>
                   ))}
