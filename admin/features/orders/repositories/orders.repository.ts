@@ -5,7 +5,7 @@ import type { AdminOrderItem } from '../types/order';
 export async function listAdminOrders() {
   const { data, error } = await supabase
     .from('orders')
-    .select('*, order_items(*), order_status_history(*), order_item_changes(*)')
+    .select('*, order_items(*), order_status_history(*), order_item_changes(*), payments(*)')
     .order('created_at', { ascending: false });
   if (error) throw error;
 
@@ -14,14 +14,19 @@ export async function listAdminOrders() {
     orderId: `RB-${order.order_number || order.id.slice(0, 6).toUpperCase()}`,
     createdAt: order.created_at,
     status: order.status || 'pending',
+    fulfillmentException: order.fulfillment_exception || null,
     orderSource: order.order_source || 'online_web',
     total: order.total,
     subtotal: order.subtotal,
     deliveryFee: order.delivery_fee || 0,
     discount: order.discount || 0,
     shipping: order.delivery_address,
-    userPhone: order.user_phone,
-    userName: order.user_name,
+    userPhone: order.customer_phone || order.user_phone || '',
+    userName: order.customer_name || order.user_name || 'Customer',
+    paymentStatus: order.payments?.status || 'captured',
+    paymentMethod: 'Razorpay',
+    razorpayOrderId: order.payments?.razorpay_order_id || 'N/A',
+    razorpayPaymentId: order.payments?.razorpay_payment_id || 'N/A',
     itemChanges: order.order_item_changes || [],
     items: (order.order_items || []).map((item) => ({
       id: item.id,
