@@ -4,9 +4,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { splitOrderItem } from '@/lib/fulfillment';
+import { OrdersMapView } from '@/components/OrdersMapView';
+import { SingleOrderMiniMap } from '@/components/SingleOrderMiniMap';
 import {
   Printer, MapPin, Search, X, User, Phone, Box, Plus, RefreshCw, History, MessageSquare, PhoneCall,
-  Store, Globe, Loader2, ChevronDown, Download, Copy, Check, CalendarClock,
+  Store, Globe, Loader2, ChevronDown, Download, Copy, Check, CalendarClock, List, Map as MapIcon,
 } from 'lucide-react';
 import {
   changeAdminOrderStatus,
@@ -119,6 +121,7 @@ export default function AdminOrders() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [tab, setTab] = useState('all');
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [range, setRange] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -608,6 +611,30 @@ export default function AdminOrders() {
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-[#1a1a1a]">Orders</h1>
         <div className="flex items-center gap-2">
+          {/* VIEW MODE TOGGLE BUTTONS */}
+          <div className="bg-white p-1 rounded-lg shadow-[0_0_0_1px_rgba(0,0,0,0.12)] flex items-center">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`min-h-8 px-2.5 sm:px-3 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-[#303030] text-white'
+                  : 'text-[#616161] hover:text-[#1a1a1a] hover:bg-gray-100'
+              }`}
+            >
+              <List size={14} /> <span className="hidden sm:inline">List View</span>
+            </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`min-h-8 px-2.5 sm:px-3 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                viewMode === 'map'
+                  ? 'bg-[#004d3b] text-white'
+                  : 'text-[#616161] hover:text-[#1a1a1a] hover:bg-gray-100'
+              }`}
+            >
+              <MapIcon size={14} /> <span className="hidden sm:inline">Map View</span>
+            </button>
+          </div>
+
           <button onClick={() => load(true)} disabled={refreshing} className="min-h-10 sm:min-h-8 px-3 inline-flex items-center gap-1.5 rounded-lg bg-white text-sm sm:text-[13px] font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-60" aria-label="Refresh orders">
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} /> <span className="hidden sm:inline">Refresh</span>
           </button>
@@ -628,8 +655,12 @@ export default function AdminOrders() {
         <Kpi label="Delivered" value={String(stats.delivered)} loading={loading} />
       </Card>
 
-      {/* LIST */}
-      <Card className="overflow-hidden">
+      {/* MAP VIEW OR LIST VIEW */}
+      {viewMode === 'map' ? (
+        <OrdersMapView orders={filtered} onSelectOrder={(id: string) => setSelectedOrderId(id)} />
+      ) : (
+        /* LIST VIEW CARD */
+        <Card className="overflow-hidden">
         <div className="px-3 sm:px-4 pt-3 space-y-3">
           <div className="flex gap-1 overflow-x-auto no-scrollbar">
             {[{ value: 'all', label: 'All' }, ...STATUSES].map((t) => (
@@ -787,6 +818,7 @@ export default function AdminOrders() {
           </div>
         )}
       </Card>
+      )}
 
       {/* ORDER DRAWER */}
       {selectedOrder && (
@@ -832,7 +864,7 @@ export default function AdminOrders() {
                 <div className="pt-3 border-t border-gray-100 flex gap-2 items-start">
                   <MapPin size={15} className="text-[#616161] shrink-0 mt-0.5" />
                   <p className="flex-1 text-[#303030] leading-relaxed">
-                    {selectedOrder.shipping?.houseNumber ? `${selectedOrder.shipping.houseNumber}, ` : ''}
+                    {selectedOrder.shipping?.houseNumber || (selectedOrder.shipping as any)?.houseNo ? `${selectedOrder.shipping?.houseNumber || (selectedOrder.shipping as any)?.houseNo}, ` : ''}
                     {selectedOrder.shipping?.address || 'No address on file'}
                     <br />
                     {[selectedOrder.shipping?.city, selectedOrder.shipping?.pincode].filter(Boolean).join(' - ')}
@@ -841,6 +873,14 @@ export default function AdminOrders() {
                     {copied ? <Check size={15} className="text-[#014b40]" /> : <Copy size={15} />}
                   </button>
                 </div>
+
+                {/* Single Order Embedded Mini Map */}
+                <SingleOrderMiniMap
+                  lat={(selectedOrder.shipping as any)?.lat ?? (selectedOrder.shipping as any)?.latitude}
+                  lng={(selectedOrder.shipping as any)?.lng ?? (selectedOrder.shipping as any)?.longitude}
+                  address={selectedOrder.shipping?.address}
+                  orderId={selectedOrder.orderId}
+                />
               </Card>
 
               {/* items */}
