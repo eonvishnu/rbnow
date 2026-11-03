@@ -48,14 +48,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="overflow-x-hidden antialiased">
-      <body className={`${geistSans.variable} ${geistMono.variable} bg-white text-gray-900 overflow-x-hidden max-w-[100vw] min-h-screen flex flex-col`}>
+    <html lang="en" className="overflow-x-clip antialiased">
+      <body className={`${geistSans.variable} ${geistMono.variable} bg-white text-gray-900 overflow-x-clip max-w-[100vw] min-h-screen flex flex-col`}>
         <AuthProvider>
           <LocationProvider>
             <CartProvider>
               <StoreGuard>
                 <PWAWrapper />
-                <div className="flex flex-col min-h-screen w-full max-w-[100vw] overflow-x-hidden">
+                <div className="flex flex-col min-h-screen w-full max-w-[100vw] overflow-x-clip">
                   <main className="flex-grow w-full pb-16 md:pb-0">
                     {children}
                   </main>

@@ -201,7 +201,7 @@ export default function Home() {
   }, [activeCategory, activeSubCategory, activeSubSubCategory]);
 
   return (
-    <main className="min-h-screen bg-gray-50 pb-32 transition-colors duration-300 w-full max-w-[100vw] overflow-x-hidden">
+    <main className="min-h-screen bg-gray-50 pb-32 transition-colors duration-300 w-full max-w-[100vw] overflow-x-clip">
       
       <Header 
         activeCategory={activeCategory} 
@@ -209,44 +209,42 @@ export default function Home() {
              setActiveCategory(name); 
              setActiveCategoryTitle(name);
         }}
-        bottomSlot={
-          currentSubCategories.length > 0 ? (
-            <div className="flex flex-col gap-3 pb-2 animate-in fade-in slide-in-from-top-2 duration-300">
+      />
 
-              <div className="flex gap-2 overflow-x-auto no-scrollbar px-1">
+      {/* STICKY SUBCATEGORIES FILTER BAR MATCHING SCREENSHOT */}
+      {currentSubCategories.length > 0 && (
+        <div className="sticky top-0 z-30 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
+          <div className="max-w-7xl mx-auto flex gap-2.5 overflow-x-auto no-scrollbar items-center">
+            <button
+              onClick={() => setActiveSubCategory("all")}
+              className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                activeSubCategory === "all"
+                  ? "bg-[#ffc400] text-[#00382b] shadow-sm"
+                  : "bg-[#004d3b] text-emerald-100 border border-[#005a45] hover:bg-[#005a45]"
+              }`}
+            >
+              ALL
+            </button>
+            {currentSubCategories.map((sub) => {
+              const name = typeof sub === 'string' ? sub : sub.name;
+              const isActive = activeSubCategory.toLowerCase() === name.toLowerCase();
+              return (
                 <button
-                  onClick={() => setActiveSubCategory("all")}
-                  className={`px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-[10px] sm:text-[11px] font-bold uppercase tracking-wider border transition-all whitespace-nowrap ${
-                    activeSubCategory === "all"
-                      ? "bg-emerald-700 text-amber-300 border-amber-400 shadow-md shadow-emerald-200 transform scale-105 font-black"
-                      : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:border-gray-300"
+                  key={name}
+                  onClick={() => setActiveSubCategory(name)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                    isActive
+                      ? "bg-[#ffc400] text-[#00382b] shadow-sm"
+                      : "bg-[#004d3b] text-emerald-100 border border-[#005a45] hover:bg-[#005a45]"
                   }`}
                 >
-                  All
+                  {name}
                 </button>
-                {currentSubCategories.map((sub) => {
-                  const name = typeof sub === 'string' ? sub : sub.name;
-                  const isActive = activeSubCategory.toLowerCase() === name.toLowerCase();
-                  return (
-                    <button
-                      key={name}
-                      onClick={() => setActiveSubCategory(name)}
-                      className={`px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-[10px] sm:text-[11px] font-bold uppercase tracking-wider border transition-all whitespace-nowrap ${
-                        isActive
-                          ? "bg-emerald-700 text-amber-300 border-amber-400 shadow-md shadow-emerald-200 transform scale-105 font-black"
-                          : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:border-gray-300"
-                      }`}
-                    >
-                      {name}
-                    </button>
-                  );
-                })}
-              </div>
-
-            </div>
-          ) : null
-        }
-      />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* PRODUCTS CONTAINER */}
       <div className="max-w-7xl mx-auto px-3.5 sm:px-6 pt-5 space-y-6">
