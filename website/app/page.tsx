@@ -223,7 +223,7 @@ export default function Home() {
 
       {/* STICKY SUBCATEGORIES FILTER BAR MATCHING SCREENSHOT */}
       {currentSubCategories.length > 0 && (
-        <div className="sticky top-[86px] z-20 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
+        <div className="sticky top-[96px] z-20 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
           <div className="max-w-7xl mx-auto flex gap-2.5 overflow-x-auto no-scrollbar items-center">
             <button
               onClick={() => setActiveSubCategory("all")}
