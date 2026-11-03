@@ -300,7 +300,7 @@ function LoginContent() {
         )}
 
         {/* Terms & Privacy Policy Disclosure */}
-        <p className="mt-4 text-[10px] text-center text-emerald-200/80 font-medium leading-relaxed">
+        <p className="mt-6 pt-4 border-t border-emerald-800/80 text-[10px] text-center text-emerald-200/80 font-medium leading-relaxed">
           By continuing, you agree to Royal Bengal's{' '}
           <Link href="/privacy" className="text-amber-300 underline font-bold hover:text-amber-200">
             Terms of Service
@@ -310,10 +310,6 @@ function LoginContent() {
             Privacy Policy
           </Link>.
         </p>
-
-        <div className="mt-6 pt-4 border-t border-emerald-800/80 flex items-center justify-center gap-2 text-[10px] text-emerald-200 font-bold uppercase tracking-wider text-center">
-          <ShieldCheck size={14} className="text-amber-400" /> 100% Secure & Confidential
-        </div>
 
       </div>
     </main>
