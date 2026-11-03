@@ -64,45 +64,89 @@ export default function CartPage() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
 
-  // Fetch Dynamic Store Settings from Supabase
+  // Dynamic Delivery Settings State
+  const [deliverySettings, setDeliverySettings] = useState<any>(null);
+
+  // Fetch Dynamic Delivery Settings from Supabase
   useEffect(() => {
-    const fetchSettings = async () => {
+    const fetchDeliverySettings = async () => {
       try {
-        const { data } = await supabase.from('store_settings').select('*').eq('id', 'default').single();
+        const { data } = await supabase
+          .from('delivery_settings')
+          .select('*')
+          .eq('id', 'default')
+          .maybeSingle();
+
         if (data) {
-          setStoreSettings({
-            freeDeliveryThreshold: Number(data.free_delivery_threshold || 700),
-            minOrderAmount: Number(data.min_order_amount || 0),
-          });
+          setDeliverySettings(data);
         }
       } catch (err) {
-        console.error('Error loading store settings:', err);
+        console.error('Error loading delivery settings:', err);
       }
     };
-    fetchSettings();
+    fetchDeliverySettings();
   }, []);
 
-  // Dynamically load Razorpay SDK Script
-  useEffect(() => {
-    const scriptId = 'razorpay-checkout-js';
-    if (!document.getElementById(scriptId)) {
-      const script = document.createElement('script');
-      script.id = scriptId;
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.async = true;
-      document.body.appendChild(script);
+  // Calculate Distance in KM from Dark Store Hub
+  const distanceKm = useMemo(() => {
+    if (!location.lat || !location.lng) return 0;
+    const storeLat = 17.351452;
+    const storeLng = 78.391039;
+    const R = 6371;
+    const dLat = (location.lat - storeLat) * (Math.PI / 180);
+    const dLon = (location.lng - storeLng) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(storeLat * (Math.PI / 180)) * Math.cos(location.lat * (Math.PI / 180)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }, [location.lat, location.lng]);
+
+  // Dynamically Compute Delivery Fee & Free Threshold from delivery_settings
+  const { deliveryFee, freeThreshold } = useMemo(() => {
+    if (totalAmount === 0 || !deliverySettings) {
+      return { deliveryFee: 0, freeThreshold: 499 };
     }
-  }, []);
 
-  const freeThreshold = storeSettings.freeDeliveryThreshold;
+    if (!deliverySettings.is_free_delivery_enabled || deliverySettings.delivery_mode === 'flat_fee') {
+      const flatFee = Number(deliverySettings.flat_delivery_fee || 65);
+      return { deliveryFee: flatFee, freeThreshold: Infinity };
+    }
 
-  const deliveryFee = useMemo(() => {
-    if (totalAmount === 0) return 0;
-    if (totalAmount >= freeThreshold) return 0;
-    if (totalAmount >= freeThreshold - 100) return 25;
-    if (totalAmount >= freeThreshold - 200) return 45;
-    return 65;
-  }, [totalAmount, freeThreshold]);
+    if (deliverySettings.delivery_mode === 'preset_rules') {
+      const radius = Number(deliverySettings.preset_zone_radius_km || 5);
+      const isZone1 = distanceKm <= radius;
+
+      const targetSubtotal = isZone1
+        ? Number(deliverySettings.preset_zone1_subtotal || 299)
+        : Number(deliverySettings.preset_zone2_subtotal || 499);
+      const standardFee = isZone1
+        ? Number(deliverySettings.preset_zone1_fee || 30)
+        : Number(deliverySettings.preset_zone2_fee || 30);
+
+      const fee = totalAmount >= targetSubtotal ? 0 : standardFee;
+      return { deliveryFee: fee, freeThreshold: targetSubtotal };
+    }
+
+    // distance_tiered mode
+    const t1Max = Number(deliverySettings.tier1_max_km || 5);
+    const t2Max = Number(deliverySettings.tier2_max_km || 10);
+
+    let targetSubtotal = Number(deliverySettings.tier1_subtotal || 299);
+    let standardFee = Number(deliverySettings.tier1_fee || 30);
+
+    if (distanceKm > t1Max && distanceKm <= t2Max) {
+      targetSubtotal = Number(deliverySettings.tier2_subtotal || 500);
+      standardFee = Number(deliverySettings.tier2_fee || 30);
+    } else if (distanceKm > t2Max) {
+      targetSubtotal = Number(deliverySettings.tier3_subtotal || 699);
+      standardFee = Number(deliverySettings.tier3_fee || 30);
+    }
+
+    const fee = totalAmount >= targetSubtotal ? 0 : standardFee;
+    return { deliveryFee: fee, freeThreshold: targetSubtotal };
+  }, [totalAmount, deliverySettings, distanceKm]);
 
   const subtotalAfterCoupon = Math.max(0, totalAmount - couponDiscount);
   const grandTotal = subtotalAfterCoupon + deliveryFee;
@@ -153,7 +197,6 @@ export default function CartPage() {
     });
   }, [groupedCart, stockData]);
 
-  // Handle Address Change Click (Prompt Login if Unauthenticated)
   const handleAddressChangeClick = () => {
     if (!user) {
       router.push(`/login?redirect=${encodeURIComponent('/cart')}`);
@@ -162,7 +205,6 @@ export default function CartPage() {
     }
   };
 
-  // Handle Promo Coupon Validation
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!couponCode.trim()) return;
@@ -193,7 +235,6 @@ export default function CartPage() {
         return;
       }
 
-      // Calculate Coupon Discount
       let calcDiscount = 0;
       if (coupon.discount_type === 'percentage') {
         calcDiscount = Math.floor((totalAmount * Number(coupon.discount_value)) / 100);
@@ -215,7 +256,6 @@ export default function CartPage() {
     }
   };
 
-  // 1-TAP EXPRESS CHECKOUT & RAZORPAY PAYMENT
   const handleExpressCheckout = async () => {
     if (authLoading || hasStockIssues) return;
     setCheckoutError('');
@@ -237,7 +277,7 @@ export default function CartPage() {
       }));
 
       const deliveryDetails = {
-        name: userData?.display_name || user.email || 'Customer',
+        name: userData?.display_name || 'Customer',
         phone: (userData?.phone_number || '').trim() || '7893274753',
         lat: location.lat,
         lng: location.lng,
@@ -248,7 +288,6 @@ export default function CartPage() {
         address: location.address || `${location.area || 'Madhapur'}, ${location.city || 'Hyderabad'}`,
       };
 
-      // 1. Invoke Supabase Edge Function: place-order
       const { data, error: edgeError } = await supabase.functions.invoke('place-order', {
         body: {
           items: payloadItems,
@@ -267,7 +306,6 @@ export default function CartPage() {
         throw new Error("Invalid payment initialization response from server.");
       }
 
-      // 2. Launch Razorpay Payment Gateway
       if (!(window as any).Razorpay) {
         throw new Error('Razorpay payment gateway script not loaded. Please refresh.');
       }
@@ -281,13 +319,12 @@ export default function CartPage() {
         order_id: data.razorpayOrderId,
         prefill: {
           name: deliveryDetails.name,
-          email: user.email,
+          email: (user.email && !user.email.endsWith('@royalbengal.internal')) ? user.email : '',
           contact: deliveryDetails.phone,
         },
-        theme: { color: '#022c22' },
+        theme: { color: '#004D3B' },
         handler: async (response: any) => {
           try {
-            // Verify Payment Signature via Edge Function
             const { data: vData, error: vErr } = await supabase.functions.invoke('verify-payment', {
               body: {
                 checkoutId: data.checkoutId,
@@ -322,38 +359,38 @@ export default function CartPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#022c22] text-white pb-28 selection:bg-amber-400 selection:text-emerald-950 w-full max-w-[100vw] overflow-x-hidden">
+    <main className="min-h-screen bg-[#F5F7F6] text-[#17211D] pb-28 w-full max-w-[100vw] overflow-x-hidden selection:bg-[#FFC400] selection:text-[#004D3B]">
       
-      {/* Header Container */}
-      <div className="p-4 sm:p-6 border-b border-amber-400/30 flex items-center justify-between sticky top-0 bg-[#022c22]/95 backdrop-blur-md z-40">
-        <Link href="/" className="text-amber-300 font-bold text-xs uppercase tracking-widest flex items-center gap-2 hover:text-white transition-all">
-          <ArrowLeft size={16} /> Back
+      {/* Deep Emerald Header Bar (20% Brand Accent) */}
+      <div className="bg-[#004D3B] text-white p-4 sm:p-5 flex items-center justify-between sticky top-0 z-40 shadow-md">
+        <Link href="/" className="text-[#FFC400] font-bold text-xs uppercase tracking-widest flex items-center gap-2 hover:text-white transition-all">
+          <ArrowLeft size={16} /> Store
         </Link>
 
         <div className="flex items-center gap-2">
-          <Crown size={18} className="text-amber-400" />
-          <h1 className="text-xs sm:text-sm font-serif font-black uppercase tracking-[0.25em] text-amber-300">Royal Express Checkout</h1>
+          <Crown size={18} className="text-[#FFC400]" />
+          <h1 className="text-xs sm:text-sm font-serif font-black uppercase tracking-[0.2em] text-[#FFC400]">Express Checkout</h1>
         </div>
 
         <div className="w-16" />
       </div>
 
-      <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
 
-        {/* TOP ACTIVE DELIVERY ADDRESS CARD */}
-        <div className="p-4 sm:p-5 rounded-[28px] bg-emerald-900/80 border-2 border-amber-400/80 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl backdrop-blur-md">
+        {/* 1. DELIVERY ADDRESS CARD (White Card with Subtle Border) */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E3EAE6] text-[#17211D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-amber-400 text-emerald-950 flex items-center justify-center font-black shrink-0 shadow-md">
-              <MapPin size={22} />
+            <div className="w-10 h-10 rounded-xl bg-[#E5F5EF] text-[#006B50] flex items-center justify-center font-black shrink-0">
+              <MapPin size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[9px] font-black uppercase tracking-widest bg-amber-400 text-emerald-950 px-2.5 py-0.5 rounded-full">
+                <span className="text-[9px] font-black uppercase tracking-widest bg-[#E5F5EF] text-[#006B50] px-2.5 py-0.5 rounded-full border border-[#BCE2D3]">
                   {location.label || 'HOME'}
                 </span>
-                <span className="text-xs font-black uppercase text-amber-300">Delivering To</span>
+                <span className="text-xs font-black uppercase text-[#004D3B]">Delivering To</span>
               </div>
-              <p className="text-xs text-emerald-100 font-bold truncate max-w-[280px] sm:max-w-md mt-0.5">
+              <p className="text-xs text-[#17211D] font-bold truncate max-w-[280px] sm:max-w-md mt-0.5">
                 {location.address || `${location.area || 'Madhapur'}, ${location.city || 'Hyderabad'}`}
               </p>
             </div>
@@ -361,70 +398,69 @@ export default function CartPage() {
 
           <button
             onClick={handleAddressChangeClick}
-            className="bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black text-[10px] uppercase px-4 py-2.5 rounded-xl tracking-wider shadow-md transition-all active:scale-95 shrink-0 flex items-center gap-1.5"
+            className="bg-[#E5F5EF] hover:bg-[#D5EFE5] text-[#006B50] font-black text-[10px] uppercase px-3.5 py-2 rounded-xl border border-[#BCE2D3] tracking-wider transition-all shrink-0 flex items-center gap-1.5"
           >
-            <Map size={14} /> Change / Add Address
+            <Map size={14} /> Change Address
           </button>
         </div>
         
         {cart.length === 0 ? (
-          <div className="py-20 max-w-md mx-auto text-center border-2 border-amber-400/50 bg-emerald-900/60 rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-sm">
-            <div className="w-20 h-20 bg-amber-400 text-emerald-950 rounded-3xl mx-auto flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(212,175,55,0.3)]">
-              <ShoppingBag size={40} />
+          <div className="py-20 max-w-md mx-auto text-center bg-white border border-[#E3EAE6] rounded-3xl p-8 shadow-xs">
+            <div className="w-16 h-16 bg-[#E5F5EF] text-[#006B50] rounded-2xl mx-auto flex items-center justify-center mb-5">
+              <ShoppingBag size={32} />
             </div>
-            <h3 className="text-xl font-black uppercase tracking-tight mb-2 text-white">Your Royal Cart is Empty</h3>
-            <p className="text-emerald-200 text-xs font-medium uppercase tracking-widest mb-8 leading-relaxed">
-              Explore our fresh Padma river fish, <br/> gourmet mutton & artisanal Bengal delicacies.
+            <h3 className="text-lg font-black uppercase tracking-tight mb-2 text-[#17211D]">Your Cart is Empty</h3>
+            <p className="text-[#75817B] text-xs font-medium uppercase tracking-widest mb-6 leading-relaxed">
+              Explore fresh Padma river fish, <br/> gourmet mutton & artisanal Bengal delicacies.
             </p>
-            <Link href="/" className="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black px-8 py-4 rounded-2xl uppercase tracking-[0.2em] text-xs shadow-xl active:scale-95 transition-all">
+            <Link href="/" className="inline-flex items-center gap-2 bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] font-black px-7 py-3.5 rounded-xl uppercase tracking-widest text-xs shadow-sm transition-all">
               Explore Menu <ArrowRight size={16} />
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-7 items-start">
 
             {/* Left: Itemized Cart & Promo Coupon */}
             <section className="lg:col-span-7 space-y-4">
-              <div className="flex justify-between items-center mb-2">
-                <h2 className="text-xs font-black text-amber-300/80 uppercase tracking-[0.2em]">Selected Items ({Object.keys(groupedCart).length})</h2>
+              <div className="flex justify-between items-center mb-1">
+                <h2 className="text-xs font-black text-[#75817B] uppercase tracking-[0.15em]">Selected Items ({Object.keys(groupedCart).length})</h2>
               </div>
 
+              {/* 2. PRODUCT CARDS (Clean White Cards) */}
               {Object.values(groupedCart).map((item: any) => {
                 const cleanId = extractProductId(item.id);
                 const isOutOfStock = stockData[cleanId] === 0;
 
                 return (
-                  <div key={item.id} className={`relative p-4 rounded-[24px] border transition-all duration-300 flex items-center justify-between shadow-lg ${
-                    isOutOfStock ? 'bg-rose-950/80 border-rose-500' : 'bg-emerald-900/60 border-amber-400/40 hover:border-amber-400'
+                  <div key={item.id} className={`p-4 rounded-2xl border bg-white transition-all flex items-center justify-between shadow-xs ${
+                    isOutOfStock ? 'border-rose-300 bg-rose-50/30' : 'border-[#E3EAE6]'
                   }`}>
-                    <div className="flex items-center gap-3.5 sm:gap-4">
-                      <div className="relative shrink-0">
-                        <img
-                          src={item.img || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80'}
-                          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border border-amber-400/30 ${isOutOfStock ? 'grayscale opacity-50' : ''}`}
-                          alt={item.name}
-                        />
-                      </div>
+                    <div className="flex items-center gap-3.5">
+                      <img
+                        src={item.img || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80'}
+                        className={`w-14 h-14 rounded-xl object-cover border border-[#E3EAE6] ${isOutOfStock ? 'grayscale opacity-50' : ''}`}
+                        alt={item.name}
+                      />
                       <div>
-                        <p className={`text-xs sm:text-sm font-black ${isOutOfStock ? 'text-gray-400' : 'text-white'}`}>{item.name}</p>
-                        <p className="text-[11px] text-amber-300 font-bold uppercase mt-0.5">₹{item.price} / {item.unit}</p>
-                        {isOutOfStock && <p className="text-[10px] text-rose-400 font-black uppercase mt-1 animate-pulse">⚠️ Out of Stock</p>}
+                        <p className={`text-xs sm:text-sm font-black ${isOutOfStock ? 'text-gray-400' : 'text-[#17211D]'}`}>{item.name}</p>
+                        <p className="text-[11px] text-[#006B50] font-bold uppercase mt-0.5">₹{item.price} / {item.unit}</p>
+                        {isOutOfStock && <p className="text-[10px] text-rose-600 font-black uppercase mt-1">⚠️ Out of Stock</p>}
                       </div>
                     </div>
 
-                    {/* Quantity Controls */}
+                    {/* Quantity Controls (Selected Controls: Deep Emerald) */}
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center bg-emerald-950 text-amber-300 rounded-xl h-9 border border-amber-400/40 shadow-sm">
+                      <div className="flex items-center bg-[#006B50] text-white rounded-xl h-8 overflow-hidden shadow-xs">
                         <button
                           onClick={() => removeFromCart(item.id)}
-                          className="px-3 h-full font-black text-lg hover:bg-white/10 transition-colors"
+                          className="px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors"
                         >
                           −
                         </button>
-                        <span className="text-xs font-black w-5 text-center text-white">{item.qty}</span>
+                        <span className="text-xs font-black w-5 text-center">{item.qty}</span>
                         <button
                           onClick={() => addToCart(item, 99)}
-                          className="px-3 h-full font-black text-lg hover:bg-white/10 transition-colors"
+                          className="px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors"
                         >
                           +
                         </button>
@@ -434,9 +470,9 @@ export default function CartPage() {
                         onClick={() => {
                           for(let i = 0; i < item.qty; i++) removeFromCart(item.id);
                         }}
-                        className="p-2 text-emerald-300 hover:text-rose-400 transition-colors"
+                        className="p-1.5 text-[#75817B] hover:text-rose-600 transition-colors"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={15} />
                       </button>
                     </div>
 
@@ -444,31 +480,31 @@ export default function CartPage() {
                 );
               })}
 
-              {/* PROMO COUPON ACCORDION BOX */}
-              <div className="bg-emerald-900/60 p-5 rounded-[24px] border border-amber-400/40 space-y-3">
-                <div className="flex items-center gap-2 text-amber-300 text-xs font-black uppercase tracking-wider">
-                  <Tag size={16} /> Have a Promo Code?
+              {/* 3. COUPON SECTION (Clean White Card) */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E3EAE6] space-y-2.5 shadow-xs">
+                <div className="flex items-center gap-2 text-[#004D3B] text-xs font-black uppercase tracking-wider">
+                  <Tag size={15} /> Promo Code
                 </div>
 
                 <form onSubmit={handleApplyCoupon} className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Enter coupon (e.g. WELCOME10)"
+                    placeholder="Enter code (e.g. WELCOME10)"
                     value={couponCode}
                     onChange={e => setCouponCode(e.target.value.toUpperCase())}
-                    className="flex-1 bg-emerald-950 border border-amber-400/40 rounded-xl px-4 py-2.5 text-xs font-black uppercase text-amber-300 outline-none placeholder:text-gray-500"
+                    className="flex-1 bg-[#F5F7F6] border border-[#E3EAE6] focus:border-[#006B50] rounded-xl px-3.5 py-2.5 text-xs font-bold uppercase text-[#17211D] outline-none placeholder:text-[#75817B]"
                   />
                   <button
                     type="submit"
                     disabled={validatingCoupon}
-                    className="bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all shrink-0 disabled:opacity-50"
+                    className="bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] font-black px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-xs transition-all shrink-0 disabled:opacity-50"
                   >
                     {validatingCoupon ? <Loader2 size={14} className="animate-spin" /> : "Apply"}
                   </button>
                 </form>
 
                 {couponMsg && (
-                  <p className={`text-[11px] font-bold ${appliedCoupon ? 'text-amber-300' : 'text-rose-400'}`}>
+                  <p className={`text-[11px] font-bold ${appliedCoupon ? 'text-[#006B50]' : 'text-rose-600'}`}>
                     {couponMsg}
                   </p>
                 )}
@@ -476,92 +512,93 @@ export default function CartPage() {
 
             </section>
 
-            {/* Right: Payment Method & Bill Summary Section */}
-            <section className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
+            {/* Right: Payment Method & Bill Summary */}
+            <section className="lg:col-span-5 lg:sticky lg:top-20 space-y-4">
 
               {/* PAYMENT METHOD BADGE */}
-              <div className="bg-emerald-900/80 p-4 rounded-[28px] border-2 border-amber-400/80 flex items-center justify-between">
+              <div className="bg-white p-4 rounded-2xl border border-[#E3EAE6] flex items-center justify-between shadow-xs">
                 <div className="flex items-center gap-2.5">
-                  <CreditCard size={18} className="text-amber-400" />
+                  <CreditCard size={18} className="text-[#006B50]" />
                   <div>
-                    <span className="text-xs font-black text-amber-300 uppercase block">Razorpay Online Payment</span>
-                    <span className="text-[9px] font-bold text-emerald-200">GPay, PhonePe, Cards, NetBanking</span>
+                    <span className="text-xs font-black text-[#17211D] uppercase block">Razorpay Online Payment</span>
+                    <span className="text-[10px] font-bold text-[#75817B]">UPI, Cards, NetBanking</span>
                   </div>
                 </div>
-                <span className="text-[9px] font-black uppercase bg-amber-400 text-emerald-950 px-2.5 py-1 rounded-full shadow-xs">
+                <span className="text-[9px] font-black uppercase bg-[#E5F5EF] text-[#006B50] px-2.5 py-1 rounded-full border border-[#BCE2D3]">
                   SECURE
                 </span>
               </div>
 
-              {/* BILL SUMMARY BOX */}
-              <div className="bg-gradient-to-br from-emerald-900 via-emerald-950 to-emerald-900 p-6 sm:p-8 rounded-[32px] border-2 border-amber-400/80 space-y-5 shadow-2xl relative overflow-hidden">
+              {/* BILL SUMMARY BOX (Clean White Card with #004D3B Header & #FFC400 CTA) */}
+              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-[#E3EAE6] space-y-4 shadow-sm relative overflow-hidden">
 
-                <div className="flex items-center justify-between border-b border-emerald-800 pb-3">
-                  <h2 className="text-xs font-black text-amber-300 uppercase tracking-[0.2em] flex items-center gap-2">
-                    <Sparkles size={14} /> Bill Summary
+                <div className="flex items-center justify-between border-b border-[#E3EAE6] pb-3">
+                  <h2 className="text-xs font-black text-[#004D3B] uppercase tracking-[0.15em] flex items-center gap-2">
+                    <Sparkles size={14} className="text-[#FFC400]" /> Bill Summary
                   </h2>
-                  <span className="text-[10px] font-black uppercase bg-amber-400 text-emerald-950 px-2.5 py-0.5 rounded-full">
-                    Gourmet Delivery
+                  <span className="text-[9px] font-black uppercase bg-[#E5F5EF] text-[#006B50] px-2.5 py-0.5 rounded-full border border-[#BCE2D3]">
+                    Express Delivery
                   </span>
                 </div>
 
-                <div className="space-y-3 text-xs">
-                  <div className="flex justify-between font-bold text-emerald-200 uppercase tracking-wider">
+                <div className="space-y-2.5 text-xs">
+                  <div className="flex justify-between font-bold text-[#75817B] uppercase tracking-wider">
                     <span>Items Subtotal</span>
-                    <span className="text-white font-black text-sm">₹{totalAmount}</span>
+                    <span className="text-[#17211D] font-black text-sm">₹{totalAmount}</span>
                   </div>
 
                   {couponDiscount > 0 && (
-                    <div className="flex justify-between font-bold text-amber-300 uppercase tracking-wider">
+                    <div className="flex justify-between font-bold text-[#006B50] uppercase tracking-wider">
                       <span>Promo Discount</span>
-                      <span className="font-black text-amber-300">- ₹{couponDiscount}</span>
+                      <span className="font-black text-[#006B50]">- ₹{couponDiscount}</span>
                     </div>
                   )}
 
                   <div className="flex justify-between font-bold uppercase tracking-wider">
-                    <span className="text-emerald-200">Express Delivery Fee</span>
-                    <span className={deliveryFee === 0 ? "text-amber-300 font-black" : "text-white font-black"}>
+                    <span className="text-[#75817B]">Delivery Fee</span>
+                    <span className={deliveryFee === 0 ? "text-[#006B50] font-black" : "text-[#17211D] font-black"}>
                       {deliveryFee === 0 ? "FREE" : `₹${deliveryFee}`}
                     </span>
                   </div>
 
                   {totalAmount > 0 && totalAmount < freeThreshold && (
                     <div className="pt-1">
-                       <span className="text-[10px] font-extrabold text-amber-300 bg-emerald-900/90 px-3 py-1.5 rounded-xl border border-amber-400/30 block text-center">
+                       <span className="text-[10px] font-bold text-[#006B50] bg-[#E5F5EF] px-3 py-1.5 rounded-xl border border-[#BCE2D3] block text-center">
                          Add ₹{freeThreshold - totalAmount} more for FREE Express Delivery
                        </span>
                     </div>
                   )}
 
-                  <div className="h-px bg-emerald-800/80 w-full my-3" />
+                  <div className="h-px bg-[#E3EAE6] w-full my-2.5" />
 
-                  <div className="flex justify-between items-center pt-1">
-                    <span className="text-xs font-black text-amber-300 uppercase tracking-[0.2em]">Grand Total</span>
-                    <span className="text-2xl sm:text-3xl font-black text-amber-400 tracking-tight">₹{grandTotal}</span>
+                  <div className="flex justify-between items-center pt-0.5">
+                    <span className="text-xs font-black text-[#004D3B] uppercase tracking-widest">Grand Total</span>
+                    <span className="text-2xl font-black text-[#004D3B] tracking-tight">₹{grandTotal}</span>
                   </div>
                 </div>
 
                 {checkoutError && (
-                  <div className="p-3.5 rounded-2xl bg-rose-950/80 border border-rose-500 text-rose-300 text-xs font-bold flex items-center gap-2">
-                    <AlertCircle size={16} className="shrink-0" />
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle size={15} className="shrink-0" />
                     <span>{checkoutError}</span>
                   </div>
                 )}
 
+                {/* PRIMARY CTA BUTTON: #FFC400 GOLD */}
                 <button
                   onClick={handleExpressCheckout}
                   disabled={hasStockIssues || checkingStock || isPlacingOrder}
-                  className={`w-full text-center font-black py-5 rounded-2xl shadow-xl uppercase tracking-[0.2em] text-xs transition-all duration-300 flex items-center justify-center gap-2 active:scale-95 ${
+                  className={`w-full text-center font-black py-4 rounded-xl uppercase tracking-[0.15em] text-xs transition-all flex items-center justify-center gap-2 active:scale-95 ${
                     hasStockIssues || checkingStock || isPlacingOrder
-                    ? 'bg-emerald-950/60 text-gray-500 border border-emerald-800 cursor-not-allowed shadow-none'
-                    : 'bg-amber-400 hover:bg-amber-300 text-emerald-950 border border-amber-300 shadow-amber-400/20'
+                    ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed shadow-none'
+                    : 'bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] shadow-xs'
                   }`}
                 >
-                  {isPlacingOrder ? <Loader2 size={16} className="animate-spin" /> : <>⚡ Place Order & Pay <ArrowRight size={16} /></>}
+                  {isPlacingOrder ? <Loader2 size={16} className="animate-spin" /> : <>Place Order & Pay <ArrowRight size={16} /></>}
                 </button>
 
-                <div className="p-3 rounded-2xl bg-emerald-900/60 border border-emerald-800 flex items-center gap-2.5 text-[10px] text-emerald-200 font-bold">
-                  <ShieldCheck size={16} className="text-amber-400 shrink-0" />
+                <div className="p-3 rounded-xl bg-[#F5F7F6] border border-[#E3EAE6] flex items-center gap-2 text-[10px] text-[#75817B] font-bold">
+                  <ShieldCheck size={15} className="text-[#006B50] shrink-0" />
                   <span>Insulated temperature packaging on all fresh catches.</span>
                 </div>
 

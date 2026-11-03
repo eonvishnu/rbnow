@@ -138,9 +138,11 @@ export default function AccountPage() {
                 )}
               </div>
 
-              <p className="text-xs text-emerald-200 font-medium truncate mt-0.5 flex items-center gap-1.5">
-                <Mail size={12} className="text-amber-400 shrink-0" /> {user.email}
-              </p>
+              {user.email && !user.email.endsWith('@royalbengal.internal') && (
+                <p className="text-xs text-emerald-200 font-medium truncate mt-0.5 flex items-center gap-1.5">
+                  <Mail size={12} className="text-amber-400 shrink-0" /> {user.email}
+                </p>
+              )}
 
               {userData?.phone_number && (
                 <p className="text-xs text-emerald-200 font-medium truncate mt-1 flex items-center gap-1.5">
