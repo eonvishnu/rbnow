@@ -191,7 +191,7 @@ export default function OrdersPage() {
         <div className="flex border-b border-gray-200 text-xs font-black tracking-wider uppercase">
           <button
             onClick={() => setActiveTab('active')}
-            className={`pb-3 px-4 relative transition-colors ${
+            className={`flex-1 text-center pb-3 px-2 relative transition-colors ${
               activeTab === 'active' ? 'text-[#004d3b]' : 'text-gray-400 hover:text-gray-600'
             }`}
           >
@@ -203,7 +203,7 @@ export default function OrdersPage() {
 
           <button
             onClick={() => setActiveTab('past')}
-            className={`pb-3 px-4 relative transition-colors ${
+            className={`flex-1 text-center pb-3 px-2 relative transition-colors ${
               activeTab === 'past' ? 'text-[#004d3b]' : 'text-gray-400 hover:text-gray-600'
             }`}
           >
