@@ -381,24 +381,115 @@ export default function AdminOrders() {
   };
 
   const printOrder = (o: AdminOrder) => {
-    const w = window.open('', '_blank', 'width=800,height=900');
+    const w = window.open('', '_blank', 'width=800,height=950');
     if (!w) return flash('error', 'Allow pop-ups to print.');
-    const itemsSub = o.items.reduce((s, i) => s + (Number(i.subtotal) || 0), 0);
-    const extra = Number(o.total) - itemsSub;
-    w.document.write(`<!doctype html><html><head><title>Order #${esc(o.orderId)}</title>
-      <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#303030;padding:32px;max-width:720px;margin:auto}
-      h1{font-size:20px;margin:0}small,.muted{color:#616161}table{width:100%;border-collapse:collapse;margin-top:16px}
-      th,td{text-align:left;padding:8px 0;border-bottom:1px solid #e3e3e3;font-size:13px}th{color:#616161;font-weight:500}
-      td.r,th.r{text-align:right}.tot td{font-weight:600;border-bottom:0}.box{margin-top:16px;font-size:13px;line-height:1.5}</style></head><body>
-      <h1>Royal Bengal — Order #${esc(o.orderId)}</h1>
-      <small>${esc(fmtDate(o.createdAt))} · ${esc(sourceLabel(String(o.orderSource)))} · ${esc(pretty(o.status))}${orderExtras[o.id]?.delivery_date ? ` · Delivery ${esc(fmtDay(orderExtras[o.id].delivery_date))}` : ''}</small>
-      <div class="box"><strong>${esc(o.shipping?.name || o.userName || 'Customer')}</strong><br>${esc(o.shipping?.phone || o.userPhone || '')}<br>
-      <span class="muted">${esc([o.shipping?.houseNumber, o.shipping?.address].filter(Boolean).join(', '))}<br>${esc([o.shipping?.city, o.shipping?.pincode].filter(Boolean).join(' - '))}</span></div>
-      <table><thead><tr><th>Item</th><th>Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
-      ${o.items.map((i) => `<tr><td>${esc(i.name)} <span class="muted">(${esc(i.unit)})</span></td><td>${esc(i.qty)}</td><td class="r">₹${esc(i.price)}</td><td class="r">₹${esc(i.subtotal)}</td></tr>`).join('')}
-      ${Math.abs(extra) > 0.5 ? `<tr><td colspan="3" class="muted">Delivery &amp; other</td><td class="r">₹${esc(extra)}</td></tr>` : ''}
-      <tr class="tot"><td colspan="3">Total</td><td class="r">₹${esc(o.total)}</td></tr></tbody></table>
-      <script>window.onload=function(){window.print()}</script></body></html>`);
+
+    const subtotal = o.subtotal || o.items.reduce((s, i) => s + (Number(i.subtotal) || 0), 0);
+    const deliveryFee = Number(o.deliveryFee || 0);
+    const discount = Number(o.discount || 0);
+    const total = Number(o.total || 0);
+
+    w.document.write(`<!doctype html><html><head><title>Invoice & Packing Slip #${esc(o.orderId)}</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #17211d; padding: 32px; max-width: 760px; margin: auto; background: #fff; }
+        .header { text-align: center; border-bottom: 2px solid #004d3b; padding-bottom: 16px; margin-bottom: 20px; }
+        .brand { font-family: Georgia, serif; font-size: 24px; font-weight: 900; color: #004d3b; letter-spacing: 2px; text-transform: uppercase; }
+        .subtitle { font-size: 10px; font-weight: 700; color: #b48312; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px; }
+        .invoice-title { font-size: 13px; font-weight: 800; color: #303030; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; background: #f5f7f6; display: inline-block; padding: 4px 16px; border-radius: 8px; border: 1px solid #e3eae6; }
+
+        .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; font-size: 12px; }
+        .box { background: #fafafa; border: 1px solid #e3eae6; border-radius: 12px; padding: 14px; }
+        .box-title { font-size: 10px; font-weight: 800; color: #75817b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .box-text { color: #17211d; font-size: 12px; line-height: 1.5; font-weight: 600; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
+        th { background: #004d3b; color: #fff; font-weight: 700; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; padding: 10px 12px; text-align: left; }
+        td { padding: 10px 12px; border-bottom: 1px solid #e3eae6; font-size: 12px; color: #17211d; }
+        .r { text-align: right; }
+
+        .totals-table { width: 280px; margin-left: auto; margin-top: 16px; font-size: 12px; }
+        .totals-table td { padding: 4px 8px; border-bottom: none; }
+        .totals-table .grand-tot { font-size: 15px; font-weight: 900; color: #004d3b; border-top: 2px solid #004d3b; padding-top: 8px; }
+
+        .footer { margin-top: 36px; padding-top: 16px; border-top: 1px solid #e3eae6; text-align: center; font-size: 10px; color: #75817b; font-weight: 600; }
+        .badge { background: #cdfed4; color: #014b40; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+      </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="brand">ROYAL BENGAL</div>
+          <div class="subtitle">Pure • Fresh • Trusted | Gourmet Sourcing</div>
+          <div class="invoice-title">INVOICE & PACKING SLIP: #${esc(o.orderId)}</div>
+        </div>
+
+        <div class="meta-grid">
+          <div class="box">
+            <div class="box-title">Order Information</div>
+            <div class="box-text">
+              Date: ${esc(fmtDate(o.createdAt))}<br/>
+              Status: <span class="badge">${esc(pretty(o.status))}</span><br/>
+              Channel: ${esc(sourceLabel(String(o.orderSource)))}
+            </div>
+          </div>
+
+          <div class="box">
+            <div class="box-title">Delivery Customer</div>
+            <div class="box-text">
+              <strong>${esc(customerName(o))}</strong><br/>
+              Phone: ${esc(o.shipping?.phone || o.userPhone || '—')}<br/>
+              ${esc([o.shipping?.houseNumber || (o.shipping as any)?.houseNo, o.shipping?.address].filter(Boolean).join(', '))}<br/>
+              ${esc([o.shipping?.city, o.shipping?.pincode].filter(Boolean).join(' - '))}
+            </div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Item Description</th>
+              <th>Unit</th>
+              <th class="r">Qty</th>
+              <th class="r">Unit Price</th>
+              <th class="r">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${o.items.map((i) => `
+              <tr>
+                <td><strong>${esc(i.name)}</strong></td>
+                <td>${esc(i.unit)}</td>
+                <td class="r">${esc(i.qty)}</td>
+                <td class="r">₹${esc(i.price)}</td>
+                <td class="r"><strong>₹${esc(i.subtotal)}</strong></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <table class="totals-table">
+          <tr>
+            <td>Items Subtotal:</td>
+            <td class="r">₹${esc(subtotal)}</td>
+          </tr>
+          ${discount > 0 ? `<tr><td>Discount Saved:</td><td class="r">- ₹${esc(discount)}</td></tr>` : ''}
+          <tr>
+            <td>Delivery Fee:</td>
+            <td class="r">${deliveryFee === 0 ? 'FREE' : `₹${esc(deliveryFee)}`}</td>
+          </tr>
+          <tr class="grand-tot">
+            <td>TOTAL PAID:</td>
+            <td class="r">₹${esc(total)}</td>
+          </tr>
+        </table>
+
+        <div class="footer">
+          100% Temperature-Controlled Cold Chain Packaging Guarantee.<br/>
+          Thank you for choosing Royal Bengal! For support, call +91 98765 43210.
+        </div>
+
+        <script>window.onload = function() { window.print(); }</script>
+      </body>
+      </html>`);
     w.document.close();
   };
 
