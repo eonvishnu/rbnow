@@ -300,10 +300,6 @@ function LoginContent() {
         </div>
 
       </div>
-
-      <div className="mt-8 flex items-center gap-2 text-[10px] text-amber-400/80 font-black uppercase tracking-[0.3em]">
-        <Sparkles size={12} /> Royal Concierge Service
-      </div>
     </main>
   );
 }
