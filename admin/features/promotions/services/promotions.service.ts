@@ -24,13 +24,25 @@ export async function createPromoCoupon(input: {
   const result = createCouponSchema.safeParse(input);
   if (!result.success) throw new Error(result.error.issues[0]?.message || 'Coupon details are invalid.');
   const data = result.data;
+  let parsedExpiry: string | null = null;
+  if (data.expiryDate && String(data.expiryDate).trim() !== '') {
+    try {
+      const d = new Date(data.expiryDate);
+      if (!isNaN(d.getTime())) {
+        parsedExpiry = d.toISOString();
+      }
+    } catch {
+      parsedExpiry = null;
+    }
+  }
+
   await insertCoupon({
     code: data.code,
     type: data.type,
     value: data.value,
     minOrderValue: data.minOrderValue,
     maxDiscount: data.maxDiscount,
-    expiryDate: data.expiryDate ? new Date(data.expiryDate).toISOString() : null,
+    expiryDate: parsedExpiry,
   });
 }
 

@@ -40,15 +40,22 @@ export async function insertCoupon(input: {
   maxDiscount: number | null;
   expiryDate: string | null;
 }) {
-  const { error } = await supabase.from('coupons').insert({
+  const payload: Record<string, any> = {
     code: input.code,
     discount_type: input.type,
     discount_value: input.value,
-    min_order_amount: input.minOrderValue || 0,
-    max_discount_amount: input.maxDiscount || null,
+    min_order_amount: Number(input.minOrderValue || 0),
     is_active: true,
-    expiry_date: input.expiryDate && input.expiryDate.trim() !== '' ? input.expiryDate : null,
-  });
+  };
+
+  if (input.maxDiscount !== null && input.maxDiscount !== undefined && !isNaN(Number(input.maxDiscount))) {
+    payload.max_discount_amount = Number(input.maxDiscount);
+  }
+  if (input.expiryDate && typeof input.expiryDate === 'string' && input.expiryDate.trim() !== '') {
+    payload.expiry_date = input.expiryDate.trim();
+  }
+
+  const { error } = await supabase.from('coupons').insert(payload);
   if (error) throw error;
 }
 
