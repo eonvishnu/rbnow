@@ -4,8 +4,8 @@
   "short_name": "Royal Bengal",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#16a34a",
+  "background_color": "#022c22",
+  "theme_color": "#022c22",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
