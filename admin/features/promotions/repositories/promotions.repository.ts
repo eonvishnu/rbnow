@@ -44,10 +44,10 @@ export async function insertCoupon(input: {
     code: input.code,
     discount_type: input.type,
     discount_value: input.value,
-    min_order_amount: input.minOrderValue,
-    max_discount_amount: input.maxDiscount,
+    min_order_amount: input.minOrderValue || 0,
+    max_discount_amount: input.maxDiscount || null,
     is_active: true,
-    expiry_date: input.expiryDate,
+    expiry_date: input.expiryDate && input.expiryDate.trim() !== '' ? input.expiryDate : null,
   });
   if (error) throw error;
 }

@@ -5,10 +5,10 @@ const couponRowSchema = z.object({
   code: z.string(),
   discount_type: z.string(),
   discount_value: z.coerce.number(),
-  min_order_amount: z.coerce.number().nullable(),
-  max_discount_amount: z.coerce.number().nullable(),
+  min_order_amount: z.coerce.number().nullable().optional(),
+  max_discount_amount: z.coerce.number().nullable().optional(),
   is_active: z.boolean(),
-  expiry_date: z.string().nullable(),
+  expiry_date: z.string().nullable().optional(),
 });
 
 const discountRowSchema = z.object({
@@ -17,7 +17,7 @@ const discountRowSchema = z.object({
   discount_type: z.string(),
   discount_value: z.coerce.number(),
   is_active: z.boolean(),
-  discount_variants: z.array(z.unknown()).nullable(),
+  discount_variants: z.array(z.unknown()).nullable().optional(),
 });
 
 const productRowSchema = z.object({
@@ -34,9 +34,9 @@ export const createCouponSchema = z.object({
   code: z.string().trim().min(1, 'Code is required.').transform((value) => value.toUpperCase().replace(/\s/g, '')),
   type: z.enum(['fixed', 'percentage']),
   value: z.string().trim().min(1, 'Value is required.').refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, 'Enter a positive discount value.').transform(Number),
-  minOrderValue: z.string().trim().refine((value) => value === '' || (Number.isFinite(Number(value)) && Number(value) >= 0), 'Enter a valid minimum order amount.').transform((value) => Number(value) || 0),
-  maxDiscount: z.string().trim().refine((value) => value === '' || (Number.isFinite(Number(value)) && Number(value) >= 0), 'Enter a valid maximum discount.').transform((value) => value === '' ? null : Number(value)),
-  expiryDate: z.string(),
+  minOrderValue: z.string().trim().optional().nullable().transform((value) => value ? Number(value) || 0 : 0),
+  maxDiscount: z.string().trim().optional().nullable().transform((value) => value ? Number(value) || null : null),
+  expiryDate: z.string().optional().nullable().transform((val) => (val && val.trim() !== '' ? val : null)),
 });
 
 export const createVariantDiscountSchema = z.object({
