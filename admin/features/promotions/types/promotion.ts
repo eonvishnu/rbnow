@@ -5,6 +5,7 @@ export interface AdminCoupon {
   value: number;
   minOrderValue: number;
   maxDiscount?: number;
+  isFirstOrderOnly?: boolean;
   isActive: boolean;
   expiresAt?: string;
 }

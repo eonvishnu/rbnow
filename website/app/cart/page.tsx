@@ -266,6 +266,20 @@ export default function CartPage() {
         return;
       }
 
+      if (coupon.is_first_order_only && user) {
+        const { count: previousOrdersCount } = await supabase
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+
+        if (previousOrdersCount && previousOrdersCount > 0) {
+          setCouponMsg(`Promo code "${codeKey}" is valid for first-time orders only.`);
+          setAppliedCoupon(null);
+          setCouponDiscount(0);
+          return;
+        }
+      }
+
       let calcDiscount = 0;
       if (coupon.discount_type === 'percentage') {
         calcDiscount = Math.floor((totalAmount * Number(coupon.discount_value)) / 100);

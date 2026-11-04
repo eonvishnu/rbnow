@@ -8,6 +8,7 @@ const couponRowSchema = z.object({
   min_order_amount: z.coerce.number().nullable().optional(),
   max_discount_amount: z.coerce.number().nullable().optional(),
   is_active: z.boolean(),
+  is_first_order_only: z.boolean().nullable().optional(),
   expiry_date: z.string().nullable().optional(),
 });
 
@@ -36,6 +37,7 @@ export const createCouponSchema = z.object({
   value: z.string().trim().min(1, 'Value is required.').refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, 'Enter a positive discount value.').transform(Number),
   minOrderValue: z.string().trim().optional().nullable().transform((value) => value ? Number(value) || 0 : 0),
   maxDiscount: z.string().trim().optional().nullable().transform((value) => value ? Number(value) || null : null),
+  isFirstOrderOnly: z.boolean().optional().default(false),
   expiryDate: z.string().optional().nullable().transform((val) => (val && val.trim() !== '' ? val : null)),
 });
 

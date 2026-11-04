@@ -21,6 +21,7 @@ export async function listPromotionWorkspace(): Promise<PromotionWorkspace> {
       value: coupon.discount_value,
       minOrderValue: coupon.min_order_amount || 0,
       maxDiscount: coupon.max_discount_amount ?? undefined,
+      isFirstOrderOnly: coupon.is_first_order_only ?? false,
       isActive: coupon.is_active,
       expiresAt: coupon.expiry_date ?? undefined,
     })),
@@ -38,6 +39,7 @@ export async function insertCoupon(input: {
   value: number;
   minOrderValue: number;
   maxDiscount: number | null;
+  isFirstOrderOnly?: boolean;
   expiryDate: string | null;
 }) {
   const payload: Record<string, any> = {
@@ -45,6 +47,7 @@ export async function insertCoupon(input: {
     discount_type: input.type === 'percentage' ? 'percentage' : 'flat',
     discount_value: input.value,
     min_order_amount: Number(input.minOrderValue || 0),
+    is_first_order_only: !!input.isFirstOrderOnly,
     is_active: true,
   };
 

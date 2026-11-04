@@ -19,6 +19,7 @@ export async function createPromoCoupon(input: {
   value: string;
   minOrderValue: string;
   maxDiscount: string;
+  isFirstOrderOnly?: boolean;
   expiryDate: string;
 }) {
   const result = createCouponSchema.safeParse(input);
@@ -42,6 +43,7 @@ export async function createPromoCoupon(input: {
     value: data.value,
     minOrderValue: data.minOrderValue,
     maxDiscount: data.maxDiscount,
+    isFirstOrderOnly: data.isFirstOrderOnly,
     expiryDate: parsedExpiry,
   });
 }

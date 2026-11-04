@@ -222,6 +222,22 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      if (coupon.is_first_order_only && userId && isValidUuid(userId)) {
+        const { count: previousOrdersCount } = await supabase
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId);
+
+        if (previousOrdersCount && previousOrdersCount > 0) {
+          return new Response(JSON.stringify({
+            error: `Promo code "${coupon.code}" is valid for first-time customer orders only.`
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
       const userPhone = (details?.phone || '').trim();
       const safeUserId = (userId && isValidUuid(userId)) ? userId : '00000000-0000-0000-0000-000000000000';
       const safeBrowserId = (browserId || 'none').trim();
