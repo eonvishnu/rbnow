@@ -34,7 +34,7 @@ export async function listPromotionWorkspace(): Promise<PromotionWorkspace> {
 
 export async function insertCoupon(input: {
   code: string;
-  type: 'fixed' | 'percentage';
+  type: 'fixed' | 'percentage' | 'flat';
   value: number;
   minOrderValue: number;
   maxDiscount: number | null;
@@ -42,7 +42,7 @@ export async function insertCoupon(input: {
 }) {
   const payload: Record<string, any> = {
     code: input.code,
-    discount_type: input.type,
+    discount_type: input.type === 'percentage' ? 'percentage' : 'flat',
     discount_value: input.value,
     min_order_amount: Number(input.minOrderValue || 0),
     is_active: true,
