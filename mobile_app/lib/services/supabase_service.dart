@@ -36,24 +36,21 @@ class SupabaseService {
   }
 
   // Fetch Products with Variants
-  static Future<List<Map<String, dynamic>>> getProducts({String? categoryFilter, String? subCategoryFilter}) async {
+  static Future<List<Map<String, dynamic>>> getProducts({String? categoryFilter, String? subCategoryFilter, String? subCategoryId}) async {
     try {
-      var query = client.from('products').select('*, product_variants(*)');
+      dynamic query = client.from('products').select('*, product_variants(*)');
 
       if (categoryFilter != null && categoryFilter.toLowerCase() != 'all') {
         final firstWord = categoryFilter.split(" ")[0];
         query = query.ilike('category_name', '%$firstWord%');
       }
 
-      final response = await query;
+      final response = await query.order('name');
       final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(response);
 
-      if (subCategoryFilter != null && subCategoryFilter.toLowerCase() != 'all') {
-        return list.where((p) {
-          final cName = (p['category_name'] ?? '').toString().toLowerCase();
-          final subLower = subCategoryFilter.toLowerCase();
-          return cName.contains(subLower);
-        }).toList();
+      if (subCategoryId != null && subCategoryId.isNotEmpty) {
+        final subFiltered = list.where((p) => p['category_id']?.toString() == subCategoryId).toList();
+        if (subFiltered.isNotEmpty) return subFiltered;
       }
 
       return list;

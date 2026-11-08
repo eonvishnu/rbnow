@@ -239,8 +239,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildSubCategoryPill('ALL', _activeSubCategory == 'all'),
-                      ...subCats.map((sub) => _buildSubCategoryPill(sub['name'] ?? '', _activeSubCategory.toLowerCase() == (sub['name'] ?? '').toString().toLowerCase())),
+                      _buildSubCategoryPill('ALL', null, _activeSubCategory == 'all'),
+                      ...subCats.map((sub) => _buildSubCategoryPill(sub['name'] ?? '', sub['id']?.toString(), _activeSubCategory.toLowerCase() == (sub['name'] ?? '').toString().toLowerCase())),
                     ],
                   ),
                 ),
@@ -421,11 +421,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSubCategoryPill(String label, bool isActive) {
+  Widget _buildSubCategoryPill(String label, String? subCategoryId, bool isActive) {
     return GestureDetector(
-      onTap: () {
-        setState(() => _activeSubCategory = label);
-        _loadData();
+      onTap: () async {
+        setState(() {
+          _activeSubCategory = label;
+          _loading = true;
+        });
+        final prods = await SupabaseService.getProducts(
+          categoryFilter: _activeCategory,
+          subCategoryFilter: label,
+          subCategoryId: subCategoryId,
+        );
+        setState(() {
+          _products = prods;
+          _loading = false;
+        });
       },
       child: Container(
         margin: const EdgeInsets.only(right: 8),
