@@ -4,6 +4,7 @@ import 'config/constants.dart';
 import 'screens/home_screen.dart';
 import 'screens/cart_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/orders_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -73,7 +74,9 @@ class _RoyalBengalAppState extends State<RoyalBengalApp> {
               onOpenCart: () => setState(() => _currentIndex = 2),
               onAddToCart: _addToCart,
             ),
-            const Center(child: Text('Active Orders Screen', style: TextStyle(fontWeight: FontWeight.bold))),
+            OrdersScreen(
+              onBrowseMenu: () => setState(() => _currentIndex = 0),
+            ),
             CartScreen(
               cartItems: _cartItems,
               onClearCart: _clearCart,
