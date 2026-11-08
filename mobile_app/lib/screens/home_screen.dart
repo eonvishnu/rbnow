@@ -22,7 +22,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String _activeCategory = 'All';
   String _activeSubCategory = 'all';
 
-  List<Map<String, dynamic>> _categories = [];
+  List<Map<String, dynamic>> _parentCategories = [];
+  Map<String, List<Map<String, dynamic>>> _subCategoriesMap = {};
   List<Map<String, dynamic>> _products = [];
   bool _loading = true;
 
@@ -34,14 +35,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _loadData() async {
     setState(() => _loading = true);
-    final cats = await SupabaseService.getCategories();
-    final prods = await SupabaseService.getProducts(categoryFilter: _activeCategory);
+    final workspace = await SupabaseService.getCategoryWorkspace();
+    final prods = await SupabaseService.getProducts(
+      categoryFilter: _activeCategory,
+      subCategoryFilter: _activeSubCategory,
+    );
 
     setState(() {
-      _categories = cats;
+      _parentCategories = workspace['parents'] as List<Map<String, dynamic>>? ?? [];
+      _subCategoriesMap = workspace['subMap'] as Map<String, List<Map<String, dynamic>>>? ?? {};
       _products = prods;
       _loading = false;
     });
+  }
+
+  List<Map<String, dynamic>> get _currentSubCategories {
+    if (_activeCategory.toLowerCase() == 'all') return [];
+    final selectedCat = _parentCategories.firstWhere(
+      (c) => (c['name'] ?? '').toString().toLowerCase() == _activeCategory.toLowerCase(),
+      orElse: () => {},
+    );
+    if (selectedCat.isEmpty || selectedCat['id'] == null) return [];
+    return _subCategoriesMap[selectedCat['id'].toString()] ?? [];
   }
 
   void _showSupportDialog() {
@@ -115,6 +130,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final subCats = _currentSubCategories;
+
     return Scaffold(
       backgroundColor: AppConstants.warmBackground,
       appBar: AppBar(
@@ -204,8 +221,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
-                    _buildCategoryCircle('All', '🛍️', _activeCategory == 'All'),
-                    ..._categories.map((cat) => _buildCategoryCircle(cat['name'] ?? '', '🍽️', _activeCategory == cat['name'])),
+                    _buildCategoryCircle('All', '🛍️', null, _activeCategory == 'All'),
+                    ..._parentCategories.map((cat) => _buildCategoryCircle(cat['name'] ?? '', '🍽️', cat['image_url'], _activeCategory.toLowerCase() == (cat['name'] ?? '').toString().toLowerCase())),
                   ],
                 ),
               ),
@@ -213,137 +230,152 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
           // Subcategories Filter Pills Bar
-          SliverToBoxAdapter(
-            child: Container(
-              color: const Color(0xFF00382B),
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildSubCategoryPill('ALL', _activeSubCategory == 'all'),
-                    _buildSubCategoryPill('FRESHWATER FISH', _activeSubCategory == 'freshwater'),
-                    _buildSubCategoryPill('SEA FISH', _activeSubCategory == 'sea'),
-                    _buildSubCategoryPill('BENGALI CUTS', _activeSubCategory == 'bengali'),
-                  ],
+          if (subCats.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Container(
+                color: const Color(0xFF00382B),
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildSubCategoryPill('ALL', _activeSubCategory == 'all'),
+                      ...subCats.map((sub) => _buildSubCategoryPill(sub['name'] ?? '', _activeSubCategory.toLowerCase() == (sub['name'] ?? '').toString().toLowerCase())),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
           // Product Grid List
           _loading
               ? const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: AppConstants.headerEmerald)))
-              : SliverPadding(
-                  padding: const EdgeInsets.all(16),
-                  sliver: SliverGrid(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 0.62,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final product = _products[index];
-                        final variants = product['product_variants'] as List? ?? [];
-                        final firstVariant = variants.isNotEmpty ? variants[0] : null;
+              : _products.isEmpty
+                  ? SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.set_meal_outlined, size: 48, color: Colors.grey),
+                            SizedBox(height: 12),
+                            Text('No products found in this category.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                    )
+                  : SliverPadding(
+                      padding: const EdgeInsets.all(16),
+                      sliver: SliverGrid(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.62,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final product = _products[index];
+                            final variants = product['product_variants'] as List? ?? [];
+                            final firstVariant = variants.isNotEmpty ? variants[0] : null;
 
-                        return Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.grey.shade200),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8)],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Image Container
-                              Expanded(
-                                child: Container(
-                                  width: double.infinity,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(16),
-                                    child: Image.network(
-                                      product['image_url'] ?? 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80',
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 40, color: Colors.grey),
+                            return Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.grey.shade200),
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8)],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Image Container
+                                  Expanded(
+                                    child: Container(
+                                      width: double.infinity,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: Image.network(
+                                          product['image_url'] ?? 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80',
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 40, color: Colors.grey),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
+                                  const SizedBox(height: 8),
 
-                              Text(
-                                product['name'] ?? 'Fresh Catch',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, height: 1.2),
-                              ),
-                              const SizedBox(height: 4),
-
-                              Row(
-                                children: [
                                   Text(
-                                    '₹${firstVariant?['price'] ?? product['price'] ?? 150}',
-                                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppConstants.darkCharcoalText),
+                                    product['name'] ?? 'Fresh Catch',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, height: 1.2),
                                   ),
-                                  Text(
-                                    ' / ${firstVariant?['unit'] ?? 'pack'}',
-                                    style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
+                                  const SizedBox(height: 4),
+
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '₹${firstVariant?['price'] ?? product['price'] ?? 150}',
+                                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppConstants.darkCharcoalText),
+                                      ),
+                                      Text(
+                                        ' / ${firstVariant?['unit'] ?? 'pack'}',
+                                        style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 34,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        widget.onAddToCart({
+                                          'id': firstVariant?['id'] ?? product['id'],
+                                          'name': product['name'],
+                                          'price': firstVariant?['price'] ?? 150,
+                                          'unit': firstVariant?['unit'] ?? 'pack',
+                                          'img': product['image_url'],
+                                        });
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppConstants.lightMint,
+                                        foregroundColor: AppConstants.darkEmeraldText,
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          side: const BorderSide(color: AppConstants.mintBorder),
+                                        ),
+                                      ),
+                                      child: const Text('ADD TO CART', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10)),
+                                    ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 10),
-
-                              SizedBox(
-                                width: double.infinity,
-                                height: 34,
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    widget.onAddToCart({
-                                      'id': firstVariant?['id'] ?? product['id'],
-                                      'name': product['name'],
-                                      'price': firstVariant?['price'] ?? 150,
-                                      'unit': firstVariant?['unit'] ?? 'pack',
-                                      'img': product['image_url'],
-                                    });
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppConstants.lightMint,
-                                    foregroundColor: AppConstants.darkEmeraldText,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      side: const BorderSide(color: AppConstants.mintBorder),
-                                    ),
-                                  ),
-                                  child: const Text('ADD TO CART', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10)),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      childCount: _products.length,
+                            );
+                          },
+                          childCount: _products.length,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
         ],
       ),
     );
   }
 
-  Widget _buildCategoryCircle(String label, String icon, bool isActive) {
+  Widget _buildCategoryCircle(String label, String defaultIcon, String? imageUrl, bool isActive) {
     return GestureDetector(
       onTap: () {
-        setState(() => _activeCategory = label);
+        setState(() {
+          _activeCategory = label;
+          _activeSubCategory = 'all';
+        });
         _loadData();
       },
       child: Container(
@@ -366,8 +398,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   shape: BoxShape.circle,
                   color: isActive ? AppConstants.primaryDarkEmerald : Colors.white,
                 ),
-                child: Center(
-                  child: Text(icon, style: const TextStyle(fontSize: 20)),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(26),
+                  child: imageUrl != null && imageUrl.isNotEmpty
+                      ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (c, e, s) => Center(child: Text(defaultIcon, style: const TextStyle(fontSize: 20))))
+                      : Center(child: Text(defaultIcon, style: const TextStyle(fontSize: 20))),
                 ),
               ),
             ),
@@ -388,7 +423,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSubCategoryPill(String label, bool isActive) {
     return GestureDetector(
-      onTap: () => setState(() => _activeSubCategory = label.toLowerCase()),
+      onTap: () {
+        setState(() => _activeSubCategory = label);
+        _loadData();
+      },
       child: Container(
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),

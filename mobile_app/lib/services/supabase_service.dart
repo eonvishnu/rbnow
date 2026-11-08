@@ -6,26 +6,57 @@ import '../config/constants.dart';
 class SupabaseService {
   static final SupabaseClient client = Supabase.instance.client;
 
-  // Fetch Categories
-  static Future<List<Map<String, dynamic>>> getCategories() async {
+  // Fetch Parent & Subcategories
+  static Future<Map<String, dynamic>> getCategoryWorkspace() async {
     try {
       final response = await client.from('categories').select('*').order('name');
-      return List<Map<String, dynamic>>.from(response);
+      final List<Map<String, dynamic>> allCats = List<Map<String, dynamic>>.from(response);
+
+      final List<Map<String, dynamic>> parentCats = [];
+      final Map<String, List<Map<String, dynamic>>> subMap = {};
+
+      for (var cat in allCats) {
+        if (cat['parent_id'] == null) {
+          parentCats.add(cat);
+        } else {
+          final pId = cat['parent_id'].toString();
+          subMap[pId] = subMap[pId] ?? [];
+          subMap[pId]!.add(cat);
+        }
+      }
+
+      return {
+        'parents': parentCats,
+        'subMap': subMap,
+      };
     } catch (e) {
-      print("Error fetching categories: $e");
-      return [];
+      print("Error fetching category workspace: $e");
+      return {'parents': [], 'subMap': {}};
     }
   }
 
   // Fetch Products with Variants
-  static Future<List<Map<String, dynamic>>> getProducts({String? categoryFilter}) async {
+  static Future<List<Map<String, dynamic>>> getProducts({String? categoryFilter, String? subCategoryFilter}) async {
     try {
       var query = client.from('products').select('*, product_variants(*)');
+
       if (categoryFilter != null && categoryFilter.toLowerCase() != 'all') {
-        query = query.ilike('category_name', '%${categoryFilter.split(" ")[0]}%');
+        final firstWord = categoryFilter.split(" ")[0];
+        query = query.ilike('category_name', '%$firstWord%');
       }
+
       final response = await query;
-      return List<Map<String, dynamic>>.from(response);
+      final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(response);
+
+      if (subCategoryFilter != null && subCategoryFilter.toLowerCase() != 'all') {
+        return list.where((p) {
+          final cName = (p['category_name'] ?? '').toString().toLowerCase();
+          final subLower = subCategoryFilter.toLowerCase();
+          return cName.contains(subLower);
+        }).toList();
+      }
+
+      return list;
     } catch (e) {
       print("Error fetching products: $e");
       return [];
