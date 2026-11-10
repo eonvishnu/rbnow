@@ -608,7 +608,7 @@ export default function CartPage() {
                     </span>
                   </div>
 
-                  {totalAmount > 0 && totalAmount < freeThreshold && (
+                  {totalAmount > 0 && Number.isFinite(freeThreshold) && totalAmount < freeThreshold && (
                     <div className="pt-1">
                        <span className="text-[10px] font-bold text-[#006B50] bg-[#E5F5EF] px-3 py-1.5 rounded-xl border border-[#BCE2D3] block text-center">
                          Add ₹{freeThreshold - totalAmount} more for FREE Express Delivery
