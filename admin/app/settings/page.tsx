@@ -11,6 +11,8 @@ import {
   fetchDeliveryFeeRulesList,
   upsertDeliveryFeeRuleRecord,
   deleteDeliveryFeeRuleRecord,
+  saveCleanDeliverySettings,
+  fetchCleanDeliverySettings,
 } from '@/features/settings/repositories/delivery.repository';
 import type { DeliverySettings, DeliveryFeeRule } from '@/features/settings/types/delivery';
 import {
@@ -427,18 +429,45 @@ export default function StoreSettingsPage() {
         });
       }
 
-      // Replace existing rules with generated non-overlapping rules
-      const existing = await fetchDeliveryFeeRulesList();
-      for (const oldRule of existing) {
-        await deleteDeliveryFeeRuleRecord(oldRule.id);
-      }
+      // Save directly to clean delivery_settings table
+      await saveCleanDeliverySettings({
+        is_free_delivery_enabled: isFreeDeliveryEnabled,
+        delivery_mode: deliveryMode,
+        flat_delivery_fee: flatDeliveryFee,
+        preset_zone_radius_km: presetZoneRadius,
+        preset_zone1_subtotal: presetZone1Subtotal,
+        preset_zone1_fee: presetZone1Fee,
+        preset_zone2_subtotal: presetZone2Subtotal,
+        preset_zone2_fee: presetZone2Fee,
+        tier1_max_km: tier1Km,
+        tier1_subtotal: tier1Subtotal,
+        tier1_fee: tier1Fee,
+        tier2_max_km: tier2Km,
+        tier2_subtotal: tier2Subtotal,
+        tier2_fee: tier2Fee,
+        tier3_subtotal: tier3Subtotal,
+        tier3_fee: tier3Fee,
+      });
 
-      for (const newRule of generatedRules) {
-        await upsertDeliveryFeeRuleRecord(newRule);
+      // Also attempt legacy rule sync
+      try {
+        const existing = await fetchDeliveryFeeRulesList();
+        for (const oldRule of existing) {
+          await deleteDeliveryFeeRuleRecord(oldRule.id);
+        }
+        for (const newRule of generatedRules) {
+          await upsertDeliveryFeeRuleRecord(newRule);
+        }
+      } catch (e) {
+        console.warn('Legacy rules sync skipped:', e);
       }
 
       alert('✅ Delivery rules & pricing updated live on Supabase!');
-      setDeliveryRules(await fetchDeliveryFeeRulesList());
+      try {
+        setDeliveryRules(await fetchDeliveryFeeRulesList());
+      } catch (e) {
+        console.warn('Fee rules fetch warning:', e);
+      }
     } catch (err: unknown) {
       console.error('Error saving delivery configuration:', err);
       alert('Failed to save delivery rules: ' + extractErrorMessage(err));
