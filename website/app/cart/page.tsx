@@ -118,11 +118,11 @@ export default function CartPage() {
     fetchDeliverySettings();
   }, []);
 
-  // Calculate Distance in KM from Dark Store Hub
+  // Calculate Distance in KM from Dark Store Hub (Dynamic Store Coordinates)
   const distanceKm = useMemo(() => {
     if (!location.lat || !location.lng) return 0;
-    const storeLat = 17.351452;
-    const storeLng = 78.391039;
+    const storeLat = Number(deliverySettings?.store_latitude ?? 17.351452);
+    const storeLng = Number(deliverySettings?.store_longitude ?? 78.391039);
     const R = 6371;
     const dLat = (location.lat - storeLat) * (Math.PI / 180);
     const dLon = (location.lng - storeLng) * (Math.PI / 180);
@@ -132,7 +132,7 @@ export default function CartPage() {
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
-  }, [location.lat, location.lng]);
+  }, [location.lat, location.lng, deliverySettings]);
 
   // Dynamically Compute Delivery Fee & Free Threshold from delivery_settings
   const { deliveryFee, freeThreshold } = useMemo(() => {
