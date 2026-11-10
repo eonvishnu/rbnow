@@ -363,15 +363,20 @@ Deno.serve(async (req: Request) => {
 
     const checkoutItemsPayload = verifiedItems.map(i => ({
       checkout_id: checkout.id,
-      variant_id: i.variant_id,
+      product_id: String(i.product_id || i.variant_id || ''),
+      variant_id: String(i.variant_id || i.product_id || ''),
       product_name: i.product_name,
-      variant_unit: i.variant_unit,
+      variant_unit: i.variant_unit || 'pack',
       unit_price: i.price,
       quantity: i.quantity,
       line_total: i.total_price,
     }));
 
-    await supabase.from('checkout_items').insert(checkoutItemsPayload);
+    const { error: itemsInsertErr } = await supabase.from('checkout_items').insert(checkoutItemsPayload);
+    if (itemsInsertErr) {
+      console.error("Checkout items insert error:", itemsInsertErr);
+      throw itemsInsertErr;
+    }
 
     // 6. STAGE 2: PERSIST INITIAL PAYMENT ATTEMPT RECORD
     const { data: paymentRecord, error: payErr } = await supabase
