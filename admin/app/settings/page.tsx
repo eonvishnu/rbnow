@@ -138,8 +138,8 @@ export default function StoreSettingsPage() {
 
   // Delivery Pricing Presets & Editable Fields
   const [isFreeDeliveryEnabled, setIsFreeDeliveryEnabled] = useState<boolean>(true);
-  const [deliveryMode, setDeliveryMode] = useState<'preset_rules' | 'distance_tiered'>('preset_rules');
-  const [flatDeliveryFee, setFlatDeliveryFee] = useState<number>(30);
+  const [deliveryMode, setDeliveryMode] = useState<'preset_rules' | 'distance_tiered' | 'flat_fee'>('preset_rules');
+  const [flatDeliveryFee, setFlatDeliveryFee] = useState<number>(65);
 
   // Preset 2-Zone Values (Editable)
   const [presetZoneRadius, setPresetZoneRadius] = useState<number>(5);
@@ -219,14 +219,27 @@ export default function StoreSettingsPage() {
 
       // 3. Fetch Delivery Settings & Dynamic Rules Engine
       try {
-        const [dSet, dRules] = await Promise.all([
-          fetchDeliverySettingsRow(),
-          fetchDeliveryFeeRulesList(),
-        ]);
-        setDeliverySettings(dSet);
-        setDeliveryRules(dRules);
+        const cleanSettings = await fetchCleanDeliverySettings();
+        if (cleanSettings) {
+          setIsFreeDeliveryEnabled(Boolean(cleanSettings.is_free_delivery_enabled ?? true));
+          setDeliveryMode(cleanSettings.delivery_mode || 'preset_rules');
+          setFlatDeliveryFee(Number(cleanSettings.flat_delivery_fee || 65));
+          setPresetZoneRadius(Number(cleanSettings.preset_zone_radius_km || 5));
+          setPresetZone1Subtotal(Number(cleanSettings.preset_zone1_subtotal || 299));
+          setPresetZone1Fee(Number(cleanSettings.preset_zone1_fee || 30));
+          setPresetZone2Subtotal(Number(cleanSettings.preset_zone2_subtotal || 499));
+          setPresetZone2Fee(Number(cleanSettings.preset_zone2_fee || 30));
+          setTier1Km(Number(cleanSettings.tier1_max_km || 5));
+          setTier1Subtotal(Number(cleanSettings.tier1_subtotal || 299));
+          setTier1Fee(Number(cleanSettings.tier1_fee || 30));
+          setTier2Km(Number(cleanSettings.tier2_max_km || 10));
+          setTier2Subtotal(Number(cleanSettings.tier2_subtotal || 500));
+          setTier2Fee(Number(cleanSettings.tier2_fee || 30));
+          setTier3Subtotal(Number(cleanSettings.tier3_subtotal || 699));
+          setTier3Fee(Number(cleanSettings.tier3_fee || 30));
+        }
       } catch (err) {
-        console.warn('Error fetching delivery settings or rules:', err);
+        console.warn('Error fetching clean delivery_settings:', err);
       }
     } catch (err) {
       console.error('Error fetching settings:', err);
