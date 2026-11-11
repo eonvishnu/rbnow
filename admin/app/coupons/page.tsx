@@ -40,6 +40,7 @@ export default function AdminCouponsPage() {
     value: '',
     minOrderValue: '',
     maxDiscount: '',
+    isFirstOrderOnly: false,
     expiryDate: ''
   });
 
@@ -74,7 +75,7 @@ export default function AdminCouponsPage() {
     try {
       await createPromoCoupon(formData);
       alert("Coupon Created Successfully!");
-      setFormData({ code: '', type: 'percentage', value: '', minOrderValue: '', maxDiscount: '', expiryDate: '' });
+      setFormData({ code: '', type: 'percentage', value: '', minOrderValue: '', maxDiscount: '', isFirstOrderOnly: false, expiryDate: '' });
       fetchCouponsAndDiscounts();
     } catch (error) {
       alert("Error creating coupon: " + (error instanceof Error ? error.message : 'Please try again.'));
@@ -231,6 +232,19 @@ export default function AdminCouponsPage() {
                     </div>
                   </div>
 
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="isFirstOrderOnly"
+                      checked={formData.isFirstOrderOnly}
+                      onChange={e => setFormData({ ...formData, isFirstOrderOnly: e.target.checked })}
+                      className="w-4 h-4 rounded text-[#004d3b] focus:ring-[#004d3b] border-gray-300 cursor-pointer"
+                    />
+                    <label htmlFor="isFirstOrderOnly" className="text-xs font-semibold text-gray-700 cursor-pointer select-none">
+                      First Order Only (Valid on 1st purchase)
+                    </label>
+                  </div>
+
                   <button
                     type="submit"
                     disabled={submitting}
@@ -266,6 +280,7 @@ export default function AdminCouponsPage() {
                       <div className="text-xs text-gray-500 font-medium space-y-0.5 pt-1 border-t border-gray-100">
                         {coupon.minOrderValue > 0 && <p>Min Order Value: <strong className="text-gray-800">₹{coupon.minOrderValue}</strong></p>}
                         {coupon.maxDiscount && <p>Max Discount Cap: <strong className="text-gray-800">₹{coupon.maxDiscount}</strong></p>}
+                        {coupon.isFirstOrderOnly && <p className="text-[#006b50] font-bold flex items-center gap-1">👑 First Order Only</p>}
                       </div>
                     </div>
                   ))}

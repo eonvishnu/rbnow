@@ -40,3 +40,10 @@ Validation after the latest cart/customer/dashboard changes: `cd admin && npx ts
 2. Gateway credential settings currently read and write `secret_key` and `webhook_secret` in browser code. This existing behavior is insecure and cannot be safely refactored by client-side organization alone. Resolve it through a trusted backend (for example a Supabase Edge Function with secrets configured server-side) before changing credential workflows; the user must approve backend/Edge Function scope.
 3. Review remaining legacy shared UI components for loosely typed props or unnecessary data access.
 4. Re-run the admin type-check and production build after each remaining stage. Do not modify the storefront, mobile app, Firebase Functions, Supabase schema/policies, or `admin/testapp/` as part of this admin-only work.
+
+## Checkout Security Sandbox Plan
+
+1. Run a non-mutating Deno type-check on the current `place-order` and `verify-payment` Edge Functions.
+2. A full isolated order-flow run requires a dedicated Supabase staging project and Razorpay test credentials, or Docker/Podman for a local Supabase stack. Do not run the existing E2E scripts against production because they create orders and decrement inventory.
+3. Keep Razorpay Basic-auth credentials bound to the official Razorpay API host; do not add an unrestricted API URL override for testing.
+4. Live invalid-signature and anonymous RLS/RPC checks passed previously. Full valid-payment conversion remains untested until isolated sandbox infrastructure is available.

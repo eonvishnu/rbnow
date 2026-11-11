@@ -9,11 +9,32 @@ import { Lock, ArrowRight } from 'lucide-react';
 export const CartBar = () => {
   const { cart, totalAmount } = useCart();
   const { isOpen } = useStore();
+  const [isNavHidden, setIsNavHidden] = React.useState(false);
+  const [lastScrollY, setLastScrollY] = React.useState(0);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY && currentScrollY > 60) {
+        setIsNavHidden(true);
+      } else {
+        setIsNavHidden(false);
+      }
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
 
   if (cart.length === 0) return null;
 
   return (
-    <div className="fixed bottom-16 md:bottom-6 left-3 right-3 sm:left-4 sm:right-4 z-40 animate-in slide-in-from-bottom-4 duration-500 max-w-2xl mx-auto">
+    <div className={`fixed left-3 right-3 sm:left-4 sm:right-4 z-40 max-w-2xl mx-auto transition-all duration-300 ${
+      isNavHidden ? 'bottom-3' : 'bottom-16 md:bottom-6'
+    }`}>
       <div className="bg-emerald-950/95 backdrop-blur-2xl border border-amber-400/40 rounded-2xl p-3.5 sm:p-4 flex justify-between items-center shadow-[0_15px_40px_rgba(0,0,0,0.4)]">
         
         <div className="flex items-center gap-3 sm:gap-4">

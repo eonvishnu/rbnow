@@ -59,26 +59,40 @@ export const LocationModal = () => {
   };
 
   const handleSelectSearchResult = (item: any) => {
-    const lat = parseFloat(item.lat);
-    const lng = parseFloat(item.lon);
+    if (item.geometry && item.geometry.location) {
+      const lat = item.geometry.location.lat;
+      const lng = item.geometry.location.lng;
+      const fullAddress = item.formatted_address;
 
-    const parts = item.display_name.split(',');
-    const area = parts[0]?.trim() || 'Selected Area';
-    const city = parts[1]?.trim() || parts[2]?.trim() || '';
-    const postcode = item.address?.postcode || '';
+      let area = '';
+      let city = '';
+      let pincode = '';
 
-    const newLoc: LocationData = {
-      label: area,
-      address: item.display_name,
-      area,
-      city,
-      pincode: postcode,
-      lat,
-      lng,
-    };
+      item.address_components?.forEach((comp: any) => {
+        if (comp.types.includes('sublocality') || comp.types.includes('neighborhood') || comp.types.includes('route')) {
+          if (!area) area = comp.long_name;
+        }
+        if (comp.types.includes('locality')) {
+          city = comp.long_name;
+        }
+        if (comp.types.includes('postal_code')) {
+          pincode = comp.long_name;
+        }
+      });
 
-    setLocation(newLoc);
-    setIsModalOpen(false);
+      const newLoc: LocationData = {
+        label: area || 'Selected Location',
+        address: fullAddress,
+        area: area || 'Selected Area',
+        city: city || 'Hyderabad',
+        pincode: pincode || '500081',
+        lat,
+        lng,
+      };
+
+      setLocation(newLoc);
+      setIsModalOpen(false);
+    }
   };
 
   const handleSaveFromMap = async (addressData: {
@@ -149,92 +163,81 @@ export const LocationModal = () => {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center p-0 sm:p-4 select-none">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-emerald-950/70 backdrop-blur-md transition-opacity animate-in fade-in"
+        className="absolute inset-0 bg-[#022c22]/80 backdrop-blur-md transition-opacity animate-in fade-in"
         onClick={() => setIsModalOpen(false)}
       />
 
-      {/* Modal Card */}
-      <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] overflow-hidden flex flex-col max-h-[90vh] shadow-2xl border border-amber-200/80 animate-in slide-in-from-bottom duration-300 z-10">
+      {/* Bottom Sheet Card */}
+      <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] overflow-hidden flex flex-col max-h-[90vh] shadow-2xl animate-in slide-in-from-bottom duration-300 z-10">
 
-        {/* Top Handle for mobile */}
+        {/* Top Drag Handle Bar for mobile */}
         <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto my-3 sm:hidden" />
 
-        {/* Modal Header */}
-        <div className="px-6 pt-3 pb-4 border-b border-gray-100 flex items-center justify-between bg-emerald-950 text-white">
+        {/* Modal Header Bar matching rbnow.in screenshot */}
+        <div className="px-6 py-4 border-b border-emerald-900 bg-[#022c22] text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-400 text-emerald-950 flex items-center justify-center font-black shrink-0 shadow-md">
-              <MapPin size={20} />
+            <div className="w-11 h-11 rounded-2xl bg-[#ffc400] text-[#004d3b] flex items-center justify-center font-black shrink-0 shadow-md">
+              <MapPin size={22} className="fill-[#004d3b]" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-black tracking-tight text-amber-300 uppercase">Delivery Location</h2>
-                <span className="text-[9px] font-black uppercase tracking-widest bg-emerald-800 text-amber-300 px-2 py-0.5 rounded-full border border-amber-400/30 flex items-center gap-1">
-                  <Sparkles size={10} /> 20-30 MINS
-                </span>
-              </div>
-              <p className="text-xs text-emerald-200/80 font-medium">Select address for express fresh delivery</p>
+              <h2 className="text-sm font-black tracking-wider text-[#ffc400] uppercase">DELIVERY LOCATION</h2>
+              <p className="text-[11px] text-emerald-200/90 font-medium">Select address for fresh scheduled delivery</p>
             </div>
           </div>
           <button
             onClick={() => setIsModalOpen(false)}
-            className="p-2 rounded-full hover:bg-emerald-900 text-emerald-200 hover:text-white transition-colors"
+            className="p-2 rounded-full hover:bg-emerald-900/80 text-emerald-200 hover:text-white transition-colors"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto no-scrollbar space-y-5">
+        <div className="p-5 sm:p-6 overflow-y-auto no-scrollbar space-y-4">
 
-          {/* Action Row: Use GPS + Add New Address on Map */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {/* GPS Auto Detect Button */}
-            <button
-              onClick={handleGPSClick}
-              disabled={isDetectingGPS}
-              className="bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-300 rounded-2xl p-3.5 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
-            >
-              <div className="w-9 h-9 rounded-xl bg-emerald-800 text-amber-300 flex items-center justify-center shrink-0 shadow-sm">
-                {isDetectingGPS ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18} className="fill-amber-300" />}
-              </div>
-              <div>
-                <p className="text-xs font-black text-emerald-950 uppercase tracking-wide">Use GPS Location</p>
-                <p className="text-[10px] text-emerald-700 font-medium">Auto-detect pin</p>
-              </div>
-            </button>
+          {/* Action 1: USE MY CURRENT LOCATION (Mint Card) */}
+          <button
+            onClick={handleGPSClick}
+            disabled={isDetectingGPS}
+            className="w-full bg-[#e5f5ef] hover:bg-[#d5efe5] border border-[#bce2d3] rounded-2xl p-3.5 flex items-center gap-3.5 transition-all active:scale-[0.98] text-left shadow-xs"
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#004d3b] text-[#ffc400] flex items-center justify-center shrink-0 shadow-sm">
+              {isDetectingGPS ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18} className="fill-[#ffc400]" />}
+            </div>
+            <div>
+              <p className="text-xs font-black text-[#004d3b] uppercase tracking-wider">USE MY CURRENT LOCATION</p>
+              <p className="text-[10px] text-[#006b50] font-bold">GPS location</p>
+            </div>
+          </button>
 
-            {/* Add New Address on Map Button */}
-            <button
-              onClick={() => setShowMapPicker(true)}
-              className="bg-amber-400 hover:bg-amber-300 text-emerald-950 border border-amber-500 rounded-2xl p-3.5 flex items-center gap-3 transition-all active:scale-[0.98] text-left shadow-sm"
-            >
-              <div className="w-9 h-9 rounded-xl bg-emerald-950 text-amber-300 flex items-center justify-center shrink-0 shadow-sm">
-                <Map size={18} />
-              </div>
-              <div>
-                <p className="text-xs font-black uppercase tracking-wide text-emerald-950">+ Add New Address</p>
-                <p className="text-[10px] font-bold text-emerald-900">Pin location on map</p>
-              </div>
-            </button>
-          </div>
+          {/* Action 2: + ADD NEW ADDRESS (Bright Gold Button) */}
+          <button
+            onClick={() => setShowMapPicker(true)}
+            className="w-full bg-[#ffc400] hover:bg-[#f5b800] text-[#004d3b] rounded-2xl p-3.5 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] shadow-md border border-amber-300"
+          >
+            <div className="w-7 h-7 rounded-full bg-[#004d3b] text-[#ffc400] flex items-center justify-center shrink-0 shadow-xs font-black">
+              <Plus size={16} />
+            </div>
+            <span className="text-xs font-black uppercase tracking-widest">+ ADD NEW ADDRESS</span>
+          </button>
 
           {/* Search Location Bar */}
-          <div className="relative">
-            <Search size={18} className="absolute left-4 top-3.5 text-gray-400" />
+          <div className="relative pt-1">
+            <Search size={16} className="absolute left-4 top-4.5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search area, landmark, colony, or pincode..."
+              placeholder="Search colony, street, landmark..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-2xl py-3.5 pl-11 pr-10 text-xs font-bold outline-none transition-all placeholder:font-medium placeholder:text-gray-400"
+              className="w-full bg-gray-50 border border-gray-200 focus:border-[#ffc400] focus:bg-white rounded-2xl py-3 pl-10 pr-10 text-xs font-bold outline-none transition-all placeholder:font-medium placeholder:text-gray-400"
             />
             {isSearching ? (
-              <Loader2 size={16} className="absolute right-3.5 top-3.5 text-emerald-800 animate-spin" />
+              <Loader2 size={16} className="absolute right-3.5 top-4 text-[#004d3b] animate-spin" />
             ) : searchQuery ? (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3.5 top-3.5 text-gray-400">
+              <button onClick={() => setSearchQuery('')} className="absolute right-3.5 top-4 text-gray-400">
                 <X size={16} />
               </button>
             ) : null}
@@ -243,7 +246,7 @@ export const LocationModal = () => {
           {/* Search Results */}
           {searchResults.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-[0.2em]">Search Results</h3>
+              <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Search Results</h3>
               <div className="space-y-1.5 border border-amber-200/80 rounded-2xl overflow-hidden divide-y divide-gray-100">
                 {searchResults.map((item, i) => (
                   <div
@@ -251,8 +254,8 @@ export const LocationModal = () => {
                     onClick={() => handleSelectSearchResult(item)}
                     className="p-3.5 hover:bg-emerald-50 cursor-pointer flex items-center gap-3 transition-colors text-xs"
                   >
-                    <MapPin size={16} className="text-amber-500 shrink-0" />
-                    <p className="font-bold text-gray-800 truncate">{item.display_name}</p>
+                    <MapPin size={16} className="text-[#ffc400] shrink-0 fill-[#ffc400]/40" />
+                    <p className="font-bold text-gray-800 truncate">{item.formatted_address}</p>
                   </div>
                 ))}
               </div>
@@ -261,16 +264,8 @@ export const LocationModal = () => {
 
           {/* Saved Customer Addresses */}
           {savedAddresses.length > 0 && !searchQuery && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-[0.2em]">Saved Addresses</h3>
-                <button
-                  onClick={() => setShowMapPicker(true)}
-                  className="text-[10px] font-black text-emerald-800 hover:text-emerald-950 uppercase tracking-wider flex items-center gap-1"
-                >
-                  <Plus size={12} /> Add Address
-                </button>
-              </div>
+            <div className="space-y-2.5 pt-1">
+              <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Saved Addresses</h3>
 
               <div className="space-y-2">
                 {savedAddresses.map((addr, i) => {
@@ -282,24 +277,22 @@ export const LocationModal = () => {
                         setLocation(addr);
                         setIsModalOpen(false);
                       }}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                         isSelected
-                          ? 'bg-emerald-900 text-white border-amber-400 shadow-md'
-                          : 'bg-white border-gray-200 hover:border-emerald-300 hover:bg-emerald-50/50'
+                          ? 'bg-[#004d3b] text-white border-[#ffc400] shadow-md'
+                          : 'bg-white border-gray-200 hover:border-[#004d3b] hover:bg-emerald-50/50'
                       }`}
                     >
-                      <div className="flex items-center gap-3.5">
-                        <div className={`p-2.5 rounded-xl ${isSelected ? 'bg-amber-400 text-emerald-950' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
-                          {addr.label === 'WORK' ? <Briefcase size={16} /> : <Home size={16} />}
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl ${isSelected ? 'bg-[#ffc400] text-[#004d3b]' : 'bg-[#e5f5ef] text-[#004d3b]'}`}>
+                          {addr.label === 'WORK' ? <Briefcase size={15} /> : <Home size={15} />}
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-black uppercase ${isSelected ? 'text-amber-300' : 'text-gray-900'}`}>{addr.label}</span>
-                          </div>
-                          <p className={`text-[11px] truncate max-w-[240px] mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-gray-600'}`}>{addr.address}</p>
+                          <span className={`text-xs font-black uppercase ${isSelected ? 'text-[#ffc400]' : 'text-gray-900'}`}>{addr.label}</span>
+                          <p className={`text-[11px] truncate max-w-[220px] sm:max-w-[280px] ${isSelected ? 'text-emerald-100' : 'text-gray-600'}`}>{addr.address}</p>
                         </div>
                       </div>
-                      {isSelected && <Check size={18} className="text-amber-300 shrink-0" />}
+                      {isSelected && <Check size={18} className="text-[#ffc400] shrink-0" />}
                     </div>
                   );
                 })}
@@ -307,10 +300,10 @@ export const LocationModal = () => {
             </div>
           )}
 
-          {/* Delivery Assurance */}
-          <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-center gap-3">
-            <ShieldCheck size={20} className="text-amber-600 shrink-0" />
-            <p className="text-[11px] font-bold text-amber-900 leading-tight">
+          {/* Delivery Assurance Banner matching rbnow.in screenshot */}
+          <div className="p-3.5 rounded-2xl bg-[#fefce8] border border-[#fef08a] flex items-center gap-3">
+            <ShieldCheck size={20} className="text-[#854d0e] shrink-0" />
+            <p className="text-[11px] font-bold text-[#854d0e] leading-tight">
               Fresh items are temperature-packed & delivered in insulated bags directly to your selected location.
             </p>
           </div>
