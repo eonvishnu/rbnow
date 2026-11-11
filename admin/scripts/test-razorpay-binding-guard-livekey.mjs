@@ -1,8 +1,5 @@
 import crypto from 'crypto';
 
-const supabaseUrl = 'https://xsdkpbvvbjzvchlsdizi.supabase.co';
-const anonKey = 'sb_publishable_9l2rycX2witb2v5UY-UNAA_mj6qT6Dn';
-
 function computeHmacSha256Hex(secret, text) {
   return crypto.createHmac('sha256', secret).update(text).digest('hex');
 }
@@ -12,10 +9,13 @@ async function runLiveKeyBindingTest() {
   console.log('    TESTING PRECISE BINDING CHECK WITH VALID HMAC AND UNLINKED RAZORPAY ORDER    ');
   console.log('===================================================================================\n');
 
+  const supabaseUrl = process.env.TEST_SUPABASE_URL;
+  const anonKey = process.env.TEST_SUPABASE_ANON_KEY;
   const rzpSecret = process.env.RAZORPAY_KEY_SECRET;
-  if (!rzpSecret) {
-    console.log('⚠️ RAZORPAY_KEY_SECRET not set in environment. Skipping live key binding test.');
-    return;
+
+  if (!supabaseUrl || !anonKey || !rzpSecret) {
+    console.error('❌ Missing required environment variables: TEST_SUPABASE_URL, TEST_SUPABASE_ANON_KEY, or RAZORPAY_KEY_SECRET.');
+    process.exit(1);
   }
 
   // 1. Fetch Sample Catalog Variant
@@ -23,8 +23,15 @@ async function runLiveKeyBindingTest() {
     headers: { 'apikey': anonKey, 'Authorization': `Bearer ${anonKey}` }
   });
   const products = await prodRes.json();
+  if (!products || products.length === 0) {
+    throw new Error('No products found in target test database');
+  }
+
   const sampleProduct = products[0];
-  const sampleVariant = sampleProduct.product_variants[0];
+  const sampleVariant = sampleProduct.product_variants?.[0];
+  if (!sampleVariant) {
+    throw new Error('No product variants found for sample product');
+  }
 
   // 2. Create Real Checkout via place-order Edge Function
   const placeRes = await fetch(`${supabaseUrl}/functions/v1/place-order`, {
@@ -37,8 +44,8 @@ async function runLiveKeyBindingTest() {
   });
 
   const placeData = await placeRes.json();
-  if (!placeData.checkoutId || !placeData.razorpayOrderId) {
-    throw new Error('Failed to create checkout for binding test');
+  if (placeRes.status !== 200 || !placeData.checkoutId || !placeData.razorpayOrderId) {
+    throw new Error(`Failed to create checkout for binding test: ${JSON.stringify(placeData)}`);
   }
 
   // 3. Compute Valid HMAC for an UNLINKED Razorpay Order ID
