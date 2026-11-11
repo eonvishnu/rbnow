@@ -180,7 +180,17 @@ Deno.serve(async (req: Request) => {
       }
 
       // Mark webhook event successfully processed in audit ledger
-      await supabase.from('webhook_events').update({ status: 'processed', error_message: null }).eq('id', webhookRecordId);
+      const { error: ledgerErr } = await supabase
+        .from('webhook_events')
+        .update({ status: 'processed', error_message: null })
+        .eq('id', webhookRecordId);
+
+      if (ledgerErr) {
+        console.error("Webhook ledger update to processed failed:", ledgerErr);
+        return new Response(JSON.stringify({ error: "Failed to mark webhook event as processed in ledger." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       return new Response(JSON.stringify({
         success: true,
@@ -193,7 +203,17 @@ Deno.serve(async (req: Request) => {
     }
 
     // Default event acknowledgment
-    await supabase.from('webhook_events').update({ status: 'processed' }).eq('id', webhookRecordId);
+    const { error: defaultLedgerErr } = await supabase
+      .from('webhook_events')
+      .update({ status: 'processed' })
+      .eq('id', webhookRecordId);
+
+    if (defaultLedgerErr) {
+      console.error("Default webhook ledger update failed:", defaultLedgerErr);
+      return new Response(JSON.stringify({ error: "Failed to update webhook event status." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({ success: true, event }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
