@@ -54,17 +54,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const authorization = req.headers.get("Authorization") || "";
-    const accessToken = authorization.trim().split(/\s+/).pop() || "";
-    const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: { user }, error: authError } = await authClient.auth.getUser(accessToken);
-
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Sign in is required to verify this payment." }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const body = await req.json();
     const {
@@ -148,7 +137,49 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4. FETCH OR UPDATE PAYMENT RECORD (Stage 2)
+    // 4. DIRECT RAZORPAY SERVER-TO-SERVER PAYMENT API VERIFICATION
+    try {
+      const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
+      const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${razorpay_payment_id}`, {
+        method: "GET",
+        headers: { "Authorization": authHeader, "Content-Type": "application/json" },
+      });
+
+      if (!rzpPayRes.ok) {
+        return new Response(JSON.stringify({ error: "Unable to verify payment with Razorpay." }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const rzpPay = await rzpPayRes.json();
+      const expectedAmountPaise = Math.round(Number(checkout.grand_total) * 100);
+
+      // Verify captured status, currency, order_id binding, and amount matching
+      if (rzpPay.status !== "captured" || rzpPay.currency !== "INR") {
+        return new Response(JSON.stringify({ error: "Razorpay has not captured this INR payment." }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (rzpPay.order_id !== razorpay_order_id) {
+        return new Response(JSON.stringify({ error: "Payment gateway order ID mismatch." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      if (rzpPay.amount !== expectedAmountPaise) {
+        return new Response(JSON.stringify({ error: `Payment amount mismatch. Expected ₹${checkout.grand_total}, received ₹${rzpPay.amount / 100}` }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    } catch (rzpErr) {
+      console.error("Razorpay API verification failed:", rzpErr);
+      return new Response(JSON.stringify({ error: "Unable to verify payment with Razorpay." }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 5. FETCH OR UPDATE PAYMENT RECORD (Stage 2)
     let { data: paymentRecord } = await supabase
       .from('payments')
       .select('*')
@@ -176,7 +207,7 @@ Deno.serve(async (req: Request) => {
       }).eq('id', paymentRecord.id);
     }
 
-    // 5. ATOMIC CONVERSION TO CONFIRMED ORDER (Stage 3 via PostgreSQL RPC Procedure)
+    // 6. ATOMIC CONVERSION TO CONFIRMED ORDER (Stage 3 via PostgreSQL RPC Procedure)
     const { data: convResult, error: convErr } = await supabase.rpc('convert_checkout_to_order', {
       p_checkout_id: checkout.id,
       p_payment_id: paymentRecord?.id,
@@ -186,8 +217,6 @@ Deno.serve(async (req: Request) => {
       console.error("Atomic Conversion RPC Error:", convErr);
       throw convErr;
     }
-
-    console.log("Atomic Conversion Result:", convResult);
 
     return new Response(JSON.stringify({
       success: true,

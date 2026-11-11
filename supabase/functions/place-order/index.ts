@@ -50,6 +50,7 @@ Deno.serve(async (req: Request) => {
 
     const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
     const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
 
     if (!razorpayKeyId || !razorpayKeySecret) {
       return new Response(JSON.stringify({ error: "Server configuration missing: RAZORPAY_KEY_SECRET" }), {
@@ -58,10 +59,26 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // 1. DERIVE VERIFIED AUTHENTICATED USER ID FROM JWT SESSION (NEVER TRUST CLIENT-SUPPLIED USER_ID)
+    const authorization = req.headers.get("Authorization") || "";
+    const accessToken = authorization.trim().split(/\s+/).pop() || "";
+    let verifiedUserId: string | null = null;
+
+    if (accessToken && anonKey) {
+      const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+      const { data: { user } } = await authClient.auth.getUser(accessToken);
+      if (user) {
+        verifiedUserId = user.id;
+      }
+    }
+
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const body = await req.json();
     const { items, details, couponCode, userId, browserId } = body;
+
+    // Use verified JWT userId if authenticated, else validate client-supplied UUID
+    const finalUserId = verifiedUserId || (userId && isValidUuid(userId) ? userId : null);
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return new Response(JSON.stringify({ error: "Cart items are required" }), {
@@ -79,7 +96,7 @@ Deno.serve(async (req: Request) => {
     let verifiedSubtotal = 0;
     const verifiedItems = [];
 
-    // 1. STRICT CART ITEM & QUANTITY VALIDATION
+    // 2. STRICT DATABASE ITEM & PRICE VALIDATION (ZERO CLIENT PRICE FALLBACK)
     for (const item of items) {
       const rawQtyStr = String(item.qty || item.quantity || '');
       if (!/^\d+$/.test(rawQtyStr)) {
@@ -172,16 +189,26 @@ Deno.serve(async (req: Request) => {
           if (pData) product = pData;
         }
 
-        const itemPrice = Number(product?.price || item.price || 100);
+        // STRICT GUARD: If neither variant nor product exists in DB, REJECT IT!
+        if (!product) {
+          return new Response(JSON.stringify({
+            error: `Product or variant "${item.name || itemId}" does not exist in catalog.`
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const itemPrice = Number(product.price || 100);
         const itemSubtotal = itemPrice * qty;
         verifiedSubtotal += itemSubtotal;
 
         verifiedItems.push({
-          product_id: product ? product.id : null,
+          product_id: product.id,
           variant_id: null,
-          product_name: product ? product.name : (item.name || 'Fresh Catch'),
+          product_name: product.name,
           variant_unit: item.unit || 'pack',
-          product_image: product ? product.image_url : item.img,
+          product_image: product.image_url,
           price: itemPrice,
           quantity: qty,
           total_price: itemSubtotal,
@@ -189,7 +216,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 2. STRICT COUPON VALIDATION
+    // 3. STRICT COUPON VALIDATION
     let discountAmount = 0;
     if (couponCode) {
       const { data: coupon } = await supabase
@@ -221,11 +248,11 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      if (coupon.is_first_order_only && userId && isValidUuid(userId)) {
+      if (coupon.is_first_order_only && finalUserId) {
         const { count: previousOrdersCount } = await supabase
           .from('orders')
           .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId);
+          .eq('user_id', finalUserId);
 
         if (previousOrdersCount && previousOrdersCount > 0) {
           return new Response(JSON.stringify({
@@ -249,7 +276,7 @@ Deno.serve(async (req: Request) => {
 
     const subtotalAfterDiscount = Math.max(0, verifiedSubtotal - discountAmount);
 
-    // 3. Dynamic Server-Side Distance & Delivery Fee Evaluation
+    // 4. DYNAMIC DISTANCE & DELIVERY FEE EVALUATION
     let deliveryFee = 0;
     let calculatedDistanceKm = 0;
 
@@ -303,7 +330,7 @@ Deno.serve(async (req: Request) => {
     const customReceiptId = `DRAFT-${Date.now().toString().slice(-6)}`;
     const amountInPaise = Math.round(orderTotal * 100);
 
-    // 4. CALL RAZORPAY API TO GENERATE ORDER ID
+    // 5. CALL RAZORPAY API TO GENERATE LOCKED ORDER ID
     const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
     const razorpayRes = await fetch("https://api.razorpay.com/v1/orders", {
       method: "POST",
@@ -335,11 +362,11 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 5. STAGE 1: PERSIST CHECKOUT INTENTION SNAPSHOT IN SUPABASE
+    // 6. STAGE 1: PERSIST CHECKOUT INTENTION SNAPSHOT IN SUPABASE
     const { data: checkout, error: checkoutErr } = await supabase
       .from('checkouts')
       .insert({
-        user_id: userId && isValidUuid(userId) ? userId : null,
+        user_id: finalUserId,
         customer_name: details?.name || 'Customer',
         customer_phone: details?.phone || '',
         delivery_address: details || {},
@@ -378,7 +405,7 @@ Deno.serve(async (req: Request) => {
       throw itemsInsertErr;
     }
 
-    // 6. STAGE 2: PERSIST INITIAL PAYMENT ATTEMPT RECORD
+    // 7. STAGE 2: PERSIST INITIAL PAYMENT ATTEMPT RECORD
     const { data: paymentRecord, error: payErr } = await supabase
       .from('payments')
       .insert({
