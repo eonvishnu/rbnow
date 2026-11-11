@@ -68,11 +68,11 @@ Deno.serve(async (req: Request) => {
     const razorpayOrderId = paymentEntity?.order_id;
     const razorpayPaymentId = paymentEntity?.id;
 
-    // Use official Razorpay x-razorpay-event-id header for stable deduplication
-    const webhookEventId = req.headers.get("x-razorpay-event-id") || payload.event_id || payload.contains?.[0] || razorpayPaymentId;
+    // Enforce official Razorpay x-razorpay-event-id header exclusively for stable deduplication
+    const webhookEventId = req.headers.get("x-razorpay-event-id") || req.headers.get("X-Razorpay-Event-Id");
 
-    if (!webhookEventId) {
-      return new Response(JSON.stringify({ error: "Missing x-razorpay-event-id header or event identifier." }), {
+    if (!webhookEventId || webhookEventId.trim() === '') {
+      return new Response(JSON.stringify({ error: "Missing required x-razorpay-event-id header for webhook event deduplication." }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
