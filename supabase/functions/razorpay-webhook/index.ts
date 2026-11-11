@@ -54,6 +54,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // 1. MANDATORY HMAC SIGNATURE VERIFICATION
     const isValid = await verifyHmacSha256(webhookSecret, rawBody, webhookSignature);
     if (!isValid) {
       return new Response(JSON.stringify({ error: "Invalid webhook signature" }), {
@@ -66,40 +67,105 @@ Deno.serve(async (req: Request) => {
     const paymentEntity = payload.payload?.payment?.entity;
     const razorpayOrderId = paymentEntity?.order_id;
     const razorpayPaymentId = paymentEntity?.id;
+    const eventId = payload.event_id || payload.contains?.[0] || `${event}_${razorpayPaymentId}_${Date.now()}`;
 
+    // 2. EVENT DEDUPLICATION GUARD (webhook_events)
+    const { data: existingEvent } = await supabase
+      .from('webhook_events')
+      .select('id')
+      .eq('event_id', eventId)
+      .maybeSingle();
+
+    if (existingEvent) {
+      return new Response(JSON.stringify({ success: true, message: "Webhook event already processed." }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Record webhook event in audit ledger
+    try {
+      await supabase.from('webhook_events').insert({
+        event_id: eventId,
+        event_type: event,
+        payload: payload,
+      });
+    } catch (e) {
+      console.warn("Event record notice:", e);
+    }
+
+    // 3. PROCESS CAPTURED PAYMENT
     if (event === "payment.captured" || event === "order.paid") {
-      if (razorpayOrderId && paymentEntity?.status === "captured" && paymentEntity?.currency === "INR" && Number.isInteger(paymentEntity?.amount)) {
-        // Find corresponding checkout in Supabase
-        const { data: checkout } = await supabase
-          .from("checkouts")
-          .select("id, grand_total, status")
-          .eq("status", "pending_payment")
-          .single();
-
-        if (checkout) {
-          const expectedAmountPaise = Math.round(Number(checkout.grand_total) * 100);
-          if (paymentEntity.amount !== expectedAmountPaise || !razorpayPaymentId) {
-            return new Response(JSON.stringify({ error: "Webhook payment does not match the order amount." }), {
-              status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
-
-          // Fetch payment record
-          const { data: paymentRecord } = await supabase
-            .from('payments')
-            .select('id')
-            .eq('checkout_id', checkout.id)
-            .eq('razorpay_order_id', razorpayOrderId)
-            .maybeSingle();
-
-          if (paymentRecord) {
-            await supabase.rpc('convert_checkout_to_order', {
-              p_checkout_id: checkout.id,
-              p_payment_id: paymentRecord.id,
-            });
-          }
-        }
+      if (!razorpayOrderId || !razorpayPaymentId) {
+        return new Response(JSON.stringify({ error: "Missing required Razorpay payment or order ID." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
+
+      // Resolve exact pre-created payment record using razorpay_order_id
+      const { data: payRecord } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('razorpay_order_id', razorpayOrderId)
+        .maybeSingle();
+
+      if (!payRecord) {
+        return new Response(JSON.stringify({ error: `No stored payment record found for Razorpay Order ID "${razorpayOrderId}".` }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Resolve linked checkout session
+      const { data: checkout } = await supabase
+        .from('checkouts')
+        .select('*')
+        .eq('id', payRecord.checkout_id)
+        .maybeSingle();
+
+      if (!checkout) {
+        return new Response(JSON.stringify({ error: `Checkout session for payment record "${payRecord.id}" not found.` }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Verify amount & currency matching
+      const expectedAmountPaise = Math.round(Number(checkout.grand_total) * 100);
+      if (paymentEntity.amount !== expectedAmountPaise || paymentEntity.currency !== "INR") {
+        return new Response(JSON.stringify({ error: `Webhook payment amount mismatch. Expected ₹${checkout.grand_total}, received ₹${paymentEntity.amount / 100}` }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Mark payment captured and record Razorpay payment ID
+      await supabase
+        .from('payments')
+        .update({
+          razorpay_payment_id: razorpayPaymentId,
+          status: 'captured',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', payRecord.id);
+
+      // Execute atomic order conversion RPC
+      const { data: convResult, error: convErr } = await supabase.rpc('convert_checkout_to_order', {
+        p_checkout_id: checkout.id,
+        p_payment_id: payRecord.id,
+      });
+
+      if (convErr || (convResult && !convResult.success)) {
+        console.error("Webhook Order Conversion Error:", convErr || convResult?.error);
+        return new Response(JSON.stringify({ error: convErr?.message || convResult?.error || "Order conversion failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        orderId: convResult?.order_id,
+        orderNumber: convResult?.order_number,
+        alreadyConverted: convResult?.already_converted || false,
+      }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     return new Response(JSON.stringify({ success: true, event }), {
