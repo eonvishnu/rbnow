@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 1. DERIVE VERIFIED AUTHENTICATED USER ID FROM JWT SESSION (NEVER TRUST CLIENT-SUPPLIED USER_ID)
+    // 1. DERIVE VERIFIED AUTHENTICATED USER ID EXCLUSIVELY FROM JWT BEARER TOKEN (STRICT ZERO-TRUST ENFORCEMENT)
     const authorization = req.headers.get("Authorization") || "";
     const accessToken = authorization.trim().split(/\s+/).pop() || "";
     let verifiedUserId: string | null = null;
@@ -75,10 +75,10 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const body = await req.json();
-    const { items, details, couponCode, userId, browserId } = body;
+    const { items, details, couponCode, browserId } = body;
 
-    // Use verified JWT userId if authenticated, else validate client-supplied UUID
-    const finalUserId = verifiedUserId || (userId && isValidUuid(userId) ? userId : null);
+    // Strict Enforcement: user_id is set ONLY if cryptographically verified via JWT bearer session
+    const finalUserId = verifiedUserId || null;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return new Response(JSON.stringify({ error: "Cart items are required" }), {
@@ -405,7 +405,7 @@ Deno.serve(async (req: Request) => {
       throw itemsInsertErr;
     }
 
-    // 7. STAGE 2: PERSIST INITIAL PAYMENT ATTEMPT RECORD
+    // 7. STAGE 2: PERSIST INITIAL PAYMENT ATTEMPT RECORD LINKING CHECKOUT ID & RAZORPAY ORDER ID
     const { data: paymentRecord, error: payErr } = await supabase
       .from('payments')
       .insert({

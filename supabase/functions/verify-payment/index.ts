@@ -81,7 +81,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. FETCH CHECKOUT SESSION SNAPSHOT (Stage 1)
+    // 2. FETCH CHECKOUT SESSION SNAPSHOT
     const targetCheckoutId = checkoutId || checkoutSessionId;
     let checkout = null;
 
@@ -118,7 +118,23 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 3. IDEMPOTENCY CHECK: If checkout already converted to order, return existing order
+    // 3. STRICT PAYMENT-TO-CHECKOUT BINDING CHECK:
+    // Verify that 'payments' table ALREADY has a pre-created record linking checkout_id & razorpay_order_id
+    const { data: paymentRecord } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('checkout_id', checkout.id)
+      .eq('razorpay_order_id', razorpay_order_id)
+      .maybeSingle();
+
+    if (!paymentRecord) {
+      return new Response(JSON.stringify({ error: "Razorpay order ID is not linked to this checkout session." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 4. IDEMPOTENCY CHECK: If checkout already converted to order, return existing order
     if (checkout.status === 'converted') {
       const { data: existingOrder } = await supabase
         .from('orders')
@@ -137,7 +153,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4. DIRECT RAZORPAY SERVER-TO-SERVER PAYMENT API VERIFICATION
+    // 5. DIRECT RAZORPAY SERVER-TO-SERVER PAYMENT API VERIFICATION
     try {
       const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
       const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${razorpay_payment_id}`, {
@@ -154,14 +170,13 @@ Deno.serve(async (req: Request) => {
       const rzpPay = await rzpPayRes.json();
       const expectedAmountPaise = Math.round(Number(checkout.grand_total) * 100);
 
-      // Verify captured status, currency, order_id binding, and amount matching
       if (rzpPay.status !== "captured" || rzpPay.currency !== "INR") {
         return new Response(JSON.stringify({ error: "Razorpay has not captured this INR payment." }), {
           status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      if (rzpPay.order_id !== razorpay_order_id) {
+      if (rzpPay.order_id !== razorpay_order_id || rzpPay.order_id !== paymentRecord.razorpay_order_id) {
         return new Response(JSON.stringify({ error: "Payment gateway order ID mismatch." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
@@ -179,38 +194,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 5. FETCH OR UPDATE PAYMENT RECORD (Stage 2)
-    let { data: paymentRecord } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('checkout_id', checkout.id)
-      .eq('razorpay_order_id', razorpay_order_id)
-      .maybeSingle();
-
-    if (!paymentRecord) {
-      const { data: newPay } = await supabase.from('payments').insert({
-        checkout_id: checkout.id,
-        razorpay_order_id,
-        razorpay_payment_id,
-        razorpay_signature,
-        amount: checkout.grand_total,
-        currency: 'INR',
-        status: 'captured',
-      }).select().single();
-      paymentRecord = newPay;
-    } else {
-      await supabase.from('payments').update({
-        razorpay_payment_id,
-        razorpay_signature,
-        status: 'captured',
-        updated_at: new Date().toISOString(),
-      }).eq('id', paymentRecord.id);
-    }
+    // Update payment record to captured
+    await supabase.from('payments').update({
+      razorpay_payment_id,
+      razorpay_signature,
+      status: 'captured',
+      updated_at: new Date().toISOString(),
+    }).eq('id', paymentRecord.id);
 
     // 6. ATOMIC CONVERSION TO CONFIRMED ORDER (Stage 3 via PostgreSQL RPC Procedure)
     const { data: convResult, error: convErr } = await supabase.rpc('convert_checkout_to_order', {
       p_checkout_id: checkout.id,
-      p_payment_id: paymentRecord?.id,
+      p_payment_id: paymentRecord.id,
     });
 
     if (convErr) {
