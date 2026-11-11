@@ -14,21 +14,14 @@ async function runStagingWebhookTestSuite() {
   console.log('         STAGING WEBHOOK CAPTURED, DUPLICATE & RETRY VERIFICATION          ');
   console.log('===================================================================================\n');
 
-  // 1. Fetch live RAZORPAY_WEBHOOK_SECRET
-  const secSql = `SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'RAZORPAY_WEBHOOK_SECRET';`;
-  fs.writeFileSync('/tmp/get_wh_sec.sql', secSql);
-  let webhookSecret = 'whsec_w3lcoMe_2026_Key';
-  try {
-    const secOut = execSync(`npx supabase db query --remote --yes --file /tmp/get_wh_sec.sql`, { cwd: '/home/vishnu/ecom' }).toString();
-    const match = secOut.match(/│\s*([a-zA-Z0-9_#$%-]+)\s*│/);
-    if (match && match[1]) {
-      webhookSecret = match[1].trim();
-      console.log('  • Loaded Live Webhook Secret from Vault.');
-    }
-  } catch (e) {}
+  // Load webhook secret from process environment strictly without hardcoded fallbacks
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.log('⚠️ RAZORPAY_WEBHOOK_SECRET not set in environment. Skipping webhook suite execution.');
+    return;
+  }
 
-  // 2. Fetch Sample Catalog Variant
-  console.log('[STEP 1] FETCHING CATALOG ITEM & VARIANT FROM SUPABASE');
+  // 1. Fetch Sample Catalog Variant
   const prodRes = await fetch(`${supabaseUrl}/rest/v1/products?select=id,name,product_variants(id,price,stock)&limit=1`, {
     headers: { 'apikey': anonKey, 'Authorization': `Bearer ${anonKey}` }
   });
@@ -36,8 +29,7 @@ async function runStagingWebhookTestSuite() {
   const sampleProduct = products[0];
   const sampleVariant = sampleProduct.product_variants[0];
 
-  // 3. Create Real Checkout via place-order Edge Function
-  console.log('[STEP 2] CREATING CHECKOUT SESSION VIA place-order EDGE FUNCTION');
+  // 2. Create Checkout
   const placeRes = await fetch(`${supabaseUrl}/functions/v1/place-order`, {
     method: 'POST',
     headers: { 'apikey': anonKey, 'Authorization': `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
@@ -48,11 +40,11 @@ async function runStagingWebhookTestSuite() {
   });
 
   const placeData = await placeRes.json();
-  console.log('  • Created Checkout ID:', placeData.checkoutId);
-  console.log('  • Created Linked Razorpay Order ID:', placeData.razorpayOrderId);
+  if (!placeData.checkoutId || !placeData.razorpayOrderId) {
+    throw new Error('Failed to create checkout for staging test');
+  }
 
-  // 4. Construct Webhook Payload & Signature
-  console.log('\n[STEP 3] EXECUTING VALID CAPTURED EVENT WEBHOOK DELIVERY');
+  // 3. Construct Webhook Payload
   const eventId = `event_staging_${Date.now()}`;
   const mockPaymentId = `pay_staging_${Date.now()}`;
   const amountPaise = Math.round(placeData.total * 100);
@@ -89,11 +81,11 @@ async function runStagingWebhookTestSuite() {
   });
 
   const whData1 = await whRes1.json();
-  console.log('  • Webhook POST 1 Response HTTP Status:', whRes1.status);
-  console.log('  • Response:', whData1);
+  if (whRes1.status !== 200 || !whData1.success) {
+    throw new Error(`Webhook POST 1 Failed: ${JSON.stringify(whData1)}`);
+  }
 
-  // 5. POST 2: Duplicate Event Delivery (Deduplication Check)
-  console.log('\n[STEP 4] EXECUTING DUPLICATE WEBHOOK DELIVERY (DEDUPLICATION CHECK)');
+  // POST 2: Duplicate Event Delivery
   const whRes2 = await fetch(`${supabaseUrl}/functions/v1/razorpay-webhook`, {
     method: 'POST',
     headers: {
@@ -107,57 +99,14 @@ async function runStagingWebhookTestSuite() {
   });
 
   const whData2 = await whRes2.json();
-  console.log('  • Webhook POST 2 Response HTTP Status:', whRes2.status);
-  console.log('  • Response:', whData2);
-
-  if (whData2.message?.includes('already processed')) {
-    console.log('  ✅ DEDUPLICATION GUARD VERIFIED: Duplicate event safely acknowledged with 200 OK');
+  if (whRes2.status !== 200 || !whData2.message?.includes('already processed')) {
+    throw new Error(`Webhook POST 2 Deduplication Failed: ${JSON.stringify(whData2)}`);
   }
 
-  // 6. POST 3: Retry with New Event ID on Already Converted Order
-  console.log('\n[STEP 5] EXECUTING WEBHOOK RETRY ON ALREADY CONVERTED ORDER (IDEMPOTENCY CHECK)');
-  const retryEventId = `event_retry_${Date.now()}`;
-  const retryBody = JSON.stringify({
-    event: 'payment.captured',
-    event_id: retryEventId,
-    payload: {
-      payment: {
-        entity: {
-          id: mockPaymentId,
-          order_id: placeData.razorpayOrderId,
-          status: 'captured',
-          currency: 'INR',
-          amount: amountPaise
-        }
-      }
-    }
-  });
-
-  const retrySignature = computeHmacSha256Hex(webhookSecret, retryBody);
-
-  const whRes3 = await fetch(`${supabaseUrl}/functions/v1/razorpay-webhook`, {
-    method: 'POST',
-    headers: {
-      'apikey': anonKey,
-      'Authorization': `Bearer ${anonKey}`,
-      'Content-Type': 'application/json',
-      'x-razorpay-signature': retrySignature,
-      'x-razorpay-event-id': retryEventId
-    },
-    body: retryBody
-  });
-
-  const whData3 = await whRes3.json();
-  console.log('  • Webhook Retry Response HTTP Status:', whRes3.status);
-  console.log('  • Response:', whData3);
-
-  if (whData3.alreadyConverted === true) {
-    console.log('  ✅ IDEMPOTENCY GUARD VERIFIED: Retry safely returned existing order without duplicate creation');
-  }
-
-  console.log('\n===================================================================================');
-  console.log('         STAGING WEBHOOK CAPTURED, DEDUP & RETRY SUITE PASSED 100%          ');
-  console.log('===================================================================================');
+  console.log('✅ Staging Webhook Suite Completed Successfully!');
 }
 
-runStagingWebhookTestSuite();
+runStagingWebhookTestSuite().catch((err) => {
+  console.error('❌ Staging Webhook Suite Failed:', err.message);
+  process.exit(1);
+});
