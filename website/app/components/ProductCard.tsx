@@ -61,15 +61,15 @@ export const ProductCard = ({
     : null;
 
   return (
-    <div className={`bg-white p-3.5 rounded-[24px] border shadow-sm flex flex-col h-full transition-all active:scale-[0.98] hover:shadow-md relative overflow-hidden ${isPreorder ? 'border-amber-300 ring-2 ring-amber-400/20' : 'border-gray-200/90'}`}>
+    <div className={`bg-[#FFFDF9] p-3.5 rounded-[24px] border shadow-sm flex flex-col h-full transition-all active:scale-[0.98] hover:shadow-md relative overflow-hidden ${isPreorder ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-[#E3D9C6]'}`}>
       
-      {!isOpen && <div className="absolute inset-0 bg-gray-50/30 z-[5] pointer-events-none" />}
+      {!isOpen && <div className="absolute inset-0 bg-[#FAF6EE]/50 z-[5] pointer-events-none" />}
 
       {/* Product Image Area */}
-      <div className="relative h-36 w-full mb-3 bg-gray-50 rounded-2xl overflow-hidden border border-gray-100 flex items-center justify-center">
+      <div className="relative h-36 w-full mb-3 bg-[#F4EFE6] rounded-2xl overflow-hidden border border-[#E3D9C6] flex items-center justify-center">
         <img
-          src={img} 
-          alt={name} 
+          src={img && img.trim() !== '' ? img : 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80'}
+          alt={name || 'Product'}
           className={`object-cover w-full h-full hover:scale-105 transition-all duration-300 ${!isOpen ? 'grayscale' : ''}`}
         />
         

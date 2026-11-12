@@ -68,7 +68,7 @@ export const BottomNav = () => {
   ];
 
   return (
-    <nav className={`fixed bottom-0 left-0 right-0 z-40 md:hidden bg-emerald-950/95 backdrop-blur-2xl border-t border-amber-400/20 px-2 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.4)] transition-all duration-300 ${
+    <nav className={`fixed bottom-0 left-0 right-0 z-40 md:hidden bg-[#FAF6EE]/95 backdrop-blur-2xl border-t border-amber-600/20 px-2 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] transition-all duration-300 ${
       isVisible ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
     }`}>
       <div className="flex items-center justify-around max-w-md mx-auto">
@@ -81,7 +81,7 @@ export const BottomNav = () => {
               key={item.label}
               href={item.href}
               className={`flex flex-col items-center justify-center flex-1 py-1 relative transition-all active:scale-90 ${
-                isActive ? 'text-amber-400 font-extrabold' : 'text-emerald-300/70 hover:text-emerald-200'
+                isActive ? 'text-amber-800 font-extrabold' : 'text-stone-500 hover:text-stone-800'
               }`}
             >
               <div className="relative">
@@ -89,19 +89,19 @@ export const BottomNav = () => {
 
                 {/* Badge for Cart */}
                 {item.badge && (
-                  <span className="absolute -top-1.5 -right-2.5 bg-amber-400 text-emerald-950 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-emerald-950 shadow-sm animate-pulse">
+                  <span className="absolute -top-1.5 -right-2.5 bg-amber-600 text-[#FAF6EE] text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-[#FAF6EE] shadow-sm animate-pulse">
                     {item.badge}
                   </span>
                 )}
               </div>
 
-              <span className={`text-[10px] mt-1 tracking-wider uppercase ${isActive ? 'font-black text-amber-400' : 'font-semibold'}`}>
+              <span className={`text-[10px] mt-1 tracking-wider uppercase ${isActive ? 'font-black text-amber-800' : 'font-semibold'}`}>
                 {item.label}
               </span>
 
               {/* Active Golden Glow Bar */}
               {isActive && (
-                <div className="absolute -top-2 w-8 h-1 bg-amber-400 rounded-full shadow-[0_0_10px_#f5d061]" />
+                <div className="absolute -top-2 w-8 h-1 bg-amber-600 rounded-full shadow-[0_0_10px_rgba(212,175,55,0.5)]" />
               )}
             </Link>
           );

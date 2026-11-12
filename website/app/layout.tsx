@@ -22,7 +22,7 @@ const geistMono = Geist_Mono({
 });
 
 export const viewport: Viewport = {
-  themeColor: "#022c22",
+  themeColor: "#f7efda",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="overflow-x-clip antialiased">
-      <body className={`${geistSans.variable} ${geistMono.variable} bg-white text-gray-900 overflow-x-clip max-w-[100vw] min-h-screen flex flex-col`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} bg-[#FAF6EE] text-gray-900 overflow-x-clip max-w-[100vw] min-h-screen flex flex-col`}>
         <AuthProvider>
           <LocationProvider>
             <CartProvider>

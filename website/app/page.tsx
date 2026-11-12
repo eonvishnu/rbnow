@@ -7,6 +7,7 @@ import { Header } from "./components/Header";
 import { CategoryNav } from "./components/CategoryNav";
 import { ProductCard } from "./components/ProductCard";
 import { PreorderCarousel } from "./components/PreorderCarousel";
+import { BannerCarousel } from "./components/BannerCarousel";
 import { CartBar } from "./components/CartBar";
 import { ProductModal } from "./components/ProductModal";
 
@@ -132,11 +133,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    setActiveSubCategory("all");
-    setActiveSubSubCategory("all");
-  }, [activeCategory]);
-
-  useEffect(() => {
     setActiveSubSubCategory("all");
   }, [activeSubCategory]);
 
@@ -174,7 +170,17 @@ export default function Home() {
 
         const { data, error } = await query;
         if (!error && data) {
-          setProducts(data.map(p => {
+          let rows = data;
+          if (activeSubCategory && activeSubCategory !== "all") {
+            const subLower = activeSubCategory.toLowerCase();
+            rows = data.filter((p: any) =>
+              (p.category_name && p.category_name.toLowerCase().includes(subLower)) ||
+              (p.name && p.name.toLowerCase().includes(subLower)) ||
+              (p.description && p.description.toLowerCase().includes(subLower))
+            );
+          }
+
+          setProducts(rows.map(p => {
             const options = generateProductOptions(p, campaigns || [], discounts || []);
             const defaultOpt = options[0];
             return {
@@ -209,6 +215,36 @@ export default function Home() {
         onCategoryChange={(id: string, name: string) => {
              setActiveCategory(name);
              setActiveCategoryTitle(name);
+             setActiveSubCategory("all");
+        }}
+      />
+
+      {/* BANNER CAROUSEL (TOP HERO) */}
+      <BannerCarousel
+        onSelectCategory={(linkName: string) => {
+          let foundCategory = linkName;
+          let foundSubCategory = "all";
+
+          for (const cat of categories) {
+            if (cat.name.toLowerCase() === linkName.toLowerCase()) {
+              foundCategory = cat.name;
+              break;
+            }
+            const matchSub = cat.subCategories?.some((sub: any) => {
+              const subName = typeof sub === 'string' ? sub : sub.name;
+              return subName.toLowerCase() === linkName.toLowerCase();
+            });
+            if (matchSub) {
+              foundCategory = cat.name;
+              foundSubCategory = linkName;
+              break;
+            }
+          }
+
+          setActiveCategory(foundCategory);
+          setActiveCategoryTitle(foundCategory);
+          setActiveSubCategory(foundSubCategory);
+          window.scrollTo({ top: 350, behavior: 'smooth' });
         }}
       />
 
@@ -218,6 +254,7 @@ export default function Home() {
         onCategoryChange={(id: string, name: string) => {
              setActiveCategory(name); 
              setActiveCategoryTitle(name);
+             setActiveSubCategory("all");
         }}
       />
 
@@ -266,7 +303,7 @@ export default function Home() {
         <div className="flex justify-between items-center border-b border-gray-200/80 pb-3">
            <div>
              <h2 className="text-base sm:text-lg font-black uppercase text-emerald-950 tracking-tight flex items-center gap-2">
-               <span>{activeCategoryTitle}</span>
+               <span>{activeSubCategory !== "all" ? `${activeCategoryTitle} › ${activeSubCategory}` : activeCategoryTitle}</span>
                <span className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full">
                  {products.length} Items
                </span>

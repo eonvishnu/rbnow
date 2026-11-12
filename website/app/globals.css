@@ -1,12 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --primary-emerald: #059669;
-  --primary-emerald-hover: #047857;
-  --accent-gold: #d4af37;
-  --accent-gold-light: #f5d061;
+  --background: #FAF6EE;
+  --foreground: #064e3b;
+  --surface: #F4EFE6;
+  --surface-card: #FFFFFF;
+  --border-creme: #E3D9C6;
+  --primary-brand: #064e3b;
+  --accent-gold: #D4AF37;
+  --accent-gold-light: #FDF0CD;
 }
 
 @theme inline {
@@ -15,16 +17,16 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  --color-emerald-50: #ecfdf5;
-  --color-emerald-100: #d1fae5;
-  --color-emerald-200: #a7f3d0;
-  --color-emerald-300: #6ee7b7;
-  --color-emerald-400: #34d399;
-  --color-emerald-500: #10b981;
-  --color-emerald-600: #059669;
-  --color-emerald-700: #047857;
-  --color-emerald-800: #065f46;
-  --color-emerald-900: #064e3b;
+  --color-creme-50: #FCFBF9;
+  --color-creme-100: #F7F3EB;
+  --color-creme-200: #EFE8DC;
+  --color-creme-300: #E2D7C5;
+  --color-creme-400: #D1C2A8;
+  --color-creme-500: #B8A584;
+  --color-creme-600: #9E8863;
+  --color-creme-700: #7E6B4B;
+  --color-creme-800: #5E4F37;
+  --color-creme-900: #3E3424;
 
   --color-gold-50: #fefce8;
   --color-gold-100: #fef9c3;

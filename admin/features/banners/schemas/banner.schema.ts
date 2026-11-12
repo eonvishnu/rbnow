@@ -13,6 +13,7 @@ export const bannerRowSchema = z.object({
 export const bannerCategoryOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
+  parent_id: z.string().nullable().optional(),
 });
 
 export const createBannerSchema = z.object({

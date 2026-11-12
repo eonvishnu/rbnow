@@ -559,22 +559,8 @@ export default function CartPage() {
 
             </section>
 
-            {/* Right: Payment Method & Bill Summary */}
+            {/* Right: Bill Summary */}
             <section className="lg:col-span-5 lg:sticky lg:top-20 space-y-4">
-
-              {/* PAYMENT METHOD BADGE */}
-              <div className="bg-white p-4 rounded-2xl border border-[#E3EAE6] flex items-center justify-between shadow-xs">
-                <div className="flex items-center gap-2.5">
-                  <CreditCard size={18} className="text-[#006B50]" />
-                  <div>
-                    <span className="text-xs font-black text-[#17211D] uppercase block">Razorpay Online Payment</span>
-                    <span className="text-[10px] font-bold text-[#75817B]">UPI, Cards, NetBanking</span>
-                  </div>
-                </div>
-                <span className="text-[9px] font-black uppercase bg-[#E5F5EF] text-[#006B50] px-2.5 py-1 rounded-full border border-[#BCE2D3]">
-                  SECURE
-                </span>
-              </div>
 
               {/* BILL SUMMARY BOX (Clean White Card with #004D3B Header & #FFC400 CTA) */}
               <div className="bg-white p-5 sm:p-6 rounded-2xl border border-[#E3EAE6] space-y-4 shadow-sm relative overflow-hidden">

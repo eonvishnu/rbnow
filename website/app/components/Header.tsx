@@ -14,9 +14,6 @@ import {
   Headphones,
   User,
   Search,
-  Calendar,
-  ArrowRight,
-  ShieldCheck,
   MessageCircle,
   Phone
 } from 'lucide-react';
@@ -39,7 +36,6 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [dynamicCategories, setDynamicCategories] = useState<any[]>([]);
-  const [preorderCampaigns, setPreorderCampaigns] = useState<any[]>([]);
   const [storeStatus, setStoreStatus] = useState({ isOpen: true, message: "" });
   const [storeCredit, setStoreCredit] = useState(0);
 
@@ -77,18 +73,7 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
         setDynamicCategories(parentCategories.map(c => ({ id: c.id, name: c.name, imageUrl: c.image_url })));
       }
 
-      // 2. Fetch active pre-order campaigns dynamically
-      const { data: preorders } = await supabase
-        .from('preorder_campaigns')
-        .select('*, product_variants(*, products(*))')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false });
-
-      if (preorders) {
-        setPreorderCampaigns(preorders);
-      }
-
-      // 3. Fetch store settings
+      // 2. Fetch store settings
       const { data: storeData } = await supabase
         .from('store_settings')
         .select('*')
@@ -104,7 +89,6 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
   }, []);
 
   const displayCategories = [...STATIC_OPTS, ...dynamicCategories];
-  const featuredCampaign = preorderCampaigns.length > 0 ? preorderCampaigns[0] : null;
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -112,7 +96,7 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
   };
 
   return (
-    <div className="w-full bg-[#022c22] text-white relative shadow-xl">
+    <div className="w-full bg-[#F4EFE6] text-[#2C241D] relative shadow-md border-b border-[#E3D9C6]">
       
       {/* Closed Banner */}
       {!storeStatus.isOpen && (
@@ -128,27 +112,27 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
           {/* Crown Logo & Regal Title */}
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 p-0.5 shadow-md shrink-0">
-              <div className="w-full h-full rounded-full bg-[#022c22] flex items-center justify-center border border-amber-300/40 overflow-hidden">
+              <div className="w-full h-full rounded-full bg-[#FAF6EE] flex items-center justify-center border border-amber-500/40 overflow-hidden">
                 <img src="/logo.png" alt="Royal Bengal Crown" className="w-full h-full object-cover rounded-full scale-105" />
               </div>
             </div>
 
             <div className="flex flex-col">
-              <h1 className="text-base sm:text-xl font-serif font-black tracking-widest text-amber-400 leading-tight uppercase">
-                ROYAL BENGAL
+              <h1 className="text-base sm:text-xl font-serif font-black tracking-widest text-emerald-800 leading-tight ">
+                The  Royal Bengal Fresh
               </h1>
-              <p className="text-[10px] text-amber-200 font-semibold tracking-wide flex items-center gap-1">
+              <p className="text-[10px] text-emerald-800 font-semibold tracking-wide text-center w-full">
                 <span>রুচিশীল বাঙালির রাজকীয় স্বাদ</span>
               </p>
             </div>
           </div>
 
-          {/* Right Action: Customer Support Popover (Matching rbnow.in screenshot) */}
+          {/* Right Action: Customer Support Popover */}
           <div className="relative">
             <button
               onClick={() => setIsSupportOpen(!isSupportOpen)}
               aria-label="Customer Support Concierge"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#004d3b] border-2 border-[#ffc400] flex items-center justify-center text-[#ffc400] shadow-md hover:bg-[#00382b] transition-transform active:scale-95"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#EFE8DC] border-2 border-amber-600 flex items-center justify-center text-amber-800 shadow-md hover:bg-[#E2D7C5] transition-transform active:scale-95"
             >
               <Headphones size={18} />
             </button>
@@ -156,9 +140,9 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
             {isSupportOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsSupportOpen(false)} />
-                <div className="absolute right-0 mt-3 w-64 bg-white text-gray-900 border-2 border-amber-300 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="p-3.5 bg-[#00382b] text-white">
-                    <p className="text-[9px] font-black uppercase text-[#ffc400] tracking-widest">ROYAL CONCIERGE</p>
+                <div className="absolute right-0 mt-3 w-64 bg-[#FFFDF9] text-gray-900 border-2 border-amber-300 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="p-3.5 bg-emerald-950 text-white">
+                    <p className="text-[9px] font-black uppercase text-amber-300 tracking-widest">ROYAL CONCIERGE</p>
                     <h3 className="text-xs font-black uppercase text-white mt-0.5">Customer Support</h3>
                   </div>
 
@@ -169,9 +153,9 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsSupportOpen(false)}
-                      className="p-3 rounded-xl hover:bg-emerald-50 flex items-center gap-3 transition-colors text-left block"
+                      className="p-3 rounded-xl hover:bg-amber-50 flex items-center gap-3 transition-colors text-left block"
                     >
-                      <div className="w-8 h-8 rounded-full bg-[#e5f5ef] text-[#006b50] flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
                         <MessageCircle size={16} />
                       </div>
                       <div>
@@ -184,9 +168,9 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
                     <a
                       href="tel:+919876543210"
                       onClick={() => setIsSupportOpen(false)}
-                      className="p-3 rounded-xl hover:bg-emerald-50 flex items-center gap-3 transition-colors text-left block"
+                      className="p-3 rounded-xl hover:bg-amber-50 flex items-center gap-3 transition-colors text-left block"
                     >
-                      <div className="w-8 h-8 rounded-full bg-[#fefce8] text-[#854d0e] flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
                         <Phone size={16} />
                       </div>
                       <div>
@@ -209,19 +193,19 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
             <input
               type="text"
               placeholder="Search cuts, fresh catch & delicacies..."
-              className="w-full bg-white text-gray-900 border-0 rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold outline-none shadow-sm placeholder:text-gray-400 placeholder:font-medium"
+              className="w-full bg-[#FFFDF9] text-gray-900 border border-[#E3D9C6] rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold outline-none shadow-sm placeholder:text-gray-400 placeholder:font-medium focus:border-amber-500"
             />
           </div>
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1 text-[11px] font-bold text-amber-300 hover:text-amber-200 transition-colors py-0.5"
+            className="flex items-center gap-1 text-[11px] font-bold text-amber-900 hover:text-amber-950 transition-colors py-0.5"
           >
-            <MapPin size={14} className="text-amber-400 fill-amber-400/40 shrink-0" />
-            <span className="truncate max-w-[280px] sm:max-w-md text-amber-300 font-extrabold">
-              Deliver to: <span className="font-black uppercase tracking-wider text-amber-300">{location.label ? location.label.toUpperCase() : 'SELECT LOCATION'}</span>
+            <MapPin size={14} className="text-amber-700 fill-amber-500/20 shrink-0" />
+            <span className="truncate max-w-[280px] sm:max-w-md text-amber-800 font-extrabold">
+              Deliver to: <span className="font-black uppercase tracking-wider text-emerald-950">{location.label ? location.label.toUpperCase() : 'SELECT LOCATION'}</span>
               {(location.address || location.area) && (
-                <span className="font-medium text-white/90"> - {location.address || `${location.houseNumber ? location.houseNumber + ', ' : ''}${location.area || ''}, ${location.city || ''}`}</span>
+                <span className="font-medium text-black/90"> - {location.address || `${location.houseNumber ? location.houseNumber + ', ' : ''}${location.area || ''}, ${location.city || ''}`}</span>
               )}
             </span>
             <ChevronDown size={12} className="text-amber-400 shrink-0" />
@@ -229,61 +213,6 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
         </div>
 
       </div>
-
-      {/* COMPACT & RESPONSIVE DYNAMIC HERO PRE-ORDER BANNER CARD */}
-      {featuredCampaign && (
-        <div className="bg-gray-50 px-3.5 py-3 border-b border-gray-100">
-          <div className="max-w-7xl mx-auto">
-            <div className="bg-gradient-to-r from-emerald-50 via-amber-50/50 to-emerald-50 border border-amber-300/80 rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 shadow-sm relative overflow-hidden flex items-center justify-between gap-3 sm:gap-6">
-
-              <div className="space-y-1.5 flex-1 min-w-0 z-10">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-900 text-amber-300 text-[8px] sm:text-[9px] font-black uppercase tracking-widest shadow-sm">
-                  <Sparkles size={10} /> PRE-ORDER
-                </span>
-
-                <h2 className="text-sm sm:text-lg font-black uppercase tracking-tight text-emerald-950 truncate leading-tight">
-                  {featuredCampaign.name}
-                </h2>
-
-                <p className="text-[10px] sm:text-xs font-extrabold text-emerald-800 truncate">
-                  {featuredCampaign.product_variants?.products?.name} ({featuredCampaign.product_variants?.unit}) • ₹{featuredCampaign.price}
-                </p>
-
-                <div className="flex items-center gap-1.5 text-[9px] sm:text-[11px] font-black text-emerald-900 bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-amber-200 inline-flex shadow-2xs">
-                  <Calendar size={12} className="text-amber-500 shrink-0" />
-                  <span>Expected: <strong className="text-amber-700">{new Date(featuredCampaign.expected_available_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</strong></span>
-                </div>
-
-                <div className="pt-1">
-                  <button
-                    onClick={() => {
-                      const category = featuredCampaign.product_variants?.products?.category_name;
-                      if (category) onCategoryChange(category, category);
-                      window.scrollTo({ top: 400, behavior: 'smooth' });
-                    }}
-                    className="bg-emerald-900 hover:bg-emerald-950 text-amber-300 font-black text-[10px] sm:text-xs px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl uppercase tracking-wider flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
-                  >
-                    Pre-Order Now <ArrowRight size={12} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Compact Banner Image */}
-              <div className="relative w-24 h-24 sm:w-40 sm:h-32 shrink-0 flex items-center justify-center">
-                <span className="absolute top-1 right-1 bg-amber-400 text-emerald-950 font-black text-[7px] sm:text-[8px] px-2 py-0.5 rounded-full uppercase shadow-xs z-10">
-                  RESERVE
-                </span>
-                <img
-                  src={featuredCampaign.product_variants?.products?.image_url || "https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80"}
-                  alt={featuredCampaign.name}
-                  className="w-full h-full object-cover rounded-xl border border-amber-200 shadow-sm"
-                />
-              </div>
-
-            </div>
-          </div>
-        </div>
-      )}
 
       {bottomSlot && (
         <div className="w-full px-4 py-2 border-t border-emerald-100 bg-white">

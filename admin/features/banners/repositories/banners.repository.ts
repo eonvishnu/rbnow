@@ -8,9 +8,24 @@ export async function listBanners() {
 }
 
 export async function listBannerCategories() {
-  const { data, error } = await supabase.from('categories').select('id, name').order('name');
+  const { data, error } = await supabase.from('categories').select('id, name, parent_id').order('name');
   if (error) throw error;
   return bannerCategoryOptionSchema.array().parse(data);
+}
+
+export async function uploadBannerImage(file: File): Promise<string> {
+  const fileExt = file.name.split('.').pop() || 'png';
+  const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+  const filePath = `banner_${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('banners')
+    .upload(filePath, file, { upsert: true });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage.from('banners').getPublicUrl(filePath);
+  return data.publicUrl;
 }
 
 export async function createBanner(input: {

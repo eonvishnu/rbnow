@@ -3,6 +3,7 @@ import {
   deleteBanner,
   listBannerCategories,
   listBanners,
+  uploadBannerImage,
 } from '../repositories/banners.repository';
 import { createBannerSchema } from '../schemas/banner.schema';
 
@@ -11,13 +12,19 @@ export async function getBannerWorkspace() {
   return { banners, categories };
 }
 
-export async function createPromoBanner(input: {
+export async function createPromoBannerWithImage(input: {
   title: string;
-  imageUrl: string;
+  imageFile: File;
   categoryLink: string;
   order: number;
 }) {
-  const result = createBannerSchema.safeParse(input);
+  const imageUrl = await uploadBannerImage(input.imageFile);
+  const result = createBannerSchema.safeParse({
+    title: input.title,
+    imageUrl,
+    categoryLink: input.categoryLink,
+    order: input.order,
+  });
   if (!result.success) throw new Error(result.error.issues[0]?.message || 'Banner details are invalid.');
   await createBanner(result.data);
 }

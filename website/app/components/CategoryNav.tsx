@@ -34,7 +34,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({ activeCategory, onCate
   const displayCategories = [...STATIC_OPTS, ...dynamicCategories];
 
   return (
-    <div className="bg-white text-gray-900 pt-3.5 pb-3 border-b border-amber-100 sticky top-0 z-30 shadow-md w-full">
+    <div className="bg-[#F4EFE6] text-[#2C241D] pt-3.5 pb-3 border-b border-[#E3D9C6] sticky top-0 z-30 shadow-sm w-full">
       <div className="max-w-7xl mx-auto px-4 flex gap-3.5 sm:gap-5 overflow-x-auto no-scrollbar snap-x">
         {displayCategories.map((cat) => {
           const isActive = activeCategory === cat.id || activeCategory === cat.name;
@@ -47,11 +47,11 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({ activeCategory, onCate
             >
               <div className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full flex items-center justify-center p-0.5 transition-all duration-300 relative
                 ${isActive
-                  ? "bg-gradient-to-tr from-amber-300 via-amber-400 to-amber-500 shadow-md shadow-amber-400/20 scale-105"
-                  : "bg-gray-100 hover:bg-gray-200"}`}
+                  ? "bg-gradient-to-tr from-amber-300 via-amber-400 to-amber-600 shadow-md shadow-amber-400/30 scale-105"
+                  : "bg-[#EFE8DC] hover:bg-[#E2D7C5]"}`}
               >
                 <div className={`w-full h-full rounded-full overflow-hidden flex items-center justify-center transition-all ${
-                  isActive ? "bg-emerald-950 text-amber-300" : "bg-gray-50 text-gray-700"
+                  isActive ? "bg-[#FAF6EE] text-amber-800" : "bg-[#FFFDF9] text-gray-700"
                 }`}>
                   {cat.imageUrl ? (
                     <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-cover" />
@@ -62,7 +62,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({ activeCategory, onCate
               </div>
 
               <span className={`text-[11px] font-bold text-center max-w-[70px] truncate transition-colors ${
-                isActive ? "text-emerald-950 font-black" : "text-gray-600"
+                isActive ? "text-emerald-950 font-black" : "text-emerald-900/70"
               }`}>
                 {cat.name}
               </span>
