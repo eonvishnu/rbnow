@@ -15,7 +15,11 @@ STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT role FROM public.profiles WHERE id = auth.uid()
+  SELECT COALESCE(
+    (SELECT role FROM public.profiles WHERE id = auth.uid()),
+    (auth.jwt() -> 'user_metadata' ->> 'role'),
+    'customer'
+  )
 $$;
 REVOKE ALL ON FUNCTION public.current_user_role() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.current_user_role() TO anon, authenticated, service_role;

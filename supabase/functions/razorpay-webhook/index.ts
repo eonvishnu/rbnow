@@ -44,7 +44,21 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
-    const webhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
+    let webhookSecretRef = "RAZORPAY_WEBHOOK_SECRET";
+
+    const { data: activeGw } = await supabase
+      .from("payment_gateways")
+      .select("webhook_secret_reference")
+      .eq("is_active", true)
+      .eq("provider", "razorpay")
+      .maybeSingle();
+
+    if (activeGw?.webhook_secret_reference) {
+      webhookSecretRef = activeGw.webhook_secret_reference;
+    }
+
+    const webhookSecret = Deno.env.get(webhookSecretRef) || Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
+
     const webhookSignature = req.headers.get("x-razorpay-signature") || "";
     const rawBody = await req.text();
 

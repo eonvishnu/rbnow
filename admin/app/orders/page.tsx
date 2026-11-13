@@ -22,6 +22,7 @@ const DAY = 86400000;
 const PAGE_SIZE = 25;
 
 const STATUSES = [
+  { value: 'pending_payment', label: 'Payment Failed / Pending' },
   { value: 'pending', label: 'Pending' },
   { value: 'processing', label: 'Processing' },
   { value: 'out_for_delivery', label: 'Out for delivery' },
@@ -30,6 +31,7 @@ const STATUSES = [
 ];
 
 const STATUS_TONE: Record<string, string> = {
+  pending_payment: 'bg-[#fed1d7] text-[#8e0b21]',
   pending: 'bg-[#e3e3e3] text-[#303030]',
   processing: 'bg-[#ffd6a4] text-[#5e4200]',
   out_for_delivery: 'bg-[#a4e8f2] text-[#00424d]',

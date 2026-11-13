@@ -61,25 +61,44 @@ Deno.serve(async (req: Request) => {
         // Create or get Supabase Auth user with confirmed email
         const { data: newUser } = await supabase.auth.admin.createUser({
           email: syntheticEmail,
+          phone: verifiedPhone,
           password: userPassword,
           email_confirm: true,
+          phone_confirm: true,
           user_metadata: {
             phone_number: tenDigitPhone,
-            display_name: `Member ${tenDigitPhone.slice(-4)}`,
             role: 'customer',
           }
         }).catch(() => ({ data: null }));
 
-        if (!newUser?.user) {
+        let targetUserId = newUser?.user?.id;
+        if (!targetUserId) {
           const { data: usersData } = await supabase.auth.admin.listUsers();
           const existingUser = usersData?.users?.find((u: any) => u.email === syntheticEmail);
 
           if (existingUser) {
             await supabase.auth.admin.updateUserById(existingUser.id, {
+              phone: verifiedPhone,
               password: userPassword,
               email_confirm: true,
+              phone_confirm: true,
+              user_metadata: {
+                ...existingUser.user_metadata,
+                phone_number: tenDigitPhone,
+              }
             });
+            targetUserId = existingUser.id;
           }
+        }
+
+        if (targetUserId) {
+          await supabase.from('profiles').upsert({
+            id: targetUserId,
+            email: null,
+            phone_number: tenDigitPhone,
+            role: 'customer',
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'id' });
         }
 
         return new Response(JSON.stringify({

@@ -15,6 +15,10 @@ function LoginContent() {
   const [otpSent, setOtpSent] = useState(false);
   const [msg91Ready, setMsg91Ready] = useState(false);
 
+  // New User Onboarding Name Prompt State
+  const [needsNamePrompt, setNeedsNamePrompt] = useState(false);
+  const [fullName, setFullName] = useState('');
+
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -145,6 +149,30 @@ function LoginContent() {
     }
   };
 
+  // Helper to check profile display name & redirect or prompt name
+  const checkProfileAndRedirect = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!profile || !profile.display_name || profile.display_name.trim() === '' || profile.display_name.toLowerCase().startsWith('member')) {
+          setNeedsNamePrompt(true);
+          setMessage('');
+          setLoading(false);
+          return;
+        }
+      }
+      router.push(redirectTo);
+    } catch (e) {
+      router.push(redirectTo);
+    }
+  };
+
   // 3. Verify OTP using MSG91 window.verifyOtp(otpCode)
   const handleVerifyPhoneOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,7 +211,7 @@ function LoginContent() {
               }
             }
 
-            router.push(redirectTo);
+            await checkProfileAndRedirect();
           },
           (err: any) => {
             console.error('MSG91 OTP Verification Error:', err);
@@ -192,13 +220,53 @@ function LoginContent() {
           }
         );
       } else {
-        router.push(redirectTo);
+        await checkProfileAndRedirect();
       }
     } catch (err: any) {
       console.error("Verify OTP Exception:", err);
+      await checkProfileAndRedirect();
+    }
+  };
+
+  // 4. Save User Full Name on First Login if missing
+  const handleSaveName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fullName.trim()) return setError('Please enter your full name.');
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const cleanPhone = phone.trim().replace(/\D/g, '').slice(-10);
+
+        // 1. Update Auth user metadata so Supabase dashboard shows the display name
+        await supabase.auth.updateUser({
+          data: {
+            display_name: fullName.trim(),
+            full_name: fullName.trim(),
+            phone_number: cleanPhone,
+          }
+        });
+
+        // 2. Update public.profiles explicitly
+        const { error: profileErr } = await supabase.from('profiles').update({
+          display_name: fullName.trim(),
+          phone_number: cleanPhone,
+          updated_at: new Date().toISOString(),
+        }).eq('id', user.id);
+
+        if (profileErr) {
+          console.error("Profile update error:", profileErr);
+          throw profileErr;
+        }
+      }
       router.push(redirectTo);
-    } finally {
-      setTimeout(() => setLoading(false), 1000);
+    } catch (err: any) {
+      console.error('Error saving name:', err);
+      setError(err?.message || 'Failed to save name. Please try again.');
+      setLoading(false);
     }
   };
 
@@ -229,9 +297,6 @@ function LoginContent() {
           </div>
           
           <div className="space-y-1">
-            <h1 className="text-2xl font-serif font-black uppercase tracking-wider text-amber-400">
-              ROYAL BENGAL
-            </h1>
             <p className="text-[12px] text-emerald-200 font-bold tracking-wide">
               রুচিশীল বাঙালির রাজকীয় স্বাদ
             </p>
@@ -250,8 +315,32 @@ function LoginContent() {
           </div>
         )}
 
-        {/* 10-DIGIT MOBILE NUMBER FORM */}
-        {!otpSent ? (
+        {/* ONBOARDING NAME PROMPT STEP */}
+        {needsNamePrompt ? (
+          <form onSubmit={handleSaveName} className="space-y-5">
+            <div>
+              <label className="text-[10px] font-black uppercase text-amber-300/90 block mb-2 tracking-widest">What should we call you?</label>
+              <input
+                type="text"
+                placeholder="e.g. Subhasish"
+                required
+                autoFocus
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="w-full bg-[#022c22] border-2 border-emerald-700 focus:border-amber-400 rounded-2xl py-3.5 px-4 text-base font-black outline-none text-white placeholder:text-gray-500 transition-all tracking-wider"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !fullName.trim()}
+              className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-xl shadow-amber-400/20 disabled:opacity-50 flex items-center justify-center gap-2 border border-amber-300"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : "Complete Sign In"}
+            </button>
+          </form>
+        ) : !otpSent ? (
+          /* 10-DIGIT MOBILE NUMBER FORM */
           <form onSubmit={handleSendPhoneOTP} className="space-y-5">
             <div>
               <label className="text-[10px] font-black uppercase text-amber-300/90 block mb-2 tracking-widest">Mobile Number</label>
@@ -260,7 +349,7 @@ function LoginContent() {
                 <input
                   type="tel"
                   maxLength={10}
-                  placeholder="10-digit mobile number"
+                  placeholder="Enter Phone number"
                   required
                   autoFocus
                   value={phone}
@@ -279,6 +368,7 @@ function LoginContent() {
             </button>
           </form>
         ) : (
+          /* VERIFICATION CODE FORM */
           <form onSubmit={handleVerifyPhoneOTP} className="space-y-5">
             <div>
               <div className="flex justify-between items-center mb-2">

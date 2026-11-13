@@ -1,11 +1,25 @@
 "use client";
 
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Facebook, Instagram, Twitter, ShieldCheck, Truck, Sparkles, Phone, Mail, MapPin } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export const Footer = () => {
   const pathname = usePathname();
+  const [categories, setCategories] = useState<any[]>([]);
+
+  useEffect(() => {
+    supabase.from('categories')
+      .select('id, name')
+      .eq('status', 'active')
+      .is('parent_id', null)
+      .limit(6)
+      .then(({ data }) => {
+        if (data) setCategories(data);
+      });
+  }, []);
 
   // Hide footer on orders, cart, checkout, account, login, and admin routes
   if (
@@ -69,7 +83,7 @@ export const Footer = () => {
               <div className="w-10 h-10 rounded-xl bg-[#3E3424] border border-amber-400/40 p-1 flex items-center justify-center">
                 <img src="/logo.png" alt="Royal Bengal" className="w-full h-full object-contain" />
               </div>
-              <span className="text-xl font-black text-amber-400 tracking-wider">ROYAL BENGAL</span>
+              <span className="text-xl font-black text-amber-400 tracking-wider">THE ROYAL BENGAL FRESH</span>
             </div>
             <p className="text-xs leading-relaxed text-[#EFE8DC]/70">
               Boutique sourcing and premium delivery of the finest cuts, fresh catches, and artisanal Bengal delicacies.
@@ -85,11 +99,21 @@ export const Footer = () => {
           <div>
             <h4 className="text-amber-400 font-bold uppercase tracking-wider mb-4 text-xs">Categories</h4>
             <ul className="space-y-2.5 text-xs text-[#EFE8DC]/70">
-              <li><Link href="/" className="hover:text-white transition-colors">Fresh Water Fish</Link></li>
-              <li><Link href="/" className="hover:text-white transition-colors">Seafood Specialties</Link></li>
-              <li><Link href="/" className="hover:text-white transition-colors">Premium Meat Cuts</Link></li>
-              <li><Link href="/" className="hover:text-white transition-colors">Traditional Pickles</Link></li>
-              <li><Link href="/" className="hover:text-white transition-colors">Special Offers</Link></li>
+              {categories.length > 0 ? (
+                categories.map(cat => (
+                  <li key={cat.id}>
+                    <Link href={`/?cat=${cat.id}`} className="hover:text-white transition-colors">
+                      {cat.name}
+                    </Link>
+                  </li>
+                ))
+              ) : (
+                <>
+                  <li><Link href="/" className="hover:text-white transition-colors">Fresh Water Fish</Link></li>
+                  <li><Link href="/" className="hover:text-white transition-colors">Seafood Specialties</Link></li>
+                  <li><Link href="/" className="hover:text-white transition-colors">Premium Meat Cuts</Link></li>
+                </>
+              )}
             </ul>
           </div>
 
@@ -100,7 +124,7 @@ export const Footer = () => {
               <li><Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
               <li><Link href="/privacy" className="hover:text-white transition-colors">Terms of Service</Link></li>
               <li><Link href="/privacy" className="hover:text-white transition-colors">Shipping & Delivery</Link></li>
-              <li><Link href="/privacy" className="hover:text-white transition-colors">Refund & Cancellation</Link></li>
+              <li><Link href="/refund" className="hover:text-white transition-colors">Refund & Cancellation</Link></li>
             </ul>
           </div>
 
@@ -108,9 +132,9 @@ export const Footer = () => {
           <div>
             <h4 className="text-amber-400 font-bold uppercase tracking-wider mb-4 text-xs">Concierge Contact</h4>
             <ul className="space-y-3 text-xs text-[#EFE8DC]/70">
-              <li className="flex items-center gap-2.5"><MapPin size={16} className="text-amber-400 shrink-0" /> Hyderabad, Telangana, India</li>
-              <li className="flex items-center gap-2.5"><Mail size={16} className="text-amber-400 shrink-0" /> support@royalbengal.com</li>
-              <li className="flex items-center gap-2.5"><Phone size={16} className="text-amber-400 shrink-0" /> +91 98765 43210</li>
+              <li className="flex items-center gap-2.5"><MapPin size={16} className="text-amber-400 shrink-0" /> Rajendranagar, Hyderabad, Telangana</li>
+              <li className="flex items-center gap-2.5"><Mail size={16} className="text-amber-400 shrink-0" /> rbnow.in@gmail.com</li>
+              <li className="flex items-center gap-2.5"><Phone size={16} className="text-amber-400 shrink-0" /> +91 63040 76069</li>
             </ul>
           </div>
 
@@ -118,7 +142,10 @@ export const Footer = () => {
 
         {/* Footer Bottom */}
         <div className="pt-8 border-t border-[#3E3424] flex flex-col sm:flex-row justify-between items-center text-xs text-[#EFE8DC]/60 gap-4">
-          <p>&copy; {new Date().getFullYear()} Royal Bengal LLP. All rights reserved.</p>
+          <div className="space-y-1 text-center sm:text-left">
+            <p>&copy; {new Date().getFullYear()} The Royal Bengal Fresh. All rights reserved.</p>
+            <p className="text-[11px] text-amber-400/90 font-bold tracking-wide">FSSAI Lic. No: 23626028007758</p>
+          </div>
           <p className="text-[11px] text-amber-400/70 font-semibold tracking-wider uppercase">Crafted for Culinary Excellence</p>
         </div>
 

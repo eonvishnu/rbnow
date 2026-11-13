@@ -43,8 +43,27 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
-    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    let razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
+    let secretRef = "RAZORPAY_KEY_SECRET";
+
+    const { data: activeGw } = await supabase
+      .from("payment_gateways")
+      .select("key_id, secret_reference")
+      .eq("is_active", true)
+      .eq("provider", "razorpay")
+      .maybeSingle();
+
+    if (activeGw?.key_id) {
+      razorpayKeyId = activeGw.key_id;
+    }
+    if (activeGw?.secret_reference) {
+      secretRef = activeGw.secret_reference;
+    }
+
+    const razorpayKeySecret = Deno.env.get(secretRef) || Deno.env.get("RAZORPAY_KEY_SECRET");
+
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
 
     if (!razorpayKeyId || !razorpayKeySecret || !anonKey) {
@@ -53,8 +72,6 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
     const body = await req.json();
     const {
       razorpay_order_id,

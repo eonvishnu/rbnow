@@ -20,8 +20,8 @@ begin
   insert into public.profiles (id, email, display_name, phone_number, role)
   values (
     new.id,
-    new.email,
-    coalesce(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'full_name', 'Member'),
+    case when new.email like '%@royalbengal.internal' then null else new.email end,
+    coalesce(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'full_name', null),
     coalesce(new.raw_user_meta_data->>'phone_number', ''),
     'customer' -- SECURE: Always force 'customer' role on public signups
   );
@@ -418,6 +418,8 @@ create table if not exists public.payment_gateways (
   provider text not null,
   display_name text not null,
   key_id text,
+  secret_key text,
+  webhook_secret text,
   secret_reference text,
   webhook_secret_reference text,
   verification_status text not null default 'unverified' check (verification_status in ('unverified', 'verified', 'failed')),

@@ -15,7 +15,9 @@ import {
   User,
   Search,
   MessageCircle,
-  Phone
+  Phone,
+  Package,
+  ShoppingBag
 } from 'lucide-react';
 
 const STATIC_OPTS = [
@@ -127,61 +129,94 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
             </div>
           </div>
 
-          {/* Right Action: Customer Support Popover */}
-          <div className="relative">
-            <button
-              onClick={() => setIsSupportOpen(!isSupportOpen)}
-              aria-label="Customer Support Concierge"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#EFE8DC] border-2 border-amber-600 flex items-center justify-center text-amber-800 shadow-md hover:bg-[#E2D7C5] transition-transform active:scale-95"
-            >
-              <Headphones size={18} />
-            </button>
+          {/* Right Actions: Desktop Quick Nav & Support Popover */}
+          <div className="flex items-center gap-2 sm:gap-3">
 
-            {isSupportOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsSupportOpen(false)} />
-                <div className="absolute right-0 mt-3 w-64 bg-[#FFFDF9] text-gray-900 border-2 border-amber-300 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="p-3.5 bg-emerald-950 text-white">
-                    <p className="text-[9px] font-black uppercase text-amber-300 tracking-widest">ROYAL CONCIERGE</p>
-                    <h3 className="text-xs font-black uppercase text-white mt-0.5">Customer Support</h3>
+            {/* Desktop Quick Nav Links (hidden on mobile, shown on md+) */}
+            <div className="hidden md:flex items-center gap-2">
+              <Link
+                href="/orders"
+                className="px-3 py-1.5 rounded-xl bg-[#EFE8DC] hover:bg-[#E2D7C5] border border-amber-600/30 text-amber-900 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+              >
+                <Package size={14} /> Orders
+              </Link>
+
+              <Link
+                href="/cart"
+                className="px-3 py-1.5 rounded-xl bg-[#EFE8DC] hover:bg-[#E2D7C5] border border-amber-600/30 text-amber-900 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-colors relative"
+              >
+                <ShoppingBag size={14} /> Cart
+                {cart.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-amber-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                    {cart.length}
+                  </span>
+                )}
+              </Link>
+
+              <Link
+                href={user ? '/account' : '/login'}
+                className="px-3 py-1.5 rounded-xl bg-[#EFE8DC] hover:bg-[#E2D7C5] border border-amber-600/30 text-amber-900 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+              >
+                <User size={14} /> {user ? 'Account' : 'Login'}
+              </Link>
+            </div>
+
+            {/* Customer Support Popover */}
+            <div className="relative">
+              <button
+                onClick={() => setIsSupportOpen(!isSupportOpen)}
+                aria-label="Customer Support Concierge"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#EFE8DC] border-2 border-amber-600 flex items-center justify-center text-amber-800 shadow-md hover:bg-[#E2D7C5] transition-transform active:scale-95"
+              >
+                <Headphones size={18} />
+              </button>
+
+              {isSupportOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsSupportOpen(false)} />
+                  <div className="absolute right-0 mt-3 w-64 bg-[#FFFDF9] text-gray-900 border-2 border-amber-300 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-3.5 bg-emerald-950 text-white">
+                      <p className="text-[9px] font-black uppercase text-amber-300 tracking-widest">ROYAL CONCIERGE</p>
+                      <h3 className="text-xs font-black uppercase text-white mt-0.5">Customer Support</h3>
+                    </div>
+
+                    <div className="p-2 space-y-1">
+                      {/* WHATSAPP US */}
+                      <a
+                        href="https://wa.me/916304076069"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setIsSupportOpen(false)}
+                        className="p-3 rounded-xl hover:bg-amber-50 flex items-center gap-3 transition-colors text-left block"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                          <MessageCircle size={16} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black uppercase text-gray-900 leading-tight">WHATSAPP US</p>
+                          <p className="text-[10px] text-gray-500 font-medium">Instant chat support</p>
+                        </div>
+                      </a>
+
+                      {/* CALL US */}
+                      <a
+                        href="tel:+916304076069"
+                        onClick={() => setIsSupportOpen(false)}
+                        className="p-3 rounded-xl hover:bg-amber-50 flex items-center gap-3 transition-colors text-left block"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                          <Phone size={16} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black uppercase text-gray-900 leading-tight">CALL US</p>
+                          <p className="text-[10px] text-gray-500 font-medium">Direct phone support</p>
+                        </div>
+                      </a>
+                    </div>
                   </div>
-
-                  <div className="p-2 space-y-1">
-                    {/* WHATSAPP US */}
-                    <a
-                      href="https://wa.me/919876543210"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => setIsSupportOpen(false)}
-                      className="p-3 rounded-xl hover:bg-amber-50 flex items-center gap-3 transition-colors text-left block"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                        <MessageCircle size={16} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black uppercase text-gray-900 leading-tight">WHATSAPP US</p>
-                        <p className="text-[10px] text-gray-500 font-medium">Instant chat support</p>
-                      </div>
-                    </a>
-
-                    {/* CALL US */}
-                    <a
-                      href="tel:+919876543210"
-                      onClick={() => setIsSupportOpen(false)}
-                      className="p-3 rounded-xl hover:bg-amber-50 flex items-center gap-3 transition-colors text-left block"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-                        <Phone size={16} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black uppercase text-gray-900 leading-tight">CALL US</p>
-                        <p className="text-[10px] text-gray-500 font-medium">Direct phone support</p>
-                      </div>
-                    </a>
-                  </div>
-                </div>
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
 
         </div>
@@ -199,16 +234,16 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1 text-[11px] font-bold text-amber-900 hover:text-amber-950 transition-colors py-0.5"
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-amber-900 hover:text-amber-950 transition-colors py-0.5"
           >
-            <MapPin size={14} className="text-amber-700 fill-amber-500/20 shrink-0" />
-            <span className="truncate max-w-[280px] sm:max-w-md text-amber-800 font-extrabold">
+            <MapPin size={16} className="text-amber-700 fill-amber-500/20 shrink-0" />
+            <span className="truncate max-w-[280px] sm:max-w-xl text-amber-800 font-extrabold">
               Deliver to: <span className="font-black uppercase tracking-wider text-emerald-950">{location.label ? location.label.toUpperCase() : 'SELECT LOCATION'}</span>
               {(location.address || location.area) && (
                 <span className="font-medium text-black/90"> - {location.address || `${location.houseNumber ? location.houseNumber + ', ' : ''}${location.area || ''}, ${location.city || ''}`}</span>
               )}
             </span>
-            <ChevronDown size={12} className="text-amber-400 shrink-0" />
+            <ChevronDown size={14} className="text-amber-400 shrink-0" />
           </button>
         </div>
 

@@ -19,15 +19,37 @@ import {
   Sparkles,
   ArrowLeft,
   Crown,
-  FileText
+  FileText,
+  Pencil
 } from 'lucide-react';
 
 export default function AccountPage() {
-  const { user, userData, loading: authLoading } = useAuth();
+  const { user, userData, refreshUserData, loading: authLoading } = useAuth();
   const router = useRouter();
   const [storeCredit, setStoreCredit] = useState(0);
   const [ordersCount, setOrdersCount] = useState(0);
   const [addressesCount, setAddressesCount] = useState(0);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
+  const handleSaveName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim() || !user) return;
+    setSavingName(true);
+    try {
+      await supabase.auth.updateUser({ data: { display_name: newName.trim(), full_name: newName.trim() } });
+      await supabase.from('profiles').update({ display_name: newName.trim(), updated_at: new Date().toISOString() }).eq('id', user.id);
+      if (refreshUserData) {
+        await refreshUserData(user.id);
+      }
+      setIsEditingName(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update name');
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -131,6 +153,16 @@ export default function AccountPage() {
                 <h2 className="text-lg font-black uppercase text-amber-300 tracking-tight truncate">
                   {userData?.display_name || 'Royal Member'}
                 </h2>
+                <button
+                  onClick={() => {
+                    setNewName(userData?.display_name || '');
+                    setIsEditingName(true);
+                  }}
+                  className="p-1 rounded-lg bg-emerald-800/80 text-amber-300 hover:bg-emerald-800 transition-colors"
+                  title="Edit Name"
+                >
+                  <Pencil size={13} />
+                </button>
                 {userData?.role === 'admin' && (
                   <span className="bg-amber-400 text-emerald-950 text-[8px] font-black px-2 py-0.5 rounded-full uppercase">
                     Admin
@@ -229,7 +261,7 @@ export default function AccountPage() {
 
           {/* Support Concierge */}
           <a
-            href="https://wa.me/919876543210"
+            href="https://wa.me/916304076069"
             target="_blank"
             rel="noopener noreferrer"
             className="p-4 sm:p-5 hover:bg-emerald-50/50 flex items-center justify-between transition-colors group"
@@ -271,6 +303,42 @@ export default function AccountPage() {
         </button>
 
       </div>
+
+      {/* Edit Name Modal */}
+      {isEditingName && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#FAF6EE] text-gray-900 w-full max-w-sm rounded-[28px] p-6 shadow-2xl border-2 border-amber-400 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-base font-black uppercase tracking-tight text-emerald-950">Edit Your Name</h3>
+            <form onSubmit={handleSaveName} className="space-y-4">
+              <input
+                type="text"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="Enter your name"
+                required
+                autoFocus
+                className="w-full bg-white border border-amber-300 rounded-xl p-3 text-sm font-bold text-gray-900 outline-none focus:border-amber-500 shadow-2xs"
+              />
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingName(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingName || !newName.trim()}
+                  className="flex-1 bg-emerald-900 hover:bg-emerald-950 text-amber-300 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-50"
+                >
+                  {savingName ? 'Saving...' : 'Save Name'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -125,4 +125,19 @@ class SupabaseService {
       return [];
     }
   }
+
+  // Fetch Active Banners
+  static Future<List<Map<String, dynamic>>> getBanners() async {
+    try {
+      final response = await client
+          .from('banners')
+          .select('*')
+          .eq('status', 'active')
+          .order('order_index');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print("Error fetching banners: $e");
+      return [];
+    }
+  }
 }

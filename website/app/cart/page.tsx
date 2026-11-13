@@ -196,20 +196,35 @@ export default function CartPage() {
         setCheckingStock(false);
         return;
       }
+      const variantIds = [...new Set(cart.map((item: any) => item.id))];
       const uniqueCleanIds = [...new Set(cart.map((item: any) => extractProductId(item.id)))];
       const stockMap: Record<string, number> = {};
 
       try {
-        const { data, error } = await supabase
-          .from("products")
-          .select("id, is_available")
-          .in("id", uniqueCleanIds);
+        const { data: variantData } = await supabase
+          .from("product_variants")
+          .select("id, stock")
+          .in("id", variantIds);
 
-        if (!error && data) {
-          data.forEach(p => {
-            stockMap[p.id] = p.is_available ? 999 : 0;
+        if (variantData) {
+          variantData.forEach(v => {
+            stockMap[v.id] = Number(v.stock) || 0;
           });
         }
+
+        const { data: prodData } = await supabase
+          .from("products")
+          .select("id, stock")
+          .in("id", uniqueCleanIds);
+
+        if (prodData) {
+          prodData.forEach(p => {
+            if (stockMap[p.id] === undefined) {
+              stockMap[p.id] = Number(p.stock) || 0;
+            }
+          });
+        }
+
         setStockData(stockMap);
       } catch (err) {
         console.error("Stock check failed:", err);
@@ -218,13 +233,13 @@ export default function CartPage() {
       }
     };
     fetchStock();
-  }, [cart.length]);
+  }, [cart]);
 
   const hasStockIssues = useMemo(() => {
     return Object.values(groupedCart).some((item: any) => {
       const cleanId = extractProductId(item.id);
-      const stock = stockData[cleanId];
-      return stock !== undefined && stock === 0;
+      const stock = stockData[item.id] !== undefined ? stockData[item.id] : (stockData[cleanId] !== undefined ? stockData[cleanId] : 99);
+      return stock === 0 || item.qty > stock;
     });
   }, [groupedCart, stockData]);
 
@@ -344,7 +359,30 @@ export default function CartPage() {
       });
 
       if (edgeError || !data || data.error) {
-        throw new Error((data && data.error) || (edgeError && edgeError.message) || 'Failed to place order');
+        let serverMsg = data?.error;
+        if (edgeError) {
+          try {
+            if (edgeError.context && typeof edgeError.context.json === 'function') {
+              const errBody = await edgeError.context.json();
+              if (errBody && errBody.error) serverMsg = errBody.error;
+            }
+          } catch (e) {}
+          if (!serverMsg) serverMsg = edgeError.message;
+        }
+
+        const isStockError = serverMsg && (
+          serverMsg.toLowerCase().includes('stock') ||
+          serverMsg.toLowerCase().includes('left') ||
+          serverMsg.toLowerCase().includes('inventory') ||
+          serverMsg.toLowerCase().includes('unavailable') ||
+          serverMsg.toLowerCase().includes('quantity')
+        );
+
+        const userFriendlyMsg = isStockError
+          ? serverMsg
+          : 'Unable to process your order at the moment. Please check your cart or try again.';
+
+        throw new Error(userFriendlyMsg);
       }
 
       if (!data.keyId || !data.razorpayOrderId) {
@@ -416,7 +454,7 @@ export default function CartPage() {
 
         <div className="flex items-center gap-2">
           <Crown size={18} className="text-[#FFC400]" />
-          <h1 className="text-xs sm:text-sm font-serif font-black uppercase tracking-[0.2em] text-[#FFC400]">Express Checkout</h1>
+          <h1 className="text-xs sm:text-sm font-serif font-black uppercase tracking-[0.2em] text-[#FFC400]">Checkout</h1>
         </div>
 
         <div className="w-16" />
@@ -473,59 +511,54 @@ export default function CartPage() {
                 <h2 className="text-xs font-black text-[#75817B] uppercase tracking-[0.15em]">Selected Items ({Object.keys(groupedCart).length})</h2>
               </div>
 
-              {/* 2. PRODUCT CARDS (Clean White Cards) */}
-              {Object.values(groupedCart).map((item: any) => {
-                const cleanId = extractProductId(item.id);
-                const isOutOfStock = stockData[cleanId] === 0;
+              {/* 2. PRODUCT CARDS (Single Unified Card with Subtle Dividers) */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E3EAE6] space-y-4 shadow-xs">
+                {Object.values(groupedCart).map((item: any, idx: number, arr: any[]) => {
+                  const cleanId = extractProductId(item.id);
+                  const stockCount = stockData[item.id] !== undefined ? stockData[item.id] : (stockData[cleanId] !== undefined ? stockData[cleanId] : 99);
+                  const isOutOfStock = stockCount === 0;
+                  const isLowStock = stockCount > 0 && stockCount <= 5;
 
-                return (
-                  <div key={item.id} className={`p-4 rounded-2xl border bg-white transition-all flex items-center justify-between shadow-xs ${
-                    isOutOfStock ? 'border-rose-300 bg-rose-50/30' : 'border-[#E3EAE6]'
-                  }`}>
-                    <div className="flex items-center gap-3.5">
-                      <img
-                        src={item.img || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80'}
-                        className={`w-14 h-14 rounded-xl object-cover border border-[#E3EAE6] ${isOutOfStock ? 'grayscale opacity-50' : ''}`}
-                        alt={item.name}
-                      />
-                      <div>
-                        <p className={`text-xs sm:text-sm font-black ${isOutOfStock ? 'text-gray-400' : 'text-[#17211D]'}`}>{item.name}</p>
-                        <p className="text-[11px] text-[#006B50] font-bold uppercase mt-0.5">₹{item.price} / {item.unit}</p>
-                        {isOutOfStock && <p className="text-[10px] text-rose-600 font-black uppercase mt-1">⚠️ Out of Stock</p>}
-                      </div>
-                    </div>
-
-                    {/* Quantity Controls (Selected Controls: Deep Emerald) */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center bg-[#006B50] text-white rounded-xl h-8 overflow-hidden shadow-xs">
-                        <button
-                          onClick={() => removeFromCart(item.id)}
-                          className="px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors"
-                        >
-                          −
-                        </button>
-                        <span className="text-xs font-black w-5 text-center">{item.qty}</span>
-                        <button
-                          onClick={() => addToCart(item, 99)}
-                          className="px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors"
-                        >
-                          +
-                        </button>
+                  return (
+                    <div key={item.id} className={`flex items-center justify-between ${idx !== arr.length - 1 ? 'border-b border-[#E3EAE6] pb-4' : ''}`}>
+                      <div className="flex items-center gap-3.5">
+                        <img
+                          src={item.img || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80'}
+                          className={`w-14 h-14 rounded-xl object-cover border border-[#E3EAE6] ${isOutOfStock ? 'grayscale opacity-50' : ''}`}
+                          alt={item.name}
+                        />
+                        <div>
+                          <p className={`text-xs sm:text-sm font-black ${isOutOfStock ? 'text-gray-400' : 'text-[#17211D]'}`}>{item.name}</p>
+                          <p className="text-[11px] text-[#006B50] font-bold uppercase mt-0.5">₹{item.price} / {item.unit}</p>
+                          {isOutOfStock && <p className="text-[10px] text-rose-600 font-black uppercase mt-1">⚠️ Out of Stock</p>}
+                          {isLowStock && <p className="text-[10px] text-amber-700 font-black uppercase mt-1">⚠️ Only {stockCount} left in stock</p>}
+                        </div>
                       </div>
 
-                      <button
-                        onClick={() => {
-                          for(let i = 0; i < item.qty; i++) removeFromCart(item.id);
-                        }}
-                        className="p-1.5 text-[#75817B] hover:text-rose-600 transition-colors"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
+                      {/* Quantity Controls (Selected Controls: Deep Emerald) */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center bg-[#006B50] text-white rounded-xl h-8 overflow-hidden shadow-xs">
+                          <button
+                            onClick={() => removeFromCart(item.id)}
+                            className="px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors"
+                          >
+                            −
+                          </button>
+                          <span className="text-xs font-black w-5 text-center">{item.qty}</span>
+                          <button
+                            onClick={() => addToCart(item, stockCount)}
+                            disabled={item.qty >= stockCount}
+                            className={`px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors ${item.qty >= stockCount ? 'opacity-40 cursor-not-allowed' : ''}`}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
 
-                  </div>
-                );
-              })}
+                    </div>
+                  );
+                })}
+              </div>
 
               {/* 3. COUPON SECTION (Clean White Card) */}
               <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E3EAE6] space-y-2.5 shadow-xs">
@@ -570,7 +603,7 @@ export default function CartPage() {
                     <Sparkles size={14} className="text-[#FFC400]" /> Bill Summary
                   </h2>
                   <span className="text-[9px] font-black uppercase bg-[#E5F5EF] text-[#006B50] px-2.5 py-0.5 rounded-full border border-[#BCE2D3]">
-                    Express Delivery
+                    Standard Delivery
                   </span>
                 </div>
 
@@ -597,7 +630,7 @@ export default function CartPage() {
                   {totalAmount > 0 && Number.isFinite(freeThreshold) && totalAmount < freeThreshold && (
                     <div className="pt-1">
                        <span className="text-[10px] font-bold text-[#006B50] bg-[#E5F5EF] px-3 py-1.5 rounded-xl border border-[#BCE2D3] block text-center">
-                         Add ₹{freeThreshold - totalAmount} more for FREE Express Delivery
+                         Add ₹{freeThreshold - totalAmount} more for FREE Delivery
                        </span>
                     </div>
                   )}

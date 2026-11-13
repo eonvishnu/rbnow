@@ -44,6 +44,12 @@ export async function createCategoryWithImage(nameInput: string, file: File, par
   await createCategory(nameResult.data, imageUrl, parentId);
 }
 
+export async function createCategoryWithoutImage(nameInput: string, parentId?: string | null) {
+  const nameResult = categoryNameSchema.safeParse(nameInput);
+  if (!nameResult.success) throw new Error(nameResult.error.issues[0]?.message);
+  await createCategory(nameResult.data, null, parentId);
+}
+
 export async function replaceCategoryImage(categoryId: string, file: File) {
   const fileResult = categoryImageFileSchema.safeParse(file);
   if (!fileResult.success) throw new Error(fileResult.error.issues[0]?.message);

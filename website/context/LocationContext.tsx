@@ -52,29 +52,40 @@ export const LocationProvider = ({ children }: { children: React.ReactNode }) =>
   const [isDetectingGPS, setIsDetectingGPS] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Load stored location from localStorage
+  // Load stored location from localStorage only if user is logged in
   useEffect(() => {
     try {
       const saved = localStorage.getItem('royal_bengal_active_location');
-      if (saved) {
+      if (saved && user) {
         setLocationState(JSON.parse(saved));
+      } else {
+        setLocationState(defaultLocation);
+        localStorage.removeItem('royal_bengal_active_location');
       }
     } catch (err) {
       console.error('Error loading location from storage:', err);
     }
-  }, []);
+  }, [user]);
 
   const setLocation = (loc: LocationData) => {
     setLocationState(loc);
-    try {
-      localStorage.setItem('royal_bengal_active_location', JSON.stringify(loc));
-    } catch (err) {
-      console.error('Error saving location to storage:', err);
+    if (user) {
+      try {
+        localStorage.setItem('royal_bengal_active_location', JSON.stringify(loc));
+      } catch (err) {
+        console.error('Error saving location to storage:', err);
+      }
     }
   };
 
   const refreshSavedAddresses = async () => {
-    if (!user) return;
+    if (!user) {
+      setSavedAddresses([]);
+      setLocationState(defaultLocation);
+      localStorage.removeItem('royal_bengal_active_location');
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('addresses')
@@ -83,7 +94,7 @@ export const LocationProvider = ({ children }: { children: React.ReactNode }) =>
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        setSavedAddresses(data.map(a => ({
+        const mapped = data.map(a => ({
           id: a.id,
           label: a.address_type ? a.address_type.toUpperCase() : 'HOME',
           address: `${a.house_no ? a.house_no + ', ' : ''}${a.area || ''}, ${a.city}${a.pincode ? ' - ' + a.pincode : ''}`,
@@ -93,7 +104,14 @@ export const LocationProvider = ({ children }: { children: React.ReactNode }) =>
           pincode: a.pincode,
           lat: a.latitude,
           lng: a.longitude,
-        })));
+        }));
+        setSavedAddresses(mapped);
+
+        // If no active location set or location is default, automatically select the user's latest Supabase saved address
+        const savedActive = localStorage.getItem('royal_bengal_active_location');
+        if ((!savedActive || JSON.parse(savedActive).label === defaultLocation.label) && mapped.length > 0) {
+          setLocation(mapped[0]);
+        }
       }
     } catch (err) {
       console.error('Error fetching user addresses:', err);

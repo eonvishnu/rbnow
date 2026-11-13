@@ -21,7 +21,9 @@ export const ProductCard = ({
   discountPercent = 0,
   rating = 4.8,
   reviewCount = 186,
-  tag
+  tag,
+  onOpenModal,
+  onClick
 }: any) => {
   
   const { isOpen } = useStore();
@@ -61,7 +63,10 @@ export const ProductCard = ({
     : null;
 
   return (
-    <div className={`bg-[#FFFDF9] p-3.5 rounded-[24px] border shadow-sm flex flex-col h-full transition-all active:scale-[0.98] hover:shadow-md relative overflow-hidden ${isPreorder ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-[#E3D9C6]'}`}>
+    <div
+      onClick={onOpenModal || onClick || (() => {})}
+      className={`bg-[#FFFDF9] p-3.5 rounded-[24px] border shadow-sm flex flex-col h-full transition-all active:scale-[0.98] hover:shadow-md relative overflow-hidden cursor-pointer ${isPreorder ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-[#E3D9C6]'}`}
+    >
       
       {!isOpen && <div className="absolute inset-0 bg-[#FAF6EE]/50 z-[5] pointer-events-none" />}
 
@@ -149,13 +154,21 @@ export const ProductCard = ({
 
       {/* Footer Area: CTA Button */}
       <div className="flex items-center justify-between mt-auto pt-2 border-t border-gray-100 relative z-10">
-        {(isPreorder || availableStock === 0) ? (
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-            isPreorder ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-          }`}>
-            {isPreorder ? 'Pre-Order Only' : 'Out of stock'}
-          </span>
-        ) : <div />}
+        <div>
+          {isPreorder ? (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+              Pre-Order
+            </span>
+          ) : availableStock === 0 ? (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200">
+              Sold out
+            </span>
+          ) : availableStock <= 5 ? (
+            <span className="text-[10px] font-black text-amber-700 uppercase tracking-tight">
+              {availableStock} left
+            </span>
+          ) : null}
+        </div>
 
         {!isOpen ? (
           <button
@@ -192,13 +205,13 @@ export const ProductCard = ({
                 e.stopPropagation(); 
                 handleAdd({ id: variantId, product_id: id, name, price: finalPrice, unit: currentOption.unit, img }, availableStock);
               }}
-              className={`font-black px-3.5 py-1.5 rounded-xl text-[10px] uppercase tracking-wider active:scale-95 transition-all shadow-sm flex items-center gap-1 ${
+              className={`font-black px-4 py-1.5 rounded-xl text-xs uppercase tracking-wider active:scale-95 transition-all shadow-sm ${
                 isPreorder
                   ? 'bg-emerald-900 text-amber-300 hover:bg-emerald-950'
                   : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-800 hover:text-amber-300'
               }`}
             >
-              {isPreorder ? 'Pre-Order Now' : <><ShoppingCart size={11} /> Add to Cart</>}
+              {isPreorder ? 'Pre-Order' : 'ADD'}
             </button>
           )
         )}

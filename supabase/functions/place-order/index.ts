@@ -48,8 +48,27 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
-    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    let razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
+    let secretRef = "RAZORPAY_KEY_SECRET";
+
+    const { data: activeGw } = await supabase
+      .from("payment_gateways")
+      .select("key_id, secret_reference")
+      .eq("is_active", true)
+      .eq("provider", "razorpay")
+      .maybeSingle();
+
+    if (activeGw?.key_id) {
+      razorpayKeyId = activeGw.key_id;
+    }
+    if (activeGw?.secret_reference) {
+      secretRef = activeGw.secret_reference;
+    }
+
+    const razorpayKeySecret = Deno.env.get(secretRef) || Deno.env.get("RAZORPAY_KEY_SECRET");
+
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
 
     if (!razorpayKeyId || !razorpayKeySecret) {
@@ -71,8 +90,6 @@ Deno.serve(async (req: Request) => {
         verifiedUserId = user.id;
       }
     }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const body = await req.json();
     const { items, details, couponCode, browserId } = body;
@@ -133,10 +150,14 @@ Deno.serve(async (req: Request) => {
       }
 
       if (variant) {
-        if (!variant.is_available || (variant.stock !== null && variant.stock < qty)) {
-          return new Response(JSON.stringify({
-            error: `Item "${variant.products?.name || item.name}" (${variant.unit}) is out of stock.`
-          }), {
+        const availableStock = variant.stock !== null ? Number(variant.stock) : 999;
+        if (!variant.is_available || availableStock < qty) {
+          const itemName = variant.products?.name || item.name;
+          const errMsg = availableStock === 0
+            ? `Item "${itemName}" (${variant.unit}) is out of stock.`
+            : `Only ${availableStock} left in stock for "${itemName}" (${variant.unit}). Please update your quantity.`;
+
+          return new Response(JSON.stringify({ error: errMsg }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
@@ -194,6 +215,18 @@ Deno.serve(async (req: Request) => {
           return new Response(JSON.stringify({
             error: `Product or variant "${item.name || itemId}" does not exist in catalog.`
           }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const availableStock = product.stock !== null ? Number(product.stock) : 999;
+        if (!product.is_available || availableStock < qty) {
+          const errMsg = availableStock === 0
+            ? `Item "${product.name}" is out of stock.`
+            : `Only ${availableStock} left in stock for "${product.name}". Please update your quantity.`;
+
+          return new Response(JSON.stringify({ error: errMsg }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });

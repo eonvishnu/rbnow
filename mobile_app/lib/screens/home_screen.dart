@@ -24,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Map<String, dynamic>> _parentCategories = [];
   Map<String, List<Map<String, dynamic>>> _subCategoriesMap = {};
+  List<Map<String, dynamic>> _banners = [];
   List<Map<String, dynamic>> _products = [];
   bool _loading = true;
 
@@ -36,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _loadData() async {
     setState(() => _loading = true);
     final workspace = await SupabaseService.getCategoryWorkspace();
+    final banners = await SupabaseService.getBanners();
     final prods = await SupabaseService.getProducts(
       categoryFilter: _activeCategory,
       subCategoryFilter: _activeSubCategory,
@@ -44,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _parentCategories = workspace['parents'] as List<Map<String, dynamic>>? ?? [];
       _subCategoriesMap = workspace['subMap'] as Map<String, List<Map<String, dynamic>>>? ?? {};
+      _banners = banners;
       _products = prods;
       _loading = false;
     });
@@ -98,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: const Text('Instant chat support', style: TextStyle(fontSize: 10, color: Colors.grey)),
                 onTap: () async {
                   Navigator.pop(context);
-                  const url = 'https://wa.me/919876543210';
+                  const url = 'https://wa.me/916304076069';
                   if (await canLaunchUrl(Uri.parse(url))) {
                     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
                   }
@@ -115,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: const Text('Direct phone support', style: TextStyle(fontSize: 10, color: Colors.grey)),
                 onTap: () async {
                   Navigator.pop(context);
-                  const url = 'tel:+919876543210';
+                  const url = 'tel:+916304076069';
                   if (await canLaunchUrl(Uri.parse(url))) {
                     await launchUrl(Uri.parse(url));
                   }
@@ -209,6 +212,73 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+
+          // Banner Carousel Sliver
+          if (_banners.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Container(
+                height: 160,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppConstants.royalGold.withOpacity(0.4)),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: PageView.builder(
+                    itemCount: _banners.length,
+                    itemBuilder: (context, index) {
+                      final banner = _banners[index];
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(
+                            banner['image_url'] ?? '',
+                            fit: BoxFit.cover,
+                            errorBuilder: (c, e, s) => Container(color: AppConstants.primaryDarkEmerald),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 12,
+                            left: 14,
+                            right: 14,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    banner['title'] ?? '',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppConstants.royalGold,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Text('EXPRESS', style: TextStyle(color: AppConstants.primaryDarkEmerald, fontSize: 9, fontWeight: FontWeight.w900)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
 
           // Sticky Category Circles Row
           SliverPersistentHeader(

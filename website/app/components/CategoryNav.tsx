@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const STATIC_OPTS = [
@@ -14,6 +14,7 @@ interface CategoryNavProps {
 
 export const CategoryNav: React.FC<CategoryNavProps> = ({ activeCategory, onCategoryChange }) => {
   const [dynamicCategories, setDynamicCategories] = useState<any[]>([]);
+  const activeBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const loadCategories = async () => {
@@ -31,6 +32,12 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({ activeCategory, onCate
     loadCategories();
   }, []);
 
+  useEffect(() => {
+    if (activeBtnRef.current) {
+      activeBtnRef.current.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [activeCategory]);
+
   const displayCategories = [...STATIC_OPTS, ...dynamicCategories];
 
   return (
@@ -42,6 +49,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({ activeCategory, onCate
           return (
             <button
               key={cat.id}
+              ref={isActive ? activeBtnRef : undefined}
               onClick={() => onCategoryChange(cat.id, cat.name)}
               className="flex-shrink-0 flex flex-col items-center gap-1.5 transition-transform active:scale-95 snap-start group"
             >
@@ -61,7 +69,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({ activeCategory, onCate
                 </div>
               </div>
 
-              <span className={`text-[11px] font-bold text-center max-w-[70px] truncate transition-colors ${
+              <span className={`text-xs sm:text-sm font-bold text-center max-w-[84px] line-clamp-2 leading-tight transition-colors ${
                 isActive ? "text-emerald-950 font-black" : "text-emerald-900/70"
               }`}>
                 {cat.name}

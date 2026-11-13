@@ -44,15 +44,22 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
           query = query.eq('session_id', browserId);
         }
 
-        const { data: existingCarts } = await query;
+        let { data: existingCarts } = await query;
+
+        // CONSOLIDATE DUPLICATE ACTIVE CARTS: Ensure strictly 1 active cart per user/session
+        if (existingCarts && existingCarts.length > 1) {
+          const primaryCartId = existingCarts[0].id;
+          const duplicateIds = existingCarts.slice(1).map((c: any) => c.id);
+          await supabase.from('carts').update({ status: 'abandoned' }).in('id', duplicateIds);
+        }
+
         let cartId = existingCarts && existingCarts.length > 0 ? existingCarts[0].id : null;
 
         // IF CART IS EMPTY (0 items): Do NOT create a new cart row!
         if (cart.length === 0) {
           if (cartId) {
-            // Clean up old cart_items and reset subtotal
             await supabase.from('cart_items').delete().eq('cart_id', cartId);
-            await supabase.from('carts').update({ subtotal: 0, total: 0 }).eq('id', cartId);
+            await supabase.from('carts').update({ status: 'abandoned', subtotal: 0, total: 0 }).eq('id', cartId);
           }
           return;
         }

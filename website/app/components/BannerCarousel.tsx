@@ -78,12 +78,12 @@ export const BannerCarousel = ({ onSelectCategory }: BannerCarouselProps) => {
       <Link
         href={isExternalOrRoute ? currentBanner.link : '#'}
         onClick={handleClick}
-        className="block relative w-full h-40 sm:h-52 lg:h-60 rounded-[24px] overflow-hidden shadow-md border border-amber-500/30 group transition-transform active:scale-[0.99]"
+        className="block relative w-full aspect-[2/1] sm:aspect-[21/9] lg:aspect-[3/1] max-h-44 sm:max-h-56 lg:max-h-72 rounded-[24px] overflow-hidden shadow-md border border-amber-500/30 group transition-transform active:scale-[0.99] bg-[#022c22] flex items-center justify-center"
       >
         <img
           src={currentBanner.image_url}
           alt={currentBanner.title || 'Promotional Banner'}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+          className="w-full h-full object-cover lg:object-contain group-hover:scale-105 transition-transform duration-700"
         />
 
         {/* Subtle Gradient Overlay for contrast */}

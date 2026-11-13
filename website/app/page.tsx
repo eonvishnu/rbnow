@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCart } from "../context/CartProvider";
 import { Header } from "./components/Header";
@@ -95,6 +95,13 @@ export default function Home() {
   const [selectionMap, setSelectionMap] = useState<Record<string, number>>({});
   
   const { cart, addToCart, removeFromCart } = useCart();
+  const activeSubBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (activeSubBtnRef.current) {
+      activeSubBtnRef.current.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [activeSubCategory]);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -164,20 +171,43 @@ export default function Home() {
         const catLower = activeCategory.toLowerCase();
 
         if (catLower !== "all" && catLower !== "featured") {
-          const firstWord = catLower.split(" ")[0];
-          query = query.ilike("category_name", `%${firstWord}%`);
+          const parentCat = categories.find(c => c.name.toLowerCase() === catLower);
+          if (parentCat) {
+            const { data: subCats } = await supabase
+              .from("categories")
+              .select("id, name")
+              .eq("parent_id", parentCat.id);
+
+            const validCatIds = [parentCat.id, ...(subCats ? subCats.map(s => s.id) : [])];
+
+            if (activeSubCategory && activeSubCategory !== "all") {
+              const targetSub = subCats?.find(s => s.name.toLowerCase() === activeSubCategory.toLowerCase());
+              if (targetSub) {
+                query = query.eq("category_id", targetSub.id);
+              } else {
+                query = query.in("category_id", validCatIds);
+              }
+            } else {
+              query = query.in("category_id", validCatIds);
+            }
+          } else {
+            const firstWord = catLower.split(" ")[0];
+            query = query.ilike("category_name", `%${firstWord}%`);
+          }
         }
 
         const { data, error } = await query;
         if (!error && data) {
           let rows = data;
-          if (activeSubCategory && activeSubCategory !== "all") {
-            const subLower = activeSubCategory.toLowerCase();
-            rows = data.filter((p: any) =>
-              (p.category_name && p.category_name.toLowerCase().includes(subLower)) ||
-              (p.name && p.name.toLowerCase().includes(subLower)) ||
-              (p.description && p.description.toLowerCase().includes(subLower))
-            );
+          if (catLower === "all" || catLower === "featured") {
+            if (activeSubCategory && activeSubCategory !== "all") {
+              const subLower = activeSubCategory.toLowerCase();
+              rows = data.filter((p: any) =>
+                (p.category_name && p.category_name.toLowerCase().includes(subLower)) ||
+                (p.name && p.name.toLowerCase().includes(subLower)) ||
+                (p.description && p.description.toLowerCase().includes(subLower))
+              );
+            }
           }
 
           setProducts(rows.map(p => {
@@ -258,9 +288,9 @@ export default function Home() {
         }}
       />
 
-      {/* STICKY SUBCATEGORIES FILTER BAR MATCHING SCREENSHOT */}
+      {/* STICKY SUBCATEGORIES FILTER BAR */}
       {currentSubCategories.length > 0 && (
-        <div className="sticky top-[96px] z-20 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
+        <div className="sticky top-[108px] z-20 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
           <div className="max-w-7xl mx-auto flex gap-2.5 overflow-x-auto no-scrollbar items-center">
             <button
               onClick={() => setActiveSubCategory("all")}
@@ -278,6 +308,7 @@ export default function Home() {
               return (
                 <button
                   key={name}
+                  ref={isActive ? activeSubBtnRef : undefined}
                   onClick={() => setActiveSubCategory(name)}
                   className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
                     isActive
@@ -297,7 +328,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-3.5 sm:px-6 pt-5 space-y-6">
 
         {/* PREORDER CAROUSEL */}
-        <PreorderCarousel />
+        {activeCategory.toLowerCase() === 'all' && <PreorderCarousel />}
 
         {/* CATEGORY TITLE BAR */}
         <div className="flex justify-between items-center border-b border-gray-200/80 pb-3">

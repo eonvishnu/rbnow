@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Plus, Trash2, FolderTree, Image as ImageIcon, Loader2, Search } from 'lucide-react';
 import {
   createCategoryWithImage,
+  createCategoryWithoutImage,
   isCategoryEnabled,
   learnCategoryStatusValues,
   listCategories,
@@ -102,14 +103,19 @@ export default function CategoryManager() {
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCat.trim()) return;
-    if (!imageFile) {
-      setImageError('A category image is required.');
+    const isRoot = !parentId;
+    if (isRoot && !imageFile) {
+      setImageError('A category image is required for root categories.');
       return;
     }
     setIsUploading(true);
 
     try {
-      await createCategoryWithImage(newCat, imageFile, parentId || null);
+      if (imageFile) {
+        await createCategoryWithImage(newCat, imageFile, parentId || null);
+      } else {
+        await createCategoryWithoutImage(newCat, parentId || null);
+      }
 
       setNewCat('');
       setParentId('');
@@ -255,13 +261,13 @@ export default function CategoryManager() {
               {imageFile ? (
                 <span className="truncate max-w-[110px]">{imageFile.name}</span>
               ) : (
-                <span>Add image <span className="text-[#8e0b21]">*</span></span>
+                <span>Add image {!parentId && <span className="text-[#8e0b21]">*</span>}</span>
               )}
             </button>
 
             <button
               type="submit"
-              disabled={!newCat.trim() || !imageFile || isUploading}
+              disabled={!newCat.trim() || (!parentId && !imageFile) || isUploading}
               className="flex-1 sm:flex-none min-h-11 sm:min-h-9 py-2 px-4 min-w-[90px] inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-sm sm:text-[13px] font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isUploading ? <Loader2 size={15} className="animate-spin" /> : <><Plus size={15} /> Add</>}
@@ -269,7 +275,7 @@ export default function CategoryManager() {
           </div>
         </form>
         <p className={`mt-2 text-xs sm:text-xs leading-snug ${imageError ? 'text-[#8e0b21]' : 'text-[#616161]'}`}>
-          {imageError || `Image required · JPG, PNG or WebP · max ${MAX_IMAGE_MB} MB · resized to max 512 px and compressed as WebP`}
+          {imageError || `Image ${!parentId ? 'required for root categories' : 'optional for subcategories'} · JPG, PNG or WebP · max ${MAX_IMAGE_MB} MB`}
         </p>
       </Card>
 

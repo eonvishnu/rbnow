@@ -11,4 +11,5 @@ export interface AdminBanner {
 export interface BannerCategoryOption {
   id: string;
   name: string;
+  parent_id?: string | null;
 }

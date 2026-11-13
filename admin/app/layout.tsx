@@ -27,7 +27,8 @@ import {
   ShieldCheck,
   Settings,
   CalendarClock,
-  Hourglass
+  Hourglass,
+  LogOut
 } from 'lucide-react';
 
 function AdminShell({ children }: { children: React.ReactNode }) {
@@ -39,6 +40,11 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [search, setSearch] = useState('');
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   const role = userData?.role || 'customer';
   const isSuperAdmin = role === 'super_admin' || role === 'admin';
@@ -135,11 +141,18 @@ function AdminShell({ children }: { children: React.ReactNode }) {
             <Bell size={18} />
             {!!pendingCount && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#e22c38] ring-2 ring-[#1a1a1a]" />}
           </button>
-          <div className="flex items-center gap-2 pl-2 ml-1 h-9">
+          <div className="flex items-center gap-2 pl-2 ml-1 h-9 border-l border-white/10">
             <div className="w-7 h-7 rounded-full bg-[#fbbf24] text-[#1a1a1a] text-xs font-semibold flex items-center justify-center">
               {userData?.display_name?.charAt(0).toUpperCase() || 'A'}
             </div>
             <span className="hidden lg:block text-[13px] text-gray-200 max-w-[120px] truncate">{userData?.display_name || 'Admin'}</span>
+            <button
+              onClick={handleLogout}
+              title="Sign Out"
+              className="p-1.5 text-gray-300 hover:text-white hover:bg-rose-500/20 rounded-lg transition-colors ml-1"
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
       </header>
@@ -187,6 +200,10 @@ function AdminShell({ children }: { children: React.ReactNode }) {
               )}
 
               {(isSuperAdmin || isSupportAgent || isReadOnly) && (
+                <SidebarLink href="/checkouts" label="Checkouts" icon={<Clock size={17} />} />
+              )}
+
+              {(isSuperAdmin || isSupportAgent || isReadOnly) && (
                 <SidebarLink href="/carts" label="Abandoned carts" icon={<ShoppingCart size={17} />} />
               )}
 
@@ -230,11 +247,17 @@ function AdminShell({ children }: { children: React.ReactNode }) {
             )}
           </nav>
 
-          <div className="px-4 py-3 border-t border-black/5 text-[12px] text-[#616161] flex items-center justify-between ">
+          <div className="px-4 py-3 border-t border-black/5 text-[12px] text-[#616161] flex items-center justify-between">
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span className="capitalize">{role.replace(/_/g, ' ')}</span>
             </span>
+            <button
+              onClick={handleLogout}
+              className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1"
+            >
+              <LogOut size={14} /> Sign out
+            </button>
           </div>
         </aside>
 

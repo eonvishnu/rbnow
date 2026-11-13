@@ -33,8 +33,8 @@ export async function fetchPaymentGatewaysWithCredentials(): Promise<PaymentGate
 }
 
 /**
- * Saves payment gateway configuration and publishable key_id into single public.payment_gateways table.
- * Actual secret keys (RAZORPAY_KEY_SECRET) stay strictly in Supabase Vault/Secrets.
+ * Saves payment gateway configuration, publishable key_id, and secret references into public.payment_gateways table.
+ * Actual secret keys are stored securely in Supabase Secrets.
  */
 export async function savePaymentGatewayRecord(input: {
   gatewayId: string;
@@ -115,6 +115,7 @@ export async function savePaymentGatewayRecord(input: {
       details: {
         provider: providerCode,
         key_id: input.keyId,
+        secret_reference: `${providerUpper}_KEY_SECRET`,
         is_active: shouldMakeActive,
       },
     });

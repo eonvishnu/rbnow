@@ -25,7 +25,7 @@ export function getManualOrderItems(cart: AdminCart): ManualCartOrderItem[] {
 }
 
 export function createCartRecoveryMessage(cart: AdminCart) {
-  const phone = cart.profiles?.phone_number || '919876543210';
+  const phone = cart.profiles?.phone_number || '6304076069';
   const items = (cart.cart_items || [])
     .map((item) => `${item.product_name} (${item.variant_unit}) x${item.quantity}`)
     .join(', ');

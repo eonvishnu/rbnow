@@ -144,7 +144,7 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
           <div className="flex items-center gap-2.5">
             {/* Customer Support Hotline Icon */}
             <a
-              href="https://wa.me/919876543210"
+              href="https://wa.me/916304076069"
               target="_blank"
               rel="noopener noreferrer"
               title="Customer Support Concierge"

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, X, MessageSquare, Download, ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ShoppingBag } from 'lucide-react';
-import { getAdminCustomers, getCustomerOrderHistory } from '@/features/customers/services/customers.service';
+import { Search, X, MessageSquare, Download, ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { getAdminCustomersPaginated, getCustomerOrderHistory } from '@/features/customers/services/customers.service';
 import type { AdminCustomer, CustomerOrder } from '@/features/customers/types/customer';
 
 const formatCurrency = (amount: number) =>
@@ -24,7 +24,6 @@ const STATUS_TONE: Record<string, string> = {
 };
 const pretty = (s: string) => (s || '').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
-// Normalise to a 10-digit Indian number; returns null if it doesn't look valid
 const toIndianPhone = (raw: string) => {
   const digits = (raw || '').replace(/\D/g, '');
   const ten = digits.length >= 10 ? digits.slice(-10) : '';
@@ -33,11 +32,12 @@ const toIndianPhone = (raw: string) => {
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [segment, setSegment] = useState<SegmentId>('all');
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'spent', dir: 'desc' });
-  const [visible, setVisible] = useState(PAGE_SIZE);
 
   const [selected, setSelected] = useState<AdminCustomer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
@@ -45,16 +45,19 @@ export default function CustomersPage() {
 
   useEffect(() => {
     const run = async () => {
+      setLoading(true);
       try {
-        setCustomers(await getAdminCustomers());
-      } catch (err) {
-        console.error('CRM Fetch error:', err);
+        const res = await getAdminCustomersPaginated(page, PAGE_SIZE, searchQuery);
+        setCustomers(res.customers);
+        setTotalCount(res.totalCount);
+      } catch (err: any) {
+        console.error('CRM Fetch error details:', err?.message || JSON.stringify(err), err);
       } finally {
         setLoading(false);
       }
     };
     run();
-  }, []);
+  }, [page, searchQuery]);
 
   useEffect(() => {
     if (!selected) { setCustomerOrders([]); return; }
@@ -65,7 +68,6 @@ export default function CustomersPage() {
       .finally(() => setOrdersLoading(false));
   }, [selected]);
 
-  // Close drawer on Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null);
     window.addEventListener('keydown', onKey);
@@ -83,15 +85,15 @@ export default function CustomersPage() {
     const n = customers.length;
     const ltv = customers.reduce((s, c) => s + c.totalSpent, 0);
     return {
-      total: n,
+      total: totalCount,
       avgLtv: n ? Math.round(ltv / n) : 0,
       repeatRate: n ? Math.round((customers.filter((c) => c.isRepeat).length / n) * 100) : 0,
       vip: customers.filter((c) => c.isVip).length,
     };
-  }, [customers]);
+  }, [customers, totalCount]);
 
   const segments: { id: SegmentId; label: string; count: number }[] = [
-    { id: 'all', label: 'All', count: customers.length },
+    { id: 'all', label: 'All', count: totalCount },
     { id: 'vip', label: 'VIP', count: customers.filter((c) => c.isVip).length },
     { id: 'repeat', label: 'Repeat', count: customers.filter((c) => c.isRepeat).length },
     { id: 'new', label: 'New', count: customers.filter((c) => c.isNew).length },
@@ -99,12 +101,10 @@ export default function CustomersPage() {
   ];
 
   const filtered = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
     const list = customers.filter((c) => {
-      const match = !q || c.displayName.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.phoneNumber.includes(q);
       const seg =
         segment === 'all' ? true : segment === 'vip' ? c.isVip : segment === 'repeat' ? c.isRepeat : segment === 'new' ? c.isNew : c.isAtRisk;
-      return match && seg;
+      return seg;
     });
     const dir = sort.dir === 'asc' ? 1 : -1;
     return [...list].sort((a, b) => {
@@ -115,9 +115,9 @@ export default function CustomersPage() {
         default: return (a.totalSpent - b.totalSpent) * dir;
       }
     });
-  }, [customers, searchQuery, segment, sort]);
+  }, [customers, segment, sort]);
 
-  useEffect(() => setVisible(PAGE_SIZE), [searchQuery, segment, sort]);
+  useEffect(() => setPage(1), [searchQuery, segment]);
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'name' ? 'asc' : 'desc' }));
@@ -142,6 +142,8 @@ export default function CustomersPage() {
   const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
   const isStaff = (r: string) => r && r !== 'customer';
 
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+
   return (
     <div className="space-y-5">
       {/* HEADER */}
@@ -158,7 +160,7 @@ export default function CustomersPage() {
 
       {/* KPI STRIP */}
       <Card className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-gray-200/80">
-        <Kpi label="Total customers" value={stats.total.toLocaleString('en-IN')} loading={loading} />
+        <Kpi label="Total customers" value={totalCount.toLocaleString('en-IN')} loading={loading} />
         <Kpi label="Average lifetime value" value={formatCurrency(stats.avgLtv)} loading={loading} />
         <Kpi label="Repeat customer rate" value={`${stats.repeatRate}%`} loading={loading} />
         <Kpi label="VIP customers (₹5,000+)" value={String(stats.vip)} loading={loading} />
@@ -210,7 +212,7 @@ export default function CustomersPage() {
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={5} className="py-14 text-center text-[#616161]">No customers match your search or filter.</td></tr>
               ) : (
-                filtered.slice(0, visible).map((c) => (
+                filtered.map((c) => (
                   <tr key={c.id} onClick={() => setSelected(c)} className="hover:bg-[#fafafa] cursor-pointer transition-colors">
                     <td className="pl-4 sm:pl-5 pr-3 py-3">
                       <div className="flex items-center gap-3">
@@ -238,14 +240,25 @@ export default function CustomersPage() {
           </table>
         </div>
 
-        {!loading && filtered.length > 0 && (
+        {!loading && (
           <div className="px-4 sm:px-5 py-3 border-t border-gray-100 flex items-center justify-between text-[13px] text-[#616161]">
-            <span>Showing {Math.min(visible, filtered.length)} of {filtered.length}</span>
-            {visible < filtered.length && (
-              <button onClick={() => setVisible((v) => v + PAGE_SIZE)} className="h-8 px-3 rounded-lg bg-white font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50">
-                Show more
+            <span>Page {page} of {totalPages} ({totalCount} total customers)</span>
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                className="h-8 px-3 rounded-lg bg-white font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+              >
+                <ChevronLeft size={14} /> Prev
               </button>
-            )}
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                className="h-8 px-3 rounded-lg bg-white font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         )}
       </Card>
@@ -299,23 +312,8 @@ export default function CustomersPage() {
                     customerOrders.map((o) => (
                       <div key={o.id} className="p-4 space-y-2">
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-[#1a1a1a]">#RB-{o.order_number || String(o.id).slice(0, 6).toUpperCase()}</p>
-                            <p className="text-xs text-[#616161]">{new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-medium text-[#1a1a1a] tabular-nums">{formatCurrency(o.total || 0)}</p>
-                            <Pill tone={STATUS_TONE[o.status || 'pending'] || STATUS_TONE.pending}>{pretty(o.status || 'pending')}</Pill>
-                          </div>
+                          (`/orders`)
                         </div>
-                        <ul className="text-xs text-[#616161] space-y-0.5">
-                          {(o.order_items || []).map((i, idx) => (
-                            <li key={idx} className="flex justify-between gap-3">
-                              <span className="truncate">{i.product_name} ({i.variant_unit}) × {i.quantity}</span>
-                              <span className="tabular-nums text-[#303030]">₹{i.total_price}</span>
-                            </li>
-                          ))}
-                        </ul>
                       </div>
                     ))
                   )}

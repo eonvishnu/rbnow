@@ -16,8 +16,8 @@ export async function uploadCategoryImage(file: File) {
   return supabase.storage.from('categories').getPublicUrl(fileName).data.publicUrl;
 }
 
-export async function createCategory(name: string, imageUrl: string, parentId?: string | null) {
-  const { error } = await supabase.from('categories').insert({ name, image_url: imageUrl, parent_id: parentId || null });
+export async function createCategory(name: string, imageUrl: string | null, parentId?: string | null) {
+  const { error } = await supabase.from('categories').insert({ name, image_url: imageUrl || '', parent_id: parentId || null });
   if (error) throw error;
 }
 

@@ -14,7 +14,7 @@ export const customerOrderSummariesSchema = z.array(z.object({
   user_id: z.string().nullable(),
   total: z.coerce.number().nullable(),
   status: z.string().nullable(),
-  payment_status: z.string().nullable(),
+  payment_status: z.string().nullable().optional(),
   created_at: z.string(),
 }));
 
