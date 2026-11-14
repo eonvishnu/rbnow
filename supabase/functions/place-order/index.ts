@@ -92,12 +92,28 @@ Deno.serve(async (req: Request) => {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
     const accessToken = authorization.trim().split(/\s+/).pop() || "";
+
+    if (authorization && !accessToken) {
+      return new Response(JSON.stringify({ error: "Authentication token is required." }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let verifiedUserId: string | null = null;
 
-    if (accessToken && anonKey) {
+    if (accessToken) {
+      if (!anonKey) {
+        console.error("SUPABASE_ANON_KEY is missing.");
+        return new Response(JSON.stringify({ error: "Authentication service configuration error." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
       const { data: { user }, error: userErr } = await authClient.auth.getUser(accessToken);
+
       if (userErr || !user) {
         return new Response(JSON.stringify({ error: "Invalid or expired authentication token." }), {
           status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -652,8 +668,8 @@ Deno.serve(async (req: Request) => {
         }
 
         if (razorpayRes.status >= 400 && razorpayRes.status < 500) {
+          // Definite client rejection: no usable Razorpay Order ID.
           if (!hasValidId) {
-            // Definite rejection: no usable Razorpay Order ID.
             const { error: failErr } = await supabase
               .from('payments')
               .update({
