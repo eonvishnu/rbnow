@@ -109,7 +109,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Duplicate Request / Idempotency protection check (prevent double-clicks within 30 seconds)
+    // Temporary double-click guard
     if (finalUserId) {
       const { data: recentOrders } = await supabase
         .from('orders')
@@ -162,10 +162,8 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      const itemId = item.id || item.variant_id || '';
-      const candidateVariantId = item.variant_id || (isValidUuid(itemId) ? itemId : null);
-
-      if (!candidateVariantId || !isValidUuid(candidateVariantId)) {
+      const candidateVariantId = item.variant_id;
+      if (typeof candidateVariantId !== "string" || !isValidUuid(candidateVariantId)) {
         return new Response(JSON.stringify({
           error: `Please select a valid variant for "${item.name || 'product'}".`
         }), {
@@ -330,8 +328,11 @@ Deno.serve(async (req: Request) => {
         if (coupon.discount_type === 'percentage') {
           const validPct = Math.min(100, Math.max(0, couponVal));
           discountAmount = Math.floor((verifiedSubtotal * validPct) / 100);
-          if (coupon.max_discount_amount) {
-            discountAmount = Math.min(discountAmount, Number(coupon.max_discount_amount));
+          if (coupon.max_discount_amount !== null && coupon.max_discount_amount !== undefined) {
+            const maxDisc = Number(coupon.max_discount_amount);
+            if (Number.isFinite(maxDisc) && maxDisc >= 0) {
+              discountAmount = Math.min(discountAmount, maxDisc);
+            }
           }
         } else {
           discountAmount = Math.min(verifiedSubtotal, couponVal);
@@ -361,13 +362,12 @@ Deno.serve(async (req: Request) => {
     const storeLat = Number(delSet?.store_latitude ?? STORE_LAT);
     const storeLng = Number(delSet?.store_longitude ?? STORE_LNG);
 
-    if (details && details.lat && details.lng) {
-      calculatedDistanceKm = getDistanceFromLatLonInKm(
-        storeLat,
-        storeLng,
-        parseFloat(details.lat),
-        parseFloat(details.lng)
-      );
+    if (details && details.lat !== undefined && details.lng !== undefined) {
+      const lat = Number(details.lat);
+      const lng = Number(details.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        calculatedDistanceKm = getDistanceFromLatLonInKm(storeLat, storeLng, lat, lng);
+      }
     }
 
     if (delSet) {
@@ -406,8 +406,6 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const customReceiptId = `RB-${Date.now().toString().slice(-6)}`;
 
     // 5. STAGE 1: PERSIST PENDING ORDER IN SUPABASE FIRST
     const { data: order, error: orderErr } = await supabase
@@ -453,7 +451,7 @@ Deno.serve(async (req: Request) => {
       throw itemsInsertErr;
     }
 
-    // 6. CREATE INTERNAL PAYMENT ATTEMPT BEFORE CALLING RAZORPAY
+    // 6. CREATE INTERNAL PAYMENT ATTEMPT BEFORE CALLING RAZORPAY (razorpay_order_id = NULL)
     const { data: paymentRecord, error: payErr } = await supabase
       .from('payments')
       .insert({
@@ -474,7 +472,9 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 7. CREATE RAZORPAY ORDER WITH AMBIGUOUS NETWORK FAILURE HANDLING
+    const customReceiptId = `RB-${order.id}`;
+
+    // 7. CREATE RAZORPAY ORDER WITH RECONCILIATION-SAFE TIMEOUT HANDLING
     let razorpayOrder: any;
     try {
       const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
@@ -507,26 +507,41 @@ Deno.serve(async (req: Request) => {
       ) {
         console.error("Razorpay order creation/validation failed:", razorpayOrder);
 
-        await supabase.from('payments').update({
-          status: 'failed',
-          failure_description: razorpayOrder?.error?.description || 'Invalid Razorpay order response',
-          updated_at: new Date().toISOString(),
-        }).eq('id', paymentRecord.id);
+        // Check if 4xx (client error) vs 5xx (server error)
+        if (razorpayRes.status >= 400 && razorpayRes.status < 500) {
+          await supabase.from('payments').update({
+            status: 'failed',
+            failure_description: razorpayOrder?.error?.description || 'Invalid Razorpay order response (4xx)',
+            updated_at: new Date().toISOString(),
+          }).eq('id', paymentRecord.id);
 
-        await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+          await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
 
-        return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+          return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } else {
+          // 5xx: ambiguous outcome, keep payment as created and order as pending_payment for reconciliation
+          await supabase.from('payments').update({
+            status: 'created',
+            failure_description: `Razorpay 5xx error (${razorpayRes.status}) - requires reconciliation`,
+            updated_at: new Date().toISOString(),
+          }).eq('id', paymentRecord.id);
+
+          return new Response(JSON.stringify({ error: "Payment gateway temporary error. Please try again." }), {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
     } catch (netErr) {
       console.error("Razorpay network failure:", netErr);
 
-      // Keep payment attempt as created and order as pending_payment for reconciliation (do not blindly cancel)
+      // Keep payment attempt as created and order as pending_payment for reconciliation (ambiguous timeout)
       await supabase.from('payments').update({
         status: 'created',
-        failure_description: 'Razorpay order creation outcome unknown - requires reconciliation',
+        failure_description: 'Razorpay order creation outcome unknown (network timeout) - requires reconciliation',
         updated_at: new Date().toISOString(),
       }).eq('id', paymentRecord.id);
 
@@ -548,7 +563,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (linkErr || !linkedPayment || linkedPayment.razorpay_order_id !== razorpayOrder.id) {
-      console.error("Failed to link Razorpay order:", linkErr);
+      console.error("Failed to link Razorpay order ID:", linkErr);
 
       await supabase.from('payments').update({
         status: 'created',
