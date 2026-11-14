@@ -85,16 +85,16 @@ Deno.serve(async (req: Request) => {
 
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
 
-    // 1. DERIVE VERIFIED AUTHENTICATED USER ID EXCLUSIVELY FROM STRICT BEARER TOKEN (UNCONDITIONAL AUTH REQUIRED)
+    // 1. STRICT BEARER TOKEN AUTHENTICATION
     const authorization = req.headers.get("Authorization") || "";
-    if (authorization && !authorization.toLowerCase().startsWith("bearer ")) {
+    const bearerMatch = authorization.match(/^Bearer\s+(\S+)$/i);
+    if (authorization && !bearerMatch) {
       return new Response(JSON.stringify({ error: "Invalid authorization format. Bearer token required." }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const accessToken = authorization.trim().split(/\s+/).pop() || "";
-
+    const accessToken = bearerMatch ? bearerMatch[1] : "";
     if (authorization && !accessToken) {
       return new Response(JSON.stringify({ error: "Authentication token is required." }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -129,9 +129,8 @@ Deno.serve(async (req: Request) => {
     }
 
     const finalUserId = verifiedUserId;
-
     const body = await req.json();
-    const { items, details, couponCode, browserId, checkoutId } = body;
+    const { items, details, couponCode, checkoutId } = body;
 
     // Strict validation of malformed checkoutId
     if (
@@ -148,13 +147,10 @@ Deno.serve(async (req: Request) => {
     }
 
     let order: any = null;
-    let verifiedSubtotal = 0;
-    let deliveryFee = 0;
-    let discountAmount = 0;
-    let orderTotal = 0;
     let amountInPaise = 0;
+    let customerPhone = details?.phone || '';
 
-    // RETRY FLOW: If checkoutId is provided, reuse the existing pending order securely
+    // RETRY FLOW: If checkoutId is provided, reuse the existing pending order securely and inspect previous payments
     if (checkoutId && isValidUuid(checkoutId)) {
       const { data: existingOrder, error: exOrderErr } = await supabase
         .from('orders')
@@ -172,16 +168,43 @@ Deno.serve(async (req: Request) => {
       }
 
       order = existingOrder;
-      verifiedSubtotal = Number(order.subtotal);
-      deliveryFee = Number(order.delivery_fee);
-      discountAmount = Number(order.discount);
-      orderTotal = Number(order.total);
-      amountInPaise = Math.round(orderTotal * 100);
+      customerPhone = order.customer_phone || details?.phone || '';
+      amountInPaise = Math.round(Number(order.total) * 100);
 
       if (!Number.isSafeInteger(amountInPaise) || amountInPaise <= 0) {
         return new Response(JSON.stringify({ error: "Invalid order amount for retry." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+
+      // Check existing payment records for this order to prevent multiple active payable attempts
+      const { data: existingPayments, error: payCheckErr } = await supabase
+        .from('payments')
+        .select('status')
+        .eq('order_id', order.id);
+
+      if (payCheckErr) {
+        console.error("Payment history check failed:", payCheckErr);
+        return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (existingPayments && existingPayments.length > 0) {
+        const hasCaptured = existingPayments.some(p => p.status === 'captured');
+        const hasUnresolved = existingPayments.some(p => p.status === 'created' || p.status === 'authorized');
+
+        if (hasCaptured) {
+          return new Response(JSON.stringify({ error: "Order has already been paid." }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (hasUnresolved) {
+          return new Response(JSON.stringify({ error: "A payment attempt is currently active or unresolved for this order. Please wait a moment." }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
     } else {
       // NORMAL PLACE-ORDER FLOW
@@ -280,7 +303,7 @@ Deno.serve(async (req: Request) => {
         aggregatedQuantities[candidateVariantId] = aggregatedQty;
       }
 
-      verifiedSubtotal = 0;
+      let verifiedSubtotal = 0;
       const verifiedItems = [];
 
       // 2. STRICT DATABASE VARIANT VALIDATION & AGGREGATED STOCK CHECK
@@ -369,7 +392,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // 3. STRICT COUPON VALIDATION WITH ERROR CHECKS & BOUNDS
-      discountAmount = 0;
+      let discountAmount = 0;
       if (couponCode) {
         const { data: coupon, error: cErr } = await supabase
           .from('coupons')
@@ -478,6 +501,7 @@ Deno.serve(async (req: Request) => {
       const subtotalAfterDiscount = Math.max(0, verifiedSubtotal - discountAmount);
 
       // 4. DYNAMIC DISTANCE & DELIVERY FEE EVALUATION WITH STORE & CUSTOMER COORDINATE VALIDATION
+      let deliveryFee = 0;
       let calculatedDistanceKm = 0;
 
       const { data: delSet, error: delErr } = await supabase
@@ -579,7 +603,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      orderTotal = subtotalAfterDiscount + deliveryFee;
+      const orderTotal = subtotalAfterDiscount + deliveryFee;
       amountInPaise = Math.round(orderTotal * 100);
 
       if (!Number.isSafeInteger(amountInPaise) || amountInPaise <= 0) {
@@ -650,7 +674,10 @@ Deno.serve(async (req: Request) => {
 
     if (payErr || !paymentRecord) {
       console.error("Payment record creation failed:", payErr);
-      await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+      // Only cancel order if this is a fresh order, not a retry
+      if (!checkoutId) {
+        await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+      }
       return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -676,7 +703,7 @@ Deno.serve(async (req: Request) => {
           notes: {
             store_name: "Royal Bengal",
             draft_order_id: customReceiptId,
-            customer_phone: details?.phone || '',
+            customer_phone: customerPhone,
             order_id: order.id,
           }
         }),
@@ -732,15 +759,6 @@ Deno.serve(async (req: Request) => {
 
             if (failErr) {
               console.error("Failed to record Razorpay rejection:", failErr);
-            }
-
-            const { error: cancelErr } = await supabase
-              .from('orders')
-              .update({ status: 'cancelled' })
-              .eq('id', order.id);
-
-            if (cancelErr) {
-              console.error("Failed to cancel rejected order:", cancelErr);
             }
           }
 
@@ -827,10 +845,10 @@ Deno.serve(async (req: Request) => {
       keyId: razorpayKeyId,
       razorpayOrderId: razorpayOrder.id,
       amount: razorpayOrder.amount,
-      subtotal: verifiedSubtotal,
-      deliveryFee,
-      discount: discountAmount,
-      total: orderTotal,
+      subtotal: order.subtotal,
+      deliveryFee: order.delivery_fee,
+      discount: order.discount,
+      total: order.total,
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
