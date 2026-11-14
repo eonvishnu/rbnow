@@ -327,7 +327,7 @@ Deno.serve(async (req: Request) => {
           .from('orders')
           .select('id', { count: 'exact', head: true })
           .eq('user_id', finalUserId)
-          .in('payment_status', ['paid']);
+          .eq('payment_status', 'paid');
 
         if (oCountErr) {
           console.error("Previous order lookup failed:", oCountErr);
@@ -388,15 +388,15 @@ Deno.serve(async (req: Request) => {
       .limit(1)
       .maybeSingle();
 
-    if (delErr) {
+    if (delErr || !delSet) {
       console.error("Delivery settings fetch error:", delErr);
-      return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+      return new Response(JSON.stringify({ error: "Server configuration error: Delivery settings are not configured." }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const storeLat = Number(delSet?.store_latitude ?? STORE_LAT);
-    const storeLng = Number(delSet?.store_longitude ?? STORE_LNG);
+    const storeLat = Number(delSet.store_latitude ?? STORE_LAT);
+    const storeLng = Number(delSet.store_longitude ?? STORE_LNG);
 
     if (!Number.isFinite(storeLat) || !Number.isFinite(storeLng) || storeLat < -90 || storeLat > 90 || storeLng < -180 || storeLng > 180) {
       console.error("Invalid store coordinates in delivery_settings");
@@ -405,16 +405,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const pricingMode = delSet?.delivery_mode || 'rules';
+    const pricingMode = delSet.delivery_mode || 'rules';
+    const requiresDistance = Boolean(delSet.is_free_delivery_enabled) && pricingMode !== 'always_free' && pricingMode !== 'flat_fee';
 
-    if (pricingMode !== 'always_free' && pricingMode !== 'flat_fee') {
+    if (requiresDistance) {
       const rawLat = details?.lat;
       const rawLng = details?.lng;
 
-      if (
-        rawLat === null || rawLat === undefined || rawLat === "" ||
-        rawLng === null || rawLng === undefined || rawLng === ""
-      ) {
+      const validCoordinateInput = (value: unknown): boolean =>
+        (typeof value === "number" && Number.isFinite(value)) ||
+        (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+
+      if (!validCoordinateInput(rawLat) || !validCoordinateInput(rawLng)) {
         return new Response(JSON.stringify({ error: "Valid delivery coordinates are required." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -541,7 +543,7 @@ Deno.serve(async (req: Request) => {
 
     const customReceiptId = `RB-${order.id}`;
 
-    // 7. CREATE RAZORPAY ORDER WITH RECONCILIATION-SAFE TIMEOUT & 4xx vs 5xx HANDLING
+    // 7. CREATE RAZORPAY ORDER WITH RECONCILIATION-SAFE TIMEOUT & 4xx vs 5xx / 2xx MALFORMED HANDLING
     let razorpayOrder: any;
     try {
       const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
@@ -574,37 +576,53 @@ Deno.serve(async (req: Request) => {
       ) {
         console.error("Razorpay order creation/validation failed:", razorpayOrder);
 
-        // Preserve Razorpay Order ID if returned even when validation fails
-        if (typeof razorpayOrder?.id === "string" && /^order_[A-Za-z0-9]+$/.test(razorpayOrder.id)) {
-          const { error: preserveErr } = await supabase.from('payments').update({
-            razorpay_order_id: razorpayOrder.id,
-            status: 'created',
-            failure_description: 'Razorpay response validation failed - requires reconciliation',
-            updated_at: new Date().toISOString(),
-          }).eq('id', paymentRecord.id);
+        const hasValidId = typeof razorpayOrder?.id === "string" && /^order_[A-Za-z0-9]+$/.test(razorpayOrder.id);
 
-          if (preserveErr) {
+        if (hasValidId) {
+          const { data: preservedPayment, error: preserveErr } = await supabase
+            .from('payments')
+            .update({
+              razorpay_order_id: razorpayOrder.id,
+              status: 'created',
+              failure_description: 'Razorpay response validation failed - requires reconciliation',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', paymentRecord.id)
+            .select('id, razorpay_order_id')
+            .maybeSingle();
+
+          if (
+            preserveErr ||
+            !preservedPayment ||
+            preservedPayment.razorpay_order_id !== razorpayOrder.id
+          ) {
             console.error("Failed to preserve Razorpay order ID:", preserveErr);
           }
         } else {
-          const { error: failErr } = await supabase.from('payments').update({
+          await supabase.from('payments').update({
             status: 'failed',
             failure_description: razorpayOrder?.error?.description || 'Invalid Razorpay order response',
             updated_at: new Date().toISOString(),
           }).eq('id', paymentRecord.id);
-
-          if (failErr) {
-            console.error("Failed to mark payment failed:", failErr);
-          }
         }
 
         if (razorpayRes.status >= 400 && razorpayRes.status < 500) {
+          if (!hasValidId) {
+            await supabase.from('payments').update({
+              status: 'failed',
+              failure_description: razorpayOrder?.error?.description || 'Invalid Razorpay order response (4xx)',
+              updated_at: new Date().toISOString(),
+            }).eq('id', paymentRecord.id);
+          }
+
           await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+
           return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
             status: 502,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         } else {
+          // HTTP 2xx malformed or 5xx: ambiguous outcome, keep payment as created and order as pending_payment for reconciliation
           return new Response(JSON.stringify({ error: "Payment gateway temporary error. Please try again." }), {
             status: 502,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
