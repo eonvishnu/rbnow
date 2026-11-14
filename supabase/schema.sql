@@ -225,6 +225,10 @@ create table if not exists public.order_status_history (
 );
 
 -- 13. PAYMENTS TABLE (Multi-attempt payment audit ledger)
+ALTER TABLE public.payments
+  ADD COLUMN IF NOT EXISTS duplicate_payment BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS refund_review_required BOOLEAN NOT NULL DEFAULT FALSE;
+
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   order_id uuid references public.orders(id) on delete cascade not null,
@@ -248,7 +252,8 @@ create table if not exists public.payments (
 );
 
 create index if not exists idx_payments_order_id on public.payments(order_id);
-create index if not exists idx_payments_razorpay_order_id on public.payments(razorpay_order_id);
+create unique index if not exists idx_payments_razorpay_order_id_unique on public.payments(razorpay_order_id) where razorpay_order_id is not null;
+create unique index if not exists idx_payments_razorpay_payment_id_unique on public.payments(razorpay_payment_id) where razorpay_payment_id is not null;
 
 -- 14. COUPON USAGES TABLE (Multi-signal promo anti-abuse tracking)
 create table if not exists public.coupon_usages (
@@ -529,6 +534,17 @@ BEGIN
     RETURN jsonb_build_object(
       'success', false,
       'error', format('Payment amount mismatch: Expected %s, received %s', v_order.total * 100, p_payment_amount)
+    );
+  END IF;
+
+  -- 6. REJECT ORDERS WITH ZERO ITEMS
+  IF NOT EXISTS (
+    SELECT 1 FROM public.order_items
+    WHERE order_id = p_order_id
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Cannot confirm an order without items.'
     );
   END IF;
 
