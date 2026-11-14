@@ -90,35 +90,19 @@ Deno.serve(async (req: Request) => {
 
     // Fail-safe credential resolution
     let razorpayKeyId = "";
-    let razorpayKeySecret = "";
+    let razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || "";
 
     const { data: activeGw, error: gwErr } = await supabase
       .from("payment_gateways")
-      .select("key_id, secret_key")
+      .select("key_id")
       .eq("is_active", true)
       .eq("provider", "razorpay")
       .maybeSingle();
 
-    if (gwErr) {
-      console.error("Failed to fetch active payment gateway:", gwErr);
-      return new Response(JSON.stringify({ error: "Server configuration error." }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (activeGw) {
-      if (!activeGw.key_id || !activeGw.secret_key) {
-        return new Response(JSON.stringify({ error: "Active payment gateway has incomplete credentials." }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    if (!gwErr && activeGw?.key_id) {
       razorpayKeyId = activeGw.key_id;
-      razorpayKeySecret = activeGw.secret_key;
     } else {
       razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID") || "";
-      razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || "";
     }
 
     if (!razorpayKeyId || !razorpayKeySecret) {
