@@ -212,10 +212,10 @@ Deno.serve(async (req: Request) => {
 
     const isRetry = isValidUuid(checkoutId);
 
-    // Helper to safely fail an uncontacted or pre-Razorpay payment attempt (only if still 'created')
+    // Helper to safely fail an uncontacted or pre-Razorpay payment attempt (only if still 'created') with error verification
     const markPaymentFailedIfCreated = async (paymentId: string, desc: string) => {
       if (!isValidUuid(paymentId)) return;
-      await supabase
+      const { data: updatedPay, error: failErr } = await supabase
         .from("payments")
         .update({
           status: "failed",
@@ -223,7 +223,13 @@ Deno.serve(async (req: Request) => {
           updated_at: new Date().toISOString(),
         })
         .eq("id", paymentId)
-        .eq("status", "created");
+        .eq("status", "created")
+        .select("id")
+        .maybeSingle();
+
+      if (failErr || !updatedPay) {
+        console.error("Failed to record payment failure state for attempt:", paymentId, failErr);
+      }
     };
 
     // ---------------------------------------------------------
@@ -786,7 +792,7 @@ Deno.serve(async (req: Request) => {
       );
 
       // -------------------------------------------------------
-      // 10. CALCULATE DELIVERY FEE & SERVICEABILITY CHECK
+      // 10. CALCULATE DELIVERY FEE & STORE-WIDE SERVICEABILITY CHECK
       // -------------------------------------------------------
 
       let calculatedDistanceKm = 0;
@@ -829,13 +835,18 @@ Deno.serve(async (req: Request) => {
       }
 
       const pricingMode = delSet.delivery_mode || "rules";
+      const maxDistanceKm = Number(delSet.max_delivery_distance_km ?? 15.00);
 
-      const requiresDistance =
-        Boolean(delSet.is_free_delivery_enabled) &&
-        pricingMode !== "always_free" &&
-        pricingMode !== "flat_fee";
+      if (!Number.isFinite(maxDistanceKm) || maxDistanceKm <= 0) {
+        console.error("Invalid max_delivery_distance_km configuration:", delSet.max_delivery_distance_km);
+        return jsonResponse(
+          { error: "Server configuration error: Invalid maximum delivery distance." },
+          500,
+        );
+      }
 
-      if (requiresDistance || pricingMode === 'distance_based' || pricingMode === 'preset_rules') {
+      // Serviceability check applies store-wide unless always_free mode is set
+      if (pricingMode !== "always_free") {
         const rawLat = details?.lat;
         const rawLng = details?.lng;
 
@@ -871,8 +882,7 @@ Deno.serve(async (req: Request) => {
           lng,
         );
 
-        const maxDistanceKm = Number(delSet.max_delivery_distance_km ?? 15.00);
-        if (Number.isFinite(maxDistanceKm) && maxDistanceKm > 0 && calculatedDistanceKm > maxDistanceKm) {
+        if (calculatedDistanceKm > maxDistanceKm) {
           return jsonResponse(
             { error: `Sorry, delivery is not available for your location (distance exceeds maximum radius of ${maxDistanceKm} km).` },
             400,
@@ -1054,10 +1064,10 @@ Deno.serve(async (req: Request) => {
         .insert({
           order_id: order.id,
           amount: amountInPaise,
-          currency: "INR",
-          status: "created",
+          currency: 'INR',
+          status: 'created',
         })
-        .select("id")
+        .select('id')
         .single();
 
       if (payErr || !paymentRecord) {
@@ -1155,8 +1165,6 @@ Deno.serve(async (req: Request) => {
           },
         );
 
-        // Preserve any valid gateway order ID, even if another
-        // part of the response is invalid.
         if (hasValidId) {
           const { data: preservedPayment, error: preserveErr } =
             await supabase
@@ -1184,8 +1192,6 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // A definite 4xx rejection without a valid Razorpay order ID
-        // is safe to mark failed. The order itself remains pending.
         if (
           razorpayRes.status >= 400 &&
           razorpayRes.status < 500 &&
@@ -1209,8 +1215,6 @@ Deno.serve(async (req: Request) => {
             );
           }
         } else {
-          // 5xx, malformed 2xx, or any response containing a valid
-          // but unexpected gateway order ID remains unresolved.
           const { error: reconcileErr } = await supabase
             .from("payments")
             .update({
@@ -1240,8 +1244,6 @@ Deno.serve(async (req: Request) => {
     } catch (netErr) {
       console.error("Razorpay network/timeout failure:", netErr);
 
-      // A timeout or network error is ambiguous. Razorpay may
-      // have created the order even though we received no response.
       const { error: timeoutErr } = await supabase
         .from("payments")
         .update({
