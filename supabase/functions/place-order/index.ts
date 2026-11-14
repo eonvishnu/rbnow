@@ -212,6 +212,20 @@ Deno.serve(async (req: Request) => {
 
     const isRetry = isValidUuid(checkoutId);
 
+    // Helper to safely fail an uncontacted or pre-Razorpay payment attempt (only if still 'created')
+    const markPaymentFailedIfCreated = async (paymentId: string, desc: string) => {
+      if (!isValidUuid(paymentId)) return;
+      await supabase
+        .from("payments")
+        .update({
+          status: "failed",
+          failure_description: desc,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", paymentId)
+        .eq("status", "created");
+    };
+
     // ---------------------------------------------------------
     // 4. RETRY EXISTING PENDING ORDER
     // ---------------------------------------------------------
@@ -259,9 +273,6 @@ Deno.serve(async (req: Request) => {
       paymentRecordId = reservation.payment_id;
       amountInPaise = Number(reservation.amount);
 
-      // Fetch the order after the reservation.
-      // If this lookup fails, leave the created payment attempt untouched.
-      // It must be reconciled rather than blindly retried.
       const { data: existingOrder, error: existingOrderErr } = await supabase
         .from("orders")
         .select(
@@ -273,6 +284,7 @@ Deno.serve(async (req: Request) => {
 
       if (existingOrderErr || !existingOrder) {
         console.error("Retry order lookup failed:", existingOrderErr);
+        await markPaymentFailedIfCreated(paymentRecordId, "Order lookup failed during retry initialization");
         return jsonResponse(
           {
             error:
@@ -287,6 +299,7 @@ Deno.serve(async (req: Request) => {
         existingOrder.payment_status !== "pending"
       ) {
         console.error("Order state changed after payment reservation.");
+        await markPaymentFailedIfCreated(paymentRecordId, "Order no longer eligible for payment after reservation");
         return jsonResponse(
           { error: "This order is no longer eligible for payment." },
           409,
@@ -297,6 +310,7 @@ Deno.serve(async (req: Request) => {
         existingOrder.currency &&
         existingOrder.currency !== "INR"
       ) {
+        await markPaymentFailedIfCreated(paymentRecordId, "Unsupported order currency during retry");
         return jsonResponse(
           { error: "Unsupported order currency." },
           400,
@@ -328,6 +342,7 @@ Deno.serve(async (req: Request) => {
           reservedAmount: amountInPaise,
         });
 
+        await markPaymentFailedIfCreated(paymentRecordId, "Retry amount validation failed");
         return jsonResponse(
           { error: "Order amount validation failed. Please contact support." },
           409,
@@ -350,7 +365,6 @@ Deno.serve(async (req: Request) => {
       }
 
       // Temporary duplicate-submission guard.
-      // This is not a substitute for a permanent idempotency key.
       const { data: recentOrders, error: recentErr } = await supabase
         .from("orders")
         .select("id, created_at")
@@ -772,7 +786,7 @@ Deno.serve(async (req: Request) => {
       );
 
       // -------------------------------------------------------
-      // 10. CALCULATE DELIVERY FEE
+      // 10. CALCULATE DELIVERY FEE & SERVICEABILITY CHECK
       // -------------------------------------------------------
 
       let calculatedDistanceKm = 0;
@@ -821,7 +835,7 @@ Deno.serve(async (req: Request) => {
         pricingMode !== "always_free" &&
         pricingMode !== "flat_fee";
 
-      if (requiresDistance) {
+      if (requiresDistance || pricingMode === 'distance_based' || pricingMode === 'preset_rules') {
         const rawLat = details?.lat;
         const rawLng = details?.lng;
 
@@ -856,6 +870,14 @@ Deno.serve(async (req: Request) => {
           lat,
           lng,
         );
+
+        const maxDistanceKm = Number(delSet.max_delivery_distance_km ?? 15.00);
+        if (Number.isFinite(maxDistanceKm) && maxDistanceKm > 0 && calculatedDistanceKm > maxDistanceKm) {
+          return jsonResponse(
+            { error: `Sorry, delivery is not available for your location (distance exceeds maximum radius of ${maxDistanceKm} km).` },
+            400,
+          );
+        }
       }
 
       if (delSet.delivery_mode === "always_free") {
@@ -1305,7 +1327,7 @@ Deno.serve(async (req: Request) => {
       paymentId: paymentRecordId,
       keyId: razorpayKeyId,
       razorpayOrderId: razorpayOrder.id,
-      amount: amountInPaise,
+      amount: razorpayOrder.amount,
       subtotal: Number(order.subtotal),
       deliveryFee: Number(order.delivery_fee ?? 0),
       discount: Number(order.discount ?? 0),
