@@ -107,14 +107,22 @@ Deno.serve(async (req: Request) => {
       checkoutSessionId,
     } = body;
 
-    // 1. MANDATORY SIGNATURE VERIFICATION
-    if (!razorpay_signature || !razorpay_order_id || !razorpay_payment_id) {
-      return new Response(JSON.stringify({ error: "Missing required Razorpay payment signature or IDs" }), {
+    // 1. STRICT FORMAT VALIDATION FOR RAZORPAY IDS & SIGNATURE
+    if (
+      typeof razorpay_order_id !== "string" ||
+      !/^order_[A-Za-z0-9]+$/.test(razorpay_order_id) ||
+      typeof razorpay_payment_id !== "string" ||
+      !/^pay_[A-Za-z0-9]+$/.test(razorpay_payment_id) ||
+      typeof razorpay_signature !== "string" ||
+      !/^[a-fA-F0-9]{64}$/.test(razorpay_signature)
+    ) {
+      return new Response(JSON.stringify({ error: "Invalid Razorpay payment details." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // 2. MANDATORY SIGNATURE VERIFICATION
     const payload = `${razorpay_order_id}|${razorpay_payment_id}`;
     const isValidSignature = await verifyHmacSha256(razorpayKeySecret, payload, razorpay_signature);
     if (!isValidSignature) {
@@ -124,7 +132,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. FETCH PENDING ORDER (Selecting only needed order columns, with strict error checks)
+    // 3. AUTHORITATIVE ORDER LOOKUP
     const targetOrderId = checkoutId || checkoutSessionId;
     let order = null;
 
@@ -141,10 +149,28 @@ Deno.serve(async (req: Request) => {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      order = oData;
-    }
 
-    if (!order && razorpay_order_id) {
+      if (!oData) {
+        return new Response(JSON.stringify({ error: `Order for ID "${targetOrderId}" not found.` }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: payCheck } = await supabase
+        .from('payments')
+        .select('razorpay_order_id')
+        .eq('order_id', oData.id)
+        .eq('razorpay_order_id', razorpay_order_id)
+        .maybeSingle();
+
+      if (!payCheck) {
+        return new Response(JSON.stringify({ error: "Razorpay order ID is not linked to this order." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      order = oData;
+    } else {
       const { data: payRec, error: payRecErr } = await supabase
         .from('payments')
         .select('order_id')
@@ -182,7 +208,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 3. FETCH PAYMENT RECORD WITH STRICT ERROR CHECK
+    // 4. FETCH PAYMENT RECORD WITH STRICT VALIDATION
     const { data: paymentRecord, error: payErr } = await supabase
       .from('payments')
       .select('*')
@@ -204,8 +230,15 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4. DIRECT RAZORPAY API PAYMENT VERIFICATION
-    let expectedAmountPaise = Number(paymentRecord.amount);
+    const expectedAmountPaise = Number(paymentRecord.amount);
+    if (!Number.isSafeInteger(expectedAmountPaise) || expectedAmountPaise <= 0) {
+      return new Response(JSON.stringify({ error: "Invalid payment amount stored for this order." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 5. DIRECT RAZORPAY API PAYMENT VERIFICATION
     try {
       const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
       const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${razorpay_payment_id}`, {
@@ -259,7 +292,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 5. CONFIRM ORDER & DEDUCT INVENTORY (via atomic confirm_order_payment RPC)
+    // 6. CONFIRM ORDER & DEDUCT INVENTORY (via atomic confirm_order_payment RPC)
     const { data: confirmation, error: confirmationError } = await supabase.rpc('confirm_order_payment', {
       p_order_id: order.id,
       p_razorpay_order_id: razorpay_order_id,
