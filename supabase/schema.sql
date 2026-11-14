@@ -916,3 +916,58 @@ $$;
 
 REVOKE ALL ON FUNCTION public.claim_webhook_event(TEXT, TEXT, JSONB) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_webhook_event(TEXT, TEXT, JSONB) TO service_role;
+
+-- 31. ATOMIC STORED PROCEDURE FOR ABANDONING/CANCELLING A PENDING ORDER (CART MODIFICATION SAFETY)
+CREATE OR REPLACE FUNCTION public.abandon_pending_order(
+  p_order_id UUID,
+  p_user_id UUID
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+DECLARE
+  v_order RECORD;
+  v_payment RECORD;
+  v_has_active_payment BOOLEAN := FALSE;
+BEGIN
+  SELECT * INTO v_order
+  FROM public.orders
+  WHERE id = p_order_id AND user_id = p_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Order not found');
+  END IF;
+
+  IF v_order.status <> 'pending_payment' OR v_order.payment_status <> 'pending' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Order cannot be modified or abandoned in its current state');
+  END IF;
+
+  -- Check if any payment is captured, authorized, or created (unresolved)
+  FOR v_payment IN
+    SELECT status FROM public.payments WHERE order_id = p_order_id
+  LOOP
+    IF v_payment.status IN ('captured', 'authorized', 'created') THEN
+      v_has_active_payment := TRUE;
+      EXIT;
+    END IF;
+  END LOOP;
+
+  IF v_has_active_payment THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Cannot abandon order while payment attempts remain active, unresolved, or captured.'
+    );
+  END IF;
+
+  UPDATE public.orders
+  SET status = 'cancelled', updated_at = NOW()
+  WHERE id = p_order_id;
+
+  RETURN jsonb_build_object('success', true);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.abandon_pending_order(UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.abandon_pending_order(UUID, UUID) TO service_role;
