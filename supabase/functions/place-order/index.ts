@@ -109,15 +109,22 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Temporary double-click guard
+    // Temporary double-click guard with explicit database error check
     if (finalUserId) {
-      const { data: recentOrders } = await supabase
+      const { data: recentOrders, error: recentErr } = await supabase
         .from('orders')
         .select('id, created_at')
         .eq('user_id', finalUserId)
         .eq('status', 'pending_payment')
         .gte('created_at', new Date(Date.now() - 30000).toISOString())
         .limit(1);
+
+      if (recentErr) {
+        console.error("Recent orders check failed:", recentErr);
+        return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       if (recentOrders && recentOrders.length > 0) {
         return new Response(JSON.stringify({ error: "A checkout request is already in progress. Please wait a moment." }), {
@@ -140,10 +147,17 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Aggregate quantities by variant_id to prevent bypass via split cart lines
+    // Aggregate quantities by variant_id with malformed item validation
     const aggregatedQuantities: Record<string, number> = {};
     for (const item of items) {
-      const rawQtyStr = String(item.qty || item.quantity || '');
+      if (!item || typeof item !== 'object') {
+        return new Response(JSON.stringify({ error: "Invalid cart item format." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const rawQty = item.qty !== undefined ? item.qty : item.quantity;
+      const rawQtyStr = String(rawQty !== undefined && rawQty !== null ? rawQty : '');
       if (!/^\d+$/.test(rawQtyStr)) {
         return new Response(JSON.stringify({
           error: `Quantity for item "${item.name || 'product'}" must be a positive integer.`
@@ -260,7 +274,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 3. STRICT COUPON VALIDATION WITH ERROR CHECKS
+    // 3. STRICT COUPON VALIDATION WITH ERROR CHECKS & BOUNDS
     let discountAmount = 0;
     if (couponCode) {
       const { data: coupon, error: cErr } = await supabase
@@ -312,7 +326,8 @@ Deno.serve(async (req: Request) => {
         const { count: previousOrdersCount, error: oCountErr } = await supabase
           .from('orders')
           .select('id', { count: 'exact', head: true })
-          .eq('user_id', finalUserId);
+          .eq('user_id', finalUserId)
+          .in('payment_status', ['paid']);
 
         if (oCountErr) {
           console.error("Previous order lookup failed:", oCountErr);
@@ -341,14 +356,17 @@ Deno.serve(async (req: Request) => {
       }
 
       if (coupon.discount_type === 'percentage') {
-        const validPct = Math.min(100, Math.max(0, couponVal));
-        discountAmount = Math.floor((verifiedSubtotal * validPct) / 100);
+        if (couponVal < 0 || couponVal > 100) {
+          return new Response(JSON.stringify({ error: "Invalid coupon configuration." }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        discountAmount = Math.floor((verifiedSubtotal * couponVal) / 100);
         if (coupon.max_discount_amount !== null && coupon.max_discount_amount !== undefined) {
           const maxDisc = Number(coupon.max_discount_amount);
           if (!Number.isFinite(maxDisc) || maxDisc < 0) {
             return new Response(JSON.stringify({ error: "Invalid coupon configuration." }), {
-              status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
           discountAmount = Math.min(discountAmount, maxDisc);
@@ -360,7 +378,7 @@ Deno.serve(async (req: Request) => {
 
     const subtotalAfterDiscount = Math.max(0, verifiedSubtotal - discountAmount);
 
-    // 4. DYNAMIC DISTANCE & DELIVERY FEE EVALUATION WITH COORDINATE VALIDATION
+    // 4. DYNAMIC DISTANCE & DELIVERY FEE EVALUATION WITH STORE & CUSTOMER COORDINATE VALIDATION
     let deliveryFee = 0;
     let calculatedDistanceKm = 0;
 
@@ -379,21 +397,43 @@ Deno.serve(async (req: Request) => {
 
     const storeLat = Number(delSet?.store_latitude ?? STORE_LAT);
     const storeLng = Number(delSet?.store_longitude ?? STORE_LNG);
+
+    if (!Number.isFinite(storeLat) || !Number.isFinite(storeLng) || storeLat < -90 || storeLat > 90 || storeLng < -180 || storeLng > 180) {
+      console.error("Invalid store coordinates in delivery_settings");
+      return new Response(JSON.stringify({ error: "Server configuration error: Invalid store location." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const pricingMode = delSet?.delivery_mode || 'rules';
 
     if (pricingMode !== 'always_free' && pricingMode !== 'flat_fee') {
-      if (!details || details.lat === undefined || details.lng === undefined) {
-        return new Response(JSON.stringify({ error: "Delivery coordinates are required to calculate delivery fee." }), {
+      const rawLat = details?.lat;
+      const rawLng = details?.lng;
+
+      if (
+        rawLat === null || rawLat === undefined || rawLat === "" ||
+        rawLng === null || rawLng === undefined || rawLng === ""
+      ) {
+        return new Response(JSON.stringify({ error: "Valid delivery coordinates are required." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const lat = Number(details.lat);
-      const lng = Number(details.lng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+
+      const lat = Number(rawLat);
+      const lng = Number(rawLng);
+
+      if (
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        lat < -90 || lat > 90 ||
+        lng < -180 || lng > 180
+      ) {
         return new Response(JSON.stringify({ error: "Invalid delivery coordinates provided." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
       calculatedDistanceKm = getDistanceFromLatLonInKm(storeLat, storeLng, lat, lng);
     }
 
@@ -536,18 +576,26 @@ Deno.serve(async (req: Request) => {
 
         // Preserve Razorpay Order ID if returned even when validation fails
         if (typeof razorpayOrder?.id === "string" && /^order_[A-Za-z0-9]+$/.test(razorpayOrder.id)) {
-          await supabase.from('payments').update({
+          const { error: preserveErr } = await supabase.from('payments').update({
             razorpay_order_id: razorpayOrder.id,
             status: 'created',
             failure_description: 'Razorpay response validation failed - requires reconciliation',
             updated_at: new Date().toISOString(),
           }).eq('id', paymentRecord.id);
+
+          if (preserveErr) {
+            console.error("Failed to preserve Razorpay order ID:", preserveErr);
+          }
         } else {
-          await supabase.from('payments').update({
+          const { error: failErr } = await supabase.from('payments').update({
             status: 'failed',
             failure_description: razorpayOrder?.error?.description || 'Invalid Razorpay order response',
             updated_at: new Date().toISOString(),
           }).eq('id', paymentRecord.id);
+
+          if (failErr) {
+            console.error("Failed to mark payment failed:", failErr);
+          }
         }
 
         if (razorpayRes.status >= 400 && razorpayRes.status < 500) {
@@ -567,11 +615,15 @@ Deno.serve(async (req: Request) => {
       console.error("Razorpay network failure:", netErr);
 
       // Keep payment attempt as created and order as pending_payment for reconciliation (ambiguous timeout)
-      await supabase.from('payments').update({
+      const { error: timeoutErr } = await supabase.from('payments').update({
         status: 'created',
         failure_description: 'Razorpay order creation outcome unknown (network timeout) - requires reconciliation',
         updated_at: new Date().toISOString(),
       }).eq('id', paymentRecord.id);
+
+      if (timeoutErr) {
+        console.error("Failed to record network timeout reconciliation state:", timeoutErr);
+      }
 
       return new Response(JSON.stringify({ error: "Payment gateway network error. Please try again." }), {
         status: 502,
@@ -593,11 +645,15 @@ Deno.serve(async (req: Request) => {
     if (linkErr || !linkedPayment || linkedPayment.razorpay_order_id !== razorpayOrder.id) {
       console.error("Failed to link Razorpay order ID:", linkErr);
 
-      await supabase.from('payments').update({
+      const { error: linkFailErr } = await supabase.from('payments').update({
         status: 'created',
         failure_description: 'Failed to link Razorpay order ID - requires reconciliation',
         updated_at: new Date().toISOString(),
       }).eq('id', paymentRecord.id);
+
+      if (linkFailErr) {
+        console.error("Failed to update payment failure description:", linkFailErr);
+      }
 
       return new Response(JSON.stringify({ error: "Unable to initialize payment. Please contact support if your payment was affected." }), {
         status: 500,
