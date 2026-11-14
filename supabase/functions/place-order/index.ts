@@ -457,17 +457,25 @@ Deno.serve(async (req: Request) => {
     }
 
     if (delSet) {
-      if (!delSet.is_free_delivery_enabled || delSet.delivery_mode === 'flat_fee') {
+      if (delSet.delivery_mode === 'always_free') {
+        deliveryFee = 0;
+      } else if (!delSet.is_free_delivery_enabled || delSet.delivery_mode === 'flat_fee') {
         deliveryFee = Number(delSet.flat_delivery_fee || 65);
       } else if (delSet.delivery_mode === 'preset_rules') {
         const radius = Number(delSet.preset_zone_radius_km || 5);
         const isZone1 = calculatedDistanceKm <= radius;
-        const targetSub = isZone1 ? Number(delSet.preset_zone1_subtotal || 299) : Number(delSet.preset_zone2_subtotal || 499);
-        const stdFee = isZone1 ? Number(delSet.preset_zone1_fee || 30) : Number(delSet.preset_zone2_fee || 30);
+        const targetSub = isZone1
+          ? Number(delSet.preset_zone1_subtotal || 299)
+          : Number(delSet.preset_zone2_subtotal || 499);
+        const stdFee = isZone1
+          ? Number(delSet.preset_zone1_fee || 30)
+          : Number(delSet.preset_zone2_fee || 30);
+
         deliveryFee = subtotalAfterDiscount >= targetSub ? 0 : stdFee;
       } else {
         const t1Max = Number(delSet.tier1_max_km || 5);
         const t2Max = Number(delSet.tier2_max_km || 10);
+
         let targetSub = Number(delSet.tier1_subtotal || 299);
         let stdFee = Number(delSet.tier1_fee || 30);
 
@@ -618,7 +626,6 @@ Deno.serve(async (req: Request) => {
         }
 
         if (razorpayRes.status >= 400 && razorpayRes.status < 500) {
-          // Definite client rejection: no usable Razorpay Order ID was returned or 4xx error without valid ID
           if (!hasValidId) {
             const { error: failErr } = await supabase
               .from('payments')
@@ -633,9 +640,16 @@ Deno.serve(async (req: Request) => {
             if (failErr) {
               console.error("Failed to record Razorpay rejection:", failErr);
             }
-          }
 
-          await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+            const { error: cancelErr } = await supabase
+              .from('orders')
+              .update({ status: 'cancelled' })
+              .eq('id', order.id);
+
+            if (cancelErr) {
+              console.error("Failed to cancel rejected order:", cancelErr);
+            }
+          }
 
           return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
             status: 502,
