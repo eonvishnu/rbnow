@@ -87,14 +87,14 @@ Deno.serve(async (req: Request) => {
 
     // 1. STRICT BEARER TOKEN AUTHENTICATION
     const authorization = req.headers.get("Authorization") || "";
-    const bearerMatch = authorization.match(/^Bearer\s+(\S+)$/i);
-    if (authorization && !bearerMatch) {
+    if (authorization && !authorization.toLowerCase().startsWith("bearer ")) {
       return new Response(JSON.stringify({ error: "Invalid authorization format. Bearer token required." }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const accessToken = bearerMatch ? bearerMatch[1] : "";
+    const accessToken = authorization.trim().split(/\s+/).pop() || "";
+
     if (authorization && !accessToken) {
       return new Response(JSON.stringify({ error: "Authentication token is required." }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -147,64 +147,53 @@ Deno.serve(async (req: Request) => {
     }
 
     let order: any = null;
+    let paymentRecordId: string = "";
     let amountInPaise = 0;
     let customerPhone = details?.phone || '';
+    let verifiedSubtotal = 0;
+    let deliveryFee = 0;
+    let discountAmount = 0;
+    let orderTotal = 0;
 
-    // RETRY FLOW: If checkoutId is provided, reuse the existing pending order securely and inspect previous payments
+    // RETRY FLOW: Atomically reserve a payment attempt via database RPC
     if (checkoutId && isValidUuid(checkoutId)) {
-      const { data: existingOrder, error: exOrderErr } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('id', checkoutId)
-        .eq('user_id', finalUserId)
-        .eq('status', 'pending_payment')
-        .eq('payment_status', 'pending')
-        .maybeSingle();
+      const { data: reservation, error: resErr } = await supabase.rpc('reserve_payment_attempt', {
+        p_order_id: checkoutId,
+        p_user_id: finalUserId,
+      });
 
-      if (exOrderErr || !existingOrder) {
-        return new Response(JSON.stringify({ error: "Eligible pending order for retry not found." }), {
-          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      order = existingOrder;
-      customerPhone = order.customer_phone || details?.phone || '';
-      amountInPaise = Math.round(Number(order.total) * 100);
-
-      if (!Number.isSafeInteger(amountInPaise) || amountInPaise <= 0) {
-        return new Response(JSON.stringify({ error: "Invalid order amount for retry." }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      // Check existing payment records for this order to prevent multiple active payable attempts
-      const { data: existingPayments, error: payCheckErr } = await supabase
-        .from('payments')
-        .select('status')
-        .eq('order_id', order.id);
-
-      if (payCheckErr) {
-        console.error("Payment history check failed:", payCheckErr);
+      if (resErr) {
+        console.error("Reserve payment attempt RPC error:", resErr);
         return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      if (existingPayments && existingPayments.length > 0) {
-        const hasCaptured = existingPayments.some(p => p.status === 'captured');
-        const hasUnresolved = existingPayments.some(p => p.status === 'created' || p.status === 'authorized');
+      if (!reservation?.success) {
+        return new Response(JSON.stringify({ error: reservation?.error || "Unable to retry payment for this order." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-        if (hasCaptured) {
-          return new Response(JSON.stringify({ error: "Order has already been paid." }), {
-            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+      const { data: existingOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', checkoutId)
+        .single();
 
-        if (hasUnresolved) {
-          return new Response(JSON.stringify({ error: "A payment attempt is currently active or unresolved for this order. Please wait a moment." }), {
-            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+      order = existingOrder;
+      customerPhone = order.customer_phone || details?.phone || '';
+      verifiedSubtotal = Number(order.subtotal);
+      deliveryFee = Number(order.delivery_fee);
+      discountAmount = Number(order.discount);
+      orderTotal = Number(order.total);
+      amountInPaise = Number(reservation.amount);
+      paymentRecordId = reservation.payment_id;
+
+      if (!Number.isSafeInteger(amountInPaise) || amountInPaise <= 0) {
+        return new Response(JSON.stringify({ error: "Invalid order amount for retry." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     } else {
       // NORMAL PLACE-ORDER FLOW
@@ -303,7 +292,7 @@ Deno.serve(async (req: Request) => {
         aggregatedQuantities[candidateVariantId] = aggregatedQty;
       }
 
-      let verifiedSubtotal = 0;
+      verifiedSubtotal = 0;
       const verifiedItems = [];
 
       // 2. STRICT DATABASE VARIANT VALIDATION & AGGREGATED STOCK CHECK
@@ -392,7 +381,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // 3. STRICT COUPON VALIDATION WITH ERROR CHECKS & BOUNDS
-      let discountAmount = 0;
+      discountAmount = 0;
       if (couponCode) {
         const { data: coupon, error: cErr } = await supabase
           .from('coupons')
@@ -501,7 +490,6 @@ Deno.serve(async (req: Request) => {
       const subtotalAfterDiscount = Math.max(0, verifiedSubtotal - discountAmount);
 
       // 4. DYNAMIC DISTANCE & DELIVERY FEE EVALUATION WITH STORE & CUSTOMER COORDINATE VALIDATION
-      let deliveryFee = 0;
       let calculatedDistanceKm = 0;
 
       const { data: delSet, error: delErr } = await supabase
@@ -603,7 +591,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      const orderTotal = subtotalAfterDiscount + deliveryFee;
+      orderTotal = subtotalAfterDiscount + deliveryFee;
       amountInPaise = Math.round(orderTotal * 100);
 
       if (!Number.isSafeInteger(amountInPaise) || amountInPaise <= 0) {
@@ -660,31 +648,34 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 6. CREATE INTERNAL PAYMENT ATTEMPT BEFORE CALLING RAZORPAY
-    const { data: paymentRecord, error: payErr } = await supabase
-      .from('payments')
-      .insert({
-        order_id: order.id,
-        amount: amountInPaise,
-        currency: 'INR',
-        status: 'created',
-      })
-      .select('id')
-      .single();
+    // 6. CREATE INTERNAL PAYMENT ATTEMPT VIA RPC OR INSERT
+    let paymentRecordId = "";
+    if (checkoutId && isValidUuid(checkoutId)) {
+      paymentRecordId = paymentRecordId; // already set by reserve_payment_attempt
+    } else {
+      const { data: paymentRecord, error: payErr } = await supabase
+        .from('payments')
+        .insert({
+          order_id: order.id,
+          amount: amountInPaise,
+          currency: 'INR',
+          status: 'created',
+        })
+        .select('id')
+        .single();
 
-    if (payErr || !paymentRecord) {
-      console.error("Payment record creation failed:", payErr);
-      // Only cancel order if this is a fresh order, not a retry
-      if (!checkoutId) {
+      if (payErr || !paymentRecord) {
+        console.error("Payment record creation failed:", payErr);
         await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+        return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      paymentRecordId = paymentRecord.id;
     }
 
-    const customReceiptId = `RB-${order.id}`;
+    const customReceiptId = `RB-${paymentRecordId.replace(/-/g, '')}`;
 
     // 7. CREATE RAZORPAY ORDER WITH RECONCILIATION-SAFE TIMEOUT & AMBIGUOUS 2xx/5xx HANDLING
     let razorpayOrder: any;
@@ -705,6 +696,7 @@ Deno.serve(async (req: Request) => {
             draft_order_id: customReceiptId,
             customer_phone: customerPhone,
             order_id: order.id,
+            payment_attempt_id: paymentRecordId,
           }
         }),
       });
@@ -731,7 +723,7 @@ Deno.serve(async (req: Request) => {
               failure_description: 'Razorpay response validation failed - requires reconciliation',
               updated_at: new Date().toISOString(),
             })
-            .eq('id', paymentRecord.id)
+            .eq('id', paymentRecordId)
             .select('id, razorpay_order_id')
             .maybeSingle();
 
@@ -755,7 +747,7 @@ Deno.serve(async (req: Request) => {
                   razorpayOrder?.error?.description || 'Razorpay rejected order creation',
                 updated_at: new Date().toISOString(),
               })
-              .eq('id', paymentRecord.id);
+              .eq('id', paymentRecordId);
 
             if (failErr) {
               console.error("Failed to record Razorpay rejection:", failErr);
@@ -776,7 +768,7 @@ Deno.serve(async (req: Request) => {
                 'Razorpay order creation outcome unknown - requires reconciliation',
               updated_at: new Date().toISOString(),
             })
-            .eq('id', paymentRecord.id);
+            .eq('id', paymentRecordId);
 
           if (reconcileErr) {
             console.error("Failed to record reconciliation state:", reconcileErr);
@@ -796,7 +788,7 @@ Deno.serve(async (req: Request) => {
         status: 'created',
         failure_description: 'Razorpay order creation outcome unknown (network timeout) - requires reconciliation',
         updated_at: new Date().toISOString(),
-      }).eq('id', paymentRecord.id);
+      }).eq('id', paymentRecordId);
 
       if (timeoutErr) {
         console.error("Failed to record network timeout reconciliation state:", timeoutErr);
@@ -815,7 +807,7 @@ Deno.serve(async (req: Request) => {
         razorpay_order_id: razorpayOrder.id,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', paymentRecord.id)
+      .eq('id', paymentRecordId)
       .select('id, razorpay_order_id')
       .maybeSingle();
 
@@ -826,7 +818,7 @@ Deno.serve(async (req: Request) => {
         status: 'created',
         failure_description: 'Failed to link Razorpay order ID - requires reconciliation',
         updated_at: new Date().toISOString(),
-      }).eq('id', paymentRecord.id);
+      }).eq('id', paymentRecordId);
 
       if (linkFailErr) {
         console.error("Failed to update payment failure description:", linkFailErr);
@@ -841,7 +833,7 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({
       success: true,
       checkoutId: order.id,
-      paymentId: paymentRecord?.id,
+      paymentId: paymentRecordId,
       keyId: razorpayKeyId,
       razorpayOrderId: razorpayOrder.id,
       amount: razorpayOrder.amount,
