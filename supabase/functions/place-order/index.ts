@@ -24,13 +24,6 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
 
 const isValidUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str || '');
 
-function extractProductId(id: string): string {
-  if (!id) return '';
-  if (id.length >= 36) return id.substring(0, 36);
-  const lastDash = id.lastIndexOf('-');
-  return lastDash !== -1 ? id.substring(0, lastDash) : id;
-}
-
 // @ts-ignore
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -42,7 +35,7 @@ Deno.serve(async (req: Request) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return new Response(JSON.stringify({ error: "Server configuration missing: SUPABASE_SERVICE_ROLE_KEY" }), {
+      return new Response(JSON.stringify({ error: "Server configuration missing." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -50,33 +43,49 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    let razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
-    let razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+    // Fail-safe credential resolution
+    let razorpayKeyId = "";
+    let razorpayKeySecret = "";
 
-    const { data: activeGw } = await supabase
+    const { data: activeGw, error: gwErr } = await supabase
       .from("payment_gateways")
       .select("key_id, secret_key")
       .eq("is_active", true)
       .eq("provider", "razorpay")
       .maybeSingle();
 
-    if (activeGw?.key_id) {
-      razorpayKeyId = activeGw.key_id;
-    }
-    if (activeGw?.secret_key) {
-      razorpayKeySecret = activeGw.secret_key;
-    }
-
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-
-    if (!razorpayKeyId || !razorpayKeySecret) {
-      return new Response(JSON.stringify({ error: "Server configuration missing: RAZORPAY_KEY_SECRET" }), {
+    if (gwErr) {
+      console.error("Failed to fetch active payment gateway:", gwErr);
+      return new Response(JSON.stringify({ error: "Server configuration error." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 1. DERIVE VERIFIED AUTHENTICATED USER ID EXCLUSIVELY FROM JWT BEARER TOKEN (STRICT ZERO-TRUST ENFORCEMENT)
+    if (activeGw) {
+      if (!activeGw.key_id || !activeGw.secret_key) {
+        return new Response(JSON.stringify({ error: "Active payment gateway has incomplete credentials." }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      razorpayKeyId = activeGw.key_id;
+      razorpayKeySecret = activeGw.secret_key;
+    } else {
+      razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID") || "";
+      razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || "";
+    }
+
+    if (!razorpayKeyId || !razorpayKeySecret) {
+      return new Response(JSON.stringify({ error: "Razorpay configuration is missing." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+
+    // 1. DERIVE VERIFIED AUTHENTICATED USER ID EXCLUSIVELY FROM JWT BEARER TOKEN
     const authorization = req.headers.get("Authorization") || "";
     const accessToken = authorization.trim().split(/\s+/).pop() || "";
     let verifiedUserId: string | null = null;
@@ -91,8 +100,6 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json();
     const { items, details, couponCode, browserId } = body;
-
-    // Strict Enforcement: user_id is set ONLY if cryptographically verified via JWT bearer session
     const finalUserId = verifiedUserId || null;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -102,16 +109,39 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Fetch active variant discounts
-    const { data: activeDiscounts } = await supabase
+    // Duplicate Request / Idempotency protection check (prevent double-clicks within 30 seconds)
+    if (finalUserId) {
+      const { data: recentOrders } = await supabase
+        .from('orders')
+        .select('id, created_at')
+        .eq('user_id', finalUserId)
+        .eq('status', 'pending_payment')
+        .gte('created_at', new Date(Date.now() - 30000).toISOString())
+        .limit(1);
+
+      if (recentOrders && recentOrders.length > 0) {
+        return new Response(JSON.stringify({ error: "A checkout request is already in progress. Please wait a moment." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Fetch active variant discounts with strict error check
+    const { data: activeDiscounts, error: discErr } = await supabase
       .from('discounts')
       .select('*, discount_variants(*)')
       .eq('is_active', true);
 
-    let verifiedSubtotal = 0;
-    const verifiedItems = [];
+    if (discErr) {
+      console.error("Discounts fetch error:", discErr);
+      return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // 2. STRICT DATABASE ITEM & PRICE VALIDATION (ZERO CLIENT PRICE FALLBACK)
+    // Aggregate quantities by variant_id to prevent bypass via split cart lines
+    const aggregatedQuantities: Record<string, number> = {};
     for (const item of items) {
       const rawQtyStr = String(item.qty || item.quantity || '');
       if (!/^\d+$/.test(rawQtyStr)) {
@@ -122,7 +152,6 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
       const qty = parseInt(rawQtyStr, 10);
       if (qty < 1 || qty > 50) {
         return new Response(JSON.stringify({
@@ -133,132 +162,121 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      const itemId = item.id || '';
+      const itemId = item.id || item.variant_id || '';
       const candidateVariantId = item.variant_id || (isValidUuid(itemId) ? itemId : null);
-      let variant = null;
 
-      if (candidateVariantId && isValidUuid(candidateVariantId)) {
-        const { data: vData } = await supabase
-          .from('product_variants')
-          .select('*, products(*)')
-          .eq('id', candidateVariantId)
-          .single();
-
-        if (vData) variant = vData;
+      if (!candidateVariantId || !isValidUuid(candidateVariantId)) {
+        return new Response(JSON.stringify({
+          error: `Please select a valid variant for "${item.name || 'product'}".`
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
-      if (variant) {
-        const availableStock = variant.stock !== null ? Number(variant.stock) : 999;
-        if (!variant.is_available || availableStock < qty) {
-          const itemName = variant.products?.name || item.name;
-          const errMsg = availableStock === 0
-            ? `Item "${itemName}" (${variant.unit}) is out of stock.`
-            : `Only ${availableStock} left in stock for "${itemName}" (${variant.unit}). Please update your quantity.`;
+      aggregatedQuantities[candidateVariantId] = (aggregatedQuantities[candidateVariantId] || 0) + qty;
+    }
 
-          return new Response(JSON.stringify({ error: errMsg }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+    let verifiedSubtotal = 0;
+    const verifiedItems = [];
 
-        let rawPrice = Number(variant.price);
-        let variantDiscountPercent = 0;
-        if (activeDiscounts) {
-          for (const disc of activeDiscounts) {
-            const isLinked = disc.discount_variants?.some((dv: any) => dv.variant_id === variant.id);
-            if (isLinked) {
-              if (disc.discount_type === 'percentage') {
-                variantDiscountPercent = Math.max(variantDiscountPercent, Number(disc.discount_value));
-              } else {
-                const flatDiscount = Number(disc.discount_value);
-                const percentEquiv = Math.round((flatDiscount / rawPrice) * 100);
-                variantDiscountPercent = Math.max(variantDiscountPercent, percentEquiv);
-              }
+    // 2. STRICT DATABASE VARIANT VALIDATION & AGGREGATED STOCK CHECK
+    for (const [variantId, totalQty] of Object.entries(aggregatedQuantities)) {
+      const { data: variant, error: variantErr } = await supabase
+        .from('product_variants')
+        .select('*, products(*)')
+        .eq('id', variantId)
+        .maybeSingle();
+
+      if (variantErr) {
+        console.error("Variant lookup failed:", variantErr);
+        return new Response(JSON.stringify({ error: "Unable to verify product availability. Please try again." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!variant || !variant.products) {
+        return new Response(JSON.stringify({
+          error: `The selected product variant no longer exists. Please refresh your cart.`
+        }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const availableStock = variant.stock !== null ? Number(variant.stock) : NaN;
+      if (variant.is_available !== true || !Number.isFinite(availableStock) || availableStock < totalQty) {
+        const itemName = variant.products.name;
+        const errMsg = availableStock === 0
+          ? `Item "${itemName}" (${variant.unit}) is out of stock.`
+          : `Only ${availableStock} left in stock for "${itemName}" (${variant.unit}). Please update your quantity.`;
+
+        return new Response(JSON.stringify({ error: errMsg }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const rawPrice = Number(variant.price);
+      if (!Number.isFinite(rawPrice) || rawPrice < 0) {
+        throw new Error(`Invalid price configured for variant "${variant.unit}".`);
+      }
+
+      let variantDiscountPercent = 0;
+      if (activeDiscounts) {
+        for (const disc of activeDiscounts) {
+          const isLinked = disc.discount_variants?.some((dv: any) => dv.variant_id === variant.id);
+          if (isLinked) {
+            const discVal = Number(disc.discount_value);
+            if (!Number.isFinite(discVal) || discVal < 0) continue;
+
+            if (disc.discount_type === 'percentage') {
+              const validPct = Math.min(100, Math.max(0, discVal));
+              variantDiscountPercent = Math.max(variantDiscountPercent, validPct);
+            } else {
+              const percentEquiv = Math.round((discVal / rawPrice) * 100);
+              variantDiscountPercent = Math.max(variantDiscountPercent, Math.min(100, percentEquiv));
             }
           }
         }
-
-        const itemPrice = variantDiscountPercent > 0
-          ? Math.round(rawPrice * (1 - (variantDiscountPercent / 100)))
-          : rawPrice;
-
-        const itemSubtotal = itemPrice * qty;
-        verifiedSubtotal += itemSubtotal;
-
-        verifiedItems.push({
-          product_id: variant.product_id,
-          variant_id: variant.id,
-          product_name: variant.products?.name || item.name,
-          variant_unit: variant.unit,
-          product_image: variant.products?.image_url,
-          price: itemPrice,
-          quantity: qty,
-          total_price: itemSubtotal,
-        });
-      } else {
-        const candidateProductId = item.product_id || extractProductId(itemId);
-        let product = null;
-
-        if (isValidUuid(candidateProductId)) {
-          const { data: pData } = await supabase
-            .from('products')
-            .select('*')
-            .eq('id', candidateProductId)
-            .single();
-          if (pData) product = pData;
-        }
-
-        // STRICT GUARD: If neither variant nor product exists in DB, REJECT IT!
-        if (!product) {
-          return new Response(JSON.stringify({
-            error: `Product or variant "${item.name || itemId}" does not exist in catalog.`
-          }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const availableStock = product.stock !== null ? Number(product.stock) : 999;
-        if (!product.is_available || availableStock < qty) {
-          const errMsg = availableStock === 0
-            ? `Item "${product.name}" is out of stock.`
-            : `Only ${availableStock} left in stock for "${product.name}". Please update your quantity.`;
-
-          return new Response(JSON.stringify({ error: errMsg }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const itemPrice = Number(product.price);
-
-        if (!Number.isFinite(itemPrice) || itemPrice < 0) {
-          throw new Error(`Invalid price configured for product "${product.name}".`);
-        }
-        const itemSubtotal = itemPrice * qty;
-        verifiedSubtotal += itemSubtotal;
-
-        verifiedItems.push({
-          product_id: product.id,
-          variant_id: null,
-          product_name: product.name,
-          variant_unit: item.unit || 'pack',
-          product_image: product.image_url,
-          price: itemPrice,
-          quantity: qty,
-          total_price: itemSubtotal,
-        });
       }
+
+      if (!Number.isFinite(variantDiscountPercent) || variantDiscountPercent < 0 || variantDiscountPercent > 100) {
+        throw new Error(`Invalid discount configured for variant "${variant.unit}".`);
+      }
+
+      const itemPrice = variantDiscountPercent > 0
+        ? Math.round(rawPrice * (1 - variantDiscountPercent / 100))
+        : rawPrice;
+
+      const itemSubtotal = itemPrice * totalQty;
+      verifiedSubtotal += itemSubtotal;
+
+      verifiedItems.push({
+        product_id: variant.product_id,
+        variant_id: variant.id,
+        product_name: variant.products.name,
+        variant_unit: variant.unit,
+        product_image: variant.products.image_url,
+        price: itemPrice,
+        quantity: totalQty,
+        total_price: itemSubtotal,
+      });
     }
 
-    // 3. STRICT COUPON VALIDATION
+    // 3. STRICT COUPON VALIDATION WITH ERROR CHECKS
     let discountAmount = 0;
     if (couponCode) {
-      const { data: coupon } = await supabase
+      const { data: coupon, error: cErr } = await supabase
         .from('coupons')
         .select('*')
         .eq('code', couponCode.toUpperCase())
-        .single();
+        .maybeSingle();
+
+      if (cErr) {
+        console.error("Coupon lookup error:", cErr);
+        return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       if (!coupon || !coupon.is_active) {
         return new Response(JSON.stringify({ error: `Promo code "${couponCode}" is invalid or inactive.` }), {
@@ -284,12 +302,20 @@ Deno.serve(async (req: Request) => {
       }
 
       if (coupon.is_first_order_only && finalUserId) {
-        const { count: previousOrdersCount } = await supabase
+        const { count: previousOrdersCount, error: oCountErr } = await supabase
           .from('orders')
           .select('id', { count: 'exact', head: true })
           .eq('user_id', finalUserId);
 
-        if (previousOrdersCount && previousOrdersCount > 0) {
+        if (oCountErr) {
+          console.error("Previous order lookup failed:", oCountErr);
+          return new Response(JSON.stringify({ error: "Unable to validate this coupon. Please try again." }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if ((previousOrdersCount ?? 0) > 0) {
           return new Response(JSON.stringify({
             error: `Promo code "${coupon.code}" is valid for first-time customer orders only.`
           }), {
@@ -299,27 +325,38 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      if (coupon.discount_type === 'percentage') {
-        discountAmount = Math.floor((verifiedSubtotal * Number(coupon.discount_value)) / 100);
-        if (coupon.max_discount_amount) {
-          discountAmount = Math.min(discountAmount, Number(coupon.max_discount_amount));
+      const couponVal = Number(coupon.discount_value);
+      if (Number.isFinite(couponVal) && couponVal >= 0) {
+        if (coupon.discount_type === 'percentage') {
+          const validPct = Math.min(100, Math.max(0, couponVal));
+          discountAmount = Math.floor((verifiedSubtotal * validPct) / 100);
+          if (coupon.max_discount_amount) {
+            discountAmount = Math.min(discountAmount, Number(coupon.max_discount_amount));
+          }
+        } else {
+          discountAmount = Math.min(verifiedSubtotal, couponVal);
         }
-      } else {
-        discountAmount = Number(coupon.discount_value);
       }
     }
 
     const subtotalAfterDiscount = Math.max(0, verifiedSubtotal - discountAmount);
 
-    // 4. DYNAMIC DISTANCE & DELIVERY FEE EVALUATION
+    // 4. DYNAMIC DISTANCE & DELIVERY FEE EVALUATION WITH ERROR CHECK
     let deliveryFee = 0;
     let calculatedDistanceKm = 0;
 
-    const { data: delSet } = await supabase
+    const { data: delSet, error: delErr } = await supabase
       .from('delivery_settings')
       .select('*')
       .limit(1)
       .maybeSingle();
+
+    if (delErr) {
+      console.error("Delivery settings fetch error:", delErr);
+      return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const storeLat = Number(delSet?.store_latitude ?? STORE_LAT);
     const storeLng = Number(delSet?.store_longitude ?? STORE_LNG);
@@ -343,7 +380,6 @@ Deno.serve(async (req: Request) => {
         const stdFee = isZone1 ? Number(delSet.preset_zone1_fee || 30) : Number(delSet.preset_zone2_fee || 30);
         deliveryFee = subtotalAfterDiscount >= targetSub ? 0 : stdFee;
       } else {
-        // distance_tiered
         const t1Max = Number(delSet.tier1_max_km || 5);
         const t2Max = Number(delSet.tier2_max_km || 10);
         let targetSub = Number(delSet.tier1_subtotal || 299);
@@ -364,215 +400,187 @@ Deno.serve(async (req: Request) => {
     const orderTotal = subtotalAfterDiscount + deliveryFee;
     const amountInPaise = Math.round(orderTotal * 100);
 
-        // 5. CREATE PENDING ORDER
-        const { data: order, error: orderErr } = await supabase
-          .from('orders')
-          .insert({
-            user_id: finalUserId,
-            customer_name: details?.name || 'Customer',
+    if (!Number.isSafeInteger(amountInPaise) || amountInPaise <= 0) {
+      return new Response(JSON.stringify({ error: "Invalid order amount." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const customReceiptId = `RB-${Date.now().toString().slice(-6)}`;
+
+    // 5. STAGE 1: PERSIST PENDING ORDER IN SUPABASE FIRST
+    const { data: order, error: orderErr } = await supabase
+      .from('orders')
+      .insert({
+        user_id: finalUserId,
+        customer_name: details?.name || 'Customer',
+        customer_phone: details?.phone || '',
+        delivery_address: details || {},
+        subtotal: verifiedSubtotal,
+        delivery_fee: deliveryFee,
+        discount: discountAmount,
+        total: orderTotal,
+        payment_status: 'pending',
+        status: 'pending_payment',
+      })
+      .select('id')
+      .single();
+
+    if (orderErr || !order) {
+      console.error("Order persistence failed:", orderErr);
+      return new Response(JSON.stringify({ error: "Failed to create pending order in database." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const orderItemsPayload = verifiedItems.map(i => ({
+      order_id: order.id,
+      product_id: i.product_id,
+      variant_id: i.variant_id,
+      product_name: i.product_name,
+      variant_unit: i.variant_unit || 'pack',
+      price: i.price,
+      quantity: i.quantity,
+      total_price: i.total_price,
+    }));
+
+    const { error: itemsInsertErr } = await supabase.from('order_items').insert(orderItemsPayload);
+    if (itemsInsertErr) {
+      console.error("Order items insert error:", itemsInsertErr);
+      await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+      throw itemsInsertErr;
+    }
+
+    // 6. CREATE INTERNAL PAYMENT ATTEMPT BEFORE CALLING RAZORPAY
+    const { data: paymentRecord, error: payErr } = await supabase
+      .from('payments')
+      .insert({
+        order_id: order.id,
+        amount: amountInPaise,
+        currency: 'INR',
+        status: 'created',
+      })
+      .select('id')
+      .single();
+
+    if (payErr || !paymentRecord) {
+      console.error("Payment record creation failed:", payErr);
+      await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+      return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 7. CREATE RAZORPAY ORDER WITH AMBIGUOUS NETWORK FAILURE HANDLING
+    let razorpayOrder: any;
+    try {
+      const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
+      const razorpayRes = await fetch("https://api.razorpay.com/v1/orders", {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: amountInPaise,
+          currency: "INR",
+          receipt: customReceiptId,
+          notes: {
+            store_name: "Royal Bengal",
+            draft_order_id: customReceiptId,
             customer_phone: details?.phone || '',
-            delivery_address: details || {},
-            subtotal: verifiedSubtotal,
-            delivery_fee: deliveryFee,
-            discount: discountAmount,
-            total: orderTotal,
-            status: 'pending_payment',
-          })
-          .select('id')
-          .single();
-
-        if (orderErr || !order) {
-          console.error("Order persistence failed:", orderErr);
-
-          return new Response(JSON.stringify({
-            error: "Failed to create pending order in database."
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        // 6. SAVE ORDER ITEMS
-        const orderItemsPayload = verifiedItems.map(i => ({
-          order_id: order.id,
-          product_id: i.product_id || null,
-          variant_id: i.variant_id || null,
-          product_name: i.product_name,
-          product_image: i.product_image || null,
-          variant_unit: i.variant_unit || 'pack',
-          price: i.price,
-          quantity: i.quantity,
-          total_price: i.total_price,
-        }));
-
-        const { error: itemsInsertErr } = await supabase
-          .from('order_items')
-          .insert(orderItemsPayload);
-
-        if (itemsInsertErr) {
-          console.error("Order items insert error:", itemsInsertErr);
-
-          await supabase
-            .from('orders')
-            .update({ status: 'cancelled' })
-            .eq('id', order.id);
-
-          throw itemsInsertErr;
-        }
-
-        // 7. CREATE INTERNAL PAYMENT ATTEMPT FIRST
-        const { data: paymentRecord, error: paymentInsertErr } = await supabase
-          .from('payments')
-          .insert({
             order_id: order.id,
-            amount: amountInPaise,
-            currency: 'INR',
-            status: 'created',
-          })
-          .select('id')
-          .single();
-
-        if (paymentInsertErr || !paymentRecord) {
-          console.error("Payment record creation failed:", paymentInsertErr);
-
-          await supabase
-            .from('orders')
-            .update({ status: 'cancelled' })
-            .eq('id', order.id);
-
-          return new Response(JSON.stringify({
-            error: "Failed to initialize payment record."
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        // 8. CREATE RAZORPAY ORDER
-        const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
-
-        // RB- + UUID = 39 characters
-        const customReceiptId = `RB-${order.id}`;
-
-        const razorpayRes = await fetch(
-          "https://api.razorpay.com/v1/orders",
-          {
-            method: "POST",
-            headers: {
-              "Authorization": authHeader,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              amount: amountInPaise,
-              currency: "INR",
-              receipt: customReceiptId,
-              notes: {
-                store_name: "Royal Bengal",
-                order_id: order.id,
-                customer_phone: details?.phone || '',
-              },
-            }),
           }
-        );
+        }),
+      });
 
-        const razorpayOrder = await razorpayRes.json();
+      razorpayOrder = await razorpayRes.json();
 
-        // Validate Razorpay response
-        if (
-          !razorpayRes.ok ||
-          !razorpayOrder.id ||
-          Number(razorpayOrder.amount) !== amountInPaise ||
-          razorpayOrder.currency !== 'INR'
-        ) {
-          const gatewayError =
-            razorpayOrder.error?.description ||
-            "Invalid response from Razorpay.";
+      if (
+        !razorpayRes.ok ||
+        !razorpayOrder?.id ||
+        Number(razorpayOrder.amount) !== amountInPaise ||
+        razorpayOrder.currency !== 'INR'
+      ) {
+        console.error("Razorpay order creation/validation failed:", razorpayOrder);
 
-          console.error("Razorpay Order Creation Failed:", razorpayOrder);
+        await supabase.from('payments').update({
+          status: 'failed',
+          failure_description: razorpayOrder?.error?.description || 'Invalid Razorpay order response',
+          updated_at: new Date().toISOString(),
+        }).eq('id', paymentRecord.id);
 
-          await supabase
-            .from('payments')
-            .update({
-              status: 'failed',
-              failure_description: gatewayError,
-            })
-            .eq('id', paymentRecord.id);
+        await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
 
-          await supabase
-            .from('orders')
-            .update({ status: 'cancelled' })
-            .eq('id', order.id);
-
-          return new Response(JSON.stringify({
-            error: `Razorpay order creation failed: ${gatewayError}`
-          }), {
-            status: 502,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        // 9. LINK RAZORPAY ORDER ID TO INTERNAL PAYMENT RECORD
-        const { error: paymentUpdateErr } = await supabase
-          .from('payments')
-          .update({
-            razorpay_order_id: razorpayOrder.id,
-          })
-          .eq('id', paymentRecord.id);
-
-        if (paymentUpdateErr) {
-          console.error(
-            "Failed to link Razorpay Order ID:",
-            paymentUpdateErr
-          );
-
-          await supabase
-            .from('payments')
-            .update({
-              status: 'failed',
-              failure_description: 'Failed to save Razorpay Order ID.',
-            })
-            .eq('id', paymentRecord.id);
-
-          await supabase
-            .from('orders')
-            .update({ status: 'cancelled' })
-            .eq('id', order.id);
-
-          return new Response(JSON.stringify({
-            error: "Failed to save payment gateway details."
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        // 10. RETURN PAYMENT DETAILS TO FRONTEND
-        return new Response(JSON.stringify({
-          success: true,
-
-          // New names
-          orderId: order.id,
-          paymentRecordId: paymentRecord.id,
-
-          // Temporary compatibility with existing frontend
-          checkoutId: order.id,
-          paymentId: paymentRecord.id,
-
-          keyId: razorpayKeyId,
-          razorpayOrderId: razorpayOrder.id,
-          amount: razorpayOrder.amount,
-
-          subtotal: verifiedSubtotal,
-          deliveryFee,
-          discount: discountAmount,
-          total: orderTotal,
-        }), {
-          status: 200,
+        return new Response(JSON.stringify({ error: "Unable to initialize payment. Please try again." }), {
+          status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-  } catch (error: any) {
-    console.error("Error in place-order edge function:", error);
-    return new Response(JSON.stringify({ error: error.message || "Server error" }), {
+      }
+    } catch (netErr) {
+      console.error("Razorpay network failure:", netErr);
+
+      // Keep payment attempt as created and order as pending_payment for reconciliation (do not blindly cancel)
+      await supabase.from('payments').update({
+        status: 'created',
+        failure_description: 'Razorpay order creation outcome unknown - requires reconciliation',
+        updated_at: new Date().toISOString(),
+      }).eq('id', paymentRecord.id);
+
+      return new Response(JSON.stringify({ error: "Payment gateway network error. Please try again." }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 8. LINK RAZORPAY ORDER ID TO THE EXISTING PAYMENT ATTEMPT WITH STRICT VALIDATION
+    const { data: linkedPayment, error: linkErr } = await supabase
+      .from('payments')
+      .update({
+        razorpay_order_id: razorpayOrder.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', paymentRecord.id)
+      .select('id, razorpay_order_id')
+      .maybeSingle();
+
+    if (linkErr || !linkedPayment || linkedPayment.razorpay_order_id !== razorpayOrder.id) {
+      console.error("Failed to link Razorpay order:", linkErr);
+
+      await supabase.from('payments').update({
+        status: 'created',
+        failure_description: 'Failed to link Razorpay order ID - requires reconciliation',
+        updated_at: new Date().toISOString(),
+      }).eq('id', paymentRecord.id);
+
+      return new Response(JSON.stringify({ error: "Unable to initialize payment. Please contact support if your payment was affected." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      checkoutId: order.id,
+      paymentId: paymentRecord?.id,
+      keyId: razorpayKeyId,
+      razorpayOrderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      subtotal: verifiedSubtotal,
+      deliveryFee,
+      discount: discountAmount,
+      total: orderTotal,
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
+  } catch (err: any) {
+    console.error("Error in place-order edge function:", err);
+    return new Response(JSON.stringify({ error: "Server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

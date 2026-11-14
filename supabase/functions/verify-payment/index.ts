@@ -20,10 +20,23 @@ async function calculateHmacSha256Hex(secret: string, data: string): Promise<str
     .join("");
 }
 
+function constantTimeEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
 async function verifyHmacSha256(secret: string, body: string, signature: string): Promise<boolean> {
   if (!signature || !secret || !body) return false;
-  const expectedSignature = await calculateHmacSha256Hex(secret, body);
-  return expectedSignature.toLowerCase() === signature.trim().toLowerCase();
+  try {
+    const expectedSignature = await calculateHmacSha256Hex(secret, body);
+    return constantTimeEquals(expectedSignature.toLowerCase(), signature.trim().toLowerCase());
+  } catch {
+    return false;
+  }
 }
 
 // @ts-ignore
@@ -37,7 +50,7 @@ Deno.serve(async (req: Request) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return new Response(JSON.stringify({ error: "Server configuration missing: SUPABASE_SERVICE_ROLE_KEY" }), {
+      return new Response(JSON.stringify({ error: "Server configuration missing." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -45,27 +58,41 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    let razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
-    let razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+    // Fail-safe credential resolution
+    let razorpayKeyId = "";
+    let razorpayKeySecret = "";
 
-    const { data: activeGw } = await supabase
+    const { data: activeGw, error: gwErr } = await supabase
       .from("payment_gateways")
       .select("key_id, secret_key")
       .eq("is_active", true)
       .eq("provider", "razorpay")
       .maybeSingle();
 
-    if (activeGw?.key_id) {
+    if (gwErr) {
+      console.error("Failed to fetch active payment gateway:", gwErr);
+      return new Response(JSON.stringify({ error: "Server configuration error." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (activeGw) {
+      if (!activeGw.key_id || !activeGw.secret_key) {
+        return new Response(JSON.stringify({ error: "Active payment gateway has incomplete credentials." }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       razorpayKeyId = activeGw.key_id;
-    }
-    if (activeGw?.secret_key) {
       razorpayKeySecret = activeGw.secret_key;
+    } else {
+      razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID") || "";
+      razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || "";
     }
 
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-
-    if (!razorpayKeyId || !razorpayKeySecret || !anonKey) {
-      return new Response(JSON.stringify({ error: "Server configuration missing: RAZORPAY_KEY_SECRET" }), {
+    if (!razorpayKeyId || !razorpayKeySecret) {
+      return new Response(JSON.stringify({ error: "Razorpay configuration is missing." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -97,32 +124,53 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. FETCH PENDING ORDER
+    // 2. FETCH PENDING ORDER (Selecting only needed order columns, with strict error checks)
     const targetOrderId = checkoutId || checkoutSessionId;
     let order = null;
 
     if (targetOrderId) {
-      const { data: oData } = await supabase
+      const { data: oData, error: oErr } = await supabase
         .from('orders')
-        .select('*, order_items(*)')
+        .select('id, order_number, total, status, payment_status, razorpay_payment_id, fulfillment_exception')
         .eq('id', targetOrderId)
         .maybeSingle();
+
+      if (oErr) {
+        console.error("Order lookup error:", oErr);
+        return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       order = oData;
     }
 
     if (!order && razorpay_order_id) {
-      const { data: payRec } = await supabase
+      const { data: payRec, error: payRecErr } = await supabase
         .from('payments')
         .select('order_id')
         .eq('razorpay_order_id', razorpay_order_id)
         .maybeSingle();
 
+      if (payRecErr) {
+        console.error("Payment lookup error:", payRecErr);
+        return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       if (payRec?.order_id) {
-        const { data: oData } = await supabase
+        const { data: oData, error: oErr2 } = await supabase
           .from('orders')
-          .select('*, order_items(*)')
+          .select('id, order_number, total, status, payment_status, razorpay_payment_id, fulfillment_exception')
           .eq('id', payRec.order_id)
           .maybeSingle();
+
+        if (oErr2) {
+          console.error("Order lookup error:", oErr2);
+          return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
         order = oData;
       }
     }
@@ -134,13 +182,20 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 3. FETCH PAYMENT RECORD
-    const { data: paymentRecord } = await supabase
+    // 3. FETCH PAYMENT RECORD WITH STRICT ERROR CHECK
+    const { data: paymentRecord, error: payErr } = await supabase
       .from('payments')
       .select('*')
       .eq('order_id', order.id)
       .eq('razorpay_order_id', razorpay_order_id)
       .maybeSingle();
+
+    if (payErr) {
+      console.error("Payment record lookup error:", payErr);
+      return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!paymentRecord) {
       return new Response(JSON.stringify({ error: "Razorpay order ID is not linked to this order." }), {
@@ -250,7 +305,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (err: any) {
     console.error("Error in verify-payment edge function:", err);
-    return new Response(JSON.stringify({ error: err.message || "Server error" }), {
+    return new Response(JSON.stringify({ error: "Server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

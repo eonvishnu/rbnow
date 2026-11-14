@@ -238,7 +238,7 @@ export default function CartPage() {
   const hasStockIssues = useMemo(() => {
     return Object.values(groupedCart).some((item: any) => {
       const cleanId = extractProductId(item.id);
-      const stock = stockData[item.id] !== undefined ? stockData[item.id] : (stockData[cleanId] !== undefined ? stockData[cleanId] : 99);
+      const stock = stockData[item.id] !== undefined ? stockData[item.id] : (stockData[cleanId] !== undefined ? stockData[cleanId] : 0);
       return stock === 0 || item.qty > stock;
     });
   }, [groupedCart, stockData]);
@@ -329,10 +329,7 @@ export default function CartPage() {
     try {
       const browserId = getOrCreateBrowserId();
       const payloadItems = Object.values(groupedCart).map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        unit: item.unit,
+        variant_id: item.id,
         qty: item.qty,
       }));
 
