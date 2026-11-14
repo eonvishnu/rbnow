@@ -85,17 +85,25 @@ Deno.serve(async (req: Request) => {
 
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
 
-    // 1. DERIVE VERIFIED AUTHENTICATED USER ID EXCLUSIVELY FROM JWT BEARER TOKEN
+    // 1. DERIVE VERIFIED AUTHENTICATED USER ID EXCLUSIVELY FROM STRICT BEARER TOKEN
     const authorization = req.headers.get("Authorization") || "";
+    if (authorization && !authorization.toLowerCase().startsWith("bearer ")) {
+      return new Response(JSON.stringify({ error: "Invalid authorization format. Bearer token required." }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const accessToken = authorization.trim().split(/\s+/).pop() || "";
     let verifiedUserId: string | null = null;
 
     if (accessToken && anonKey) {
       const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
-      const { data: { user } } = await authClient.auth.getUser(accessToken);
-      if (user) {
-        verifiedUserId = user.id;
+      const { data: { user }, error: userErr } = await authClient.auth.getUser(accessToken);
+      if (userErr || !user) {
+        return new Response(JSON.stringify({ error: "Invalid or expired authentication token." }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
+      verifiedUserId = user.id;
     }
 
     const body = await req.json();
@@ -147,7 +155,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Aggregate quantities by variant_id with malformed item validation
+    // Aggregate quantities by variant_id with malformed item validation and aggregate limit check
     const aggregatedQuantities: Record<string, number> = {};
     for (const item of items) {
       if (!item || typeof item !== 'object') {
@@ -186,7 +194,17 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      aggregatedQuantities[candidateVariantId] = (aggregatedQuantities[candidateVariantId] || 0) + qty;
+      const aggregatedQty = (aggregatedQuantities[candidateVariantId] || 0) + qty;
+      if (aggregatedQty > 50) {
+        return new Response(JSON.stringify({
+          error: `Maximum order quantity for item variant is 50.`
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      aggregatedQuantities[candidateVariantId] = aggregatedQty;
     }
 
     let verifiedSubtotal = 0;
@@ -460,35 +478,42 @@ Deno.serve(async (req: Request) => {
       if (delSet.delivery_mode === 'always_free') {
         deliveryFee = 0;
       } else if (!delSet.is_free_delivery_enabled || delSet.delivery_mode === 'flat_fee') {
-        deliveryFee = Number(delSet.flat_delivery_fee || 65);
+        deliveryFee = Number(delSet.flat_delivery_fee ?? 65);
       } else if (delSet.delivery_mode === 'preset_rules') {
-        const radius = Number(delSet.preset_zone_radius_km || 5);
+        const radius = Number(delSet.preset_zone_radius_km ?? 5);
         const isZone1 = calculatedDistanceKm <= radius;
         const targetSub = isZone1
-          ? Number(delSet.preset_zone1_subtotal || 299)
-          : Number(delSet.preset_zone2_subtotal || 499);
+          ? Number(delSet.preset_zone1_subtotal ?? 299)
+          : Number(delSet.preset_zone2_subtotal ?? 499);
         const stdFee = isZone1
-          ? Number(delSet.preset_zone1_fee || 30)
-          : Number(delSet.preset_zone2_fee || 30);
+          ? Number(delSet.preset_zone1_fee ?? 30)
+          : Number(delSet.preset_zone2_fee ?? 30);
 
         deliveryFee = subtotalAfterDiscount >= targetSub ? 0 : stdFee;
       } else {
-        const t1Max = Number(delSet.tier1_max_km || 5);
-        const t2Max = Number(delSet.tier2_max_km || 10);
+        const t1Max = Number(delSet.tier1_max_km ?? 5);
+        const t2Max = Number(delSet.tier2_max_km ?? 10);
 
-        let targetSub = Number(delSet.tier1_subtotal || 299);
-        let stdFee = Number(delSet.tier1_fee || 30);
+        let targetSub = Number(delSet.tier1_subtotal ?? 299);
+        let stdFee = Number(delSet.tier1_fee ?? 30);
 
         if (calculatedDistanceKm > t1Max && calculatedDistanceKm <= t2Max) {
-          targetSub = Number(delSet.tier2_subtotal || 500);
-          stdFee = Number(delSet.tier2_fee || 30);
+          targetSub = Number(delSet.tier2_subtotal ?? 500);
+          stdFee = Number(delSet.tier2_fee ?? 30);
         } else if (calculatedDistanceKm > t2Max) {
-          targetSub = Number(delSet.tier3_subtotal || 699);
-          stdFee = Number(delSet.tier3_fee || 30);
+          targetSub = Number(delSet.tier3_subtotal ?? 699);
+          stdFee = Number(delSet.tier3_fee ?? 30);
         }
 
         deliveryFee = subtotalAfterDiscount >= targetSub ? 0 : stdFee;
       }
+    }
+
+    if (!Number.isFinite(deliveryFee) || deliveryFee < 0) {
+      console.error("Invalid delivery fee configuration:", deliveryFee);
+      return new Response(JSON.stringify({ error: "Server configuration error: Invalid delivery fee." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const orderTotal = subtotalAfterDiscount + deliveryFee;
@@ -596,6 +621,7 @@ Deno.serve(async (req: Request) => {
       if (
         !razorpayRes.ok ||
         !razorpayOrder?.id ||
+        !/^order_[A-Za-z0-9]+$/.test(razorpayOrder?.id || '') ||
         Number(razorpayOrder.amount) !== amountInPaise ||
         razorpayOrder.currency !== 'INR'
       ) {
@@ -627,6 +653,7 @@ Deno.serve(async (req: Request) => {
 
         if (razorpayRes.status >= 400 && razorpayRes.status < 500) {
           if (!hasValidId) {
+            // Definite rejection: no usable Razorpay Order ID.
             const { error: failErr } = await supabase
               .from('payments')
               .update({
