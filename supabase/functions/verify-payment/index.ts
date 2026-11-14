@@ -162,7 +162,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // AUTHORITATIVE ORDER LOOKUP (Enforcing user_id ownership)
+    // AUTHORITATIVE ORDER LOOKUP (Enforcing user_id ownership and secondary lookup error handling)
     const targetOrderId = checkoutId || checkoutSessionId;
     let order = null;
 
@@ -182,11 +182,18 @@ Deno.serve(async (req: Request) => {
       }
 
       if (!oData) {
-        const { data: anyOrder } = await supabase
+        const { data: anyOrder, error: anyErr } = await supabase
           .from('orders')
           .select('id, user_id')
           .eq('id', targetOrderId)
           .maybeSingle();
+
+        if (anyErr) {
+          console.error("Any order lookup error:", anyErr);
+          return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
         if (anyOrder && anyOrder.user_id !== verifiedUserId) {
           return new Response(JSON.stringify({ error: "Access denied. Order belongs to another user." }), {
@@ -199,7 +206,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // 3. HANDLE payCheck DATABASE QUERY ERROR
       const { data: payCheck, error: payCheckErr } = await supabase
         .from('payments')
         .select('razorpay_order_id')
@@ -251,11 +257,18 @@ Deno.serve(async (req: Request) => {
         }
 
         if (!oData) {
-          const { data: anyOrder } = await supabase
+          const { data: anyOrder, error: anyErr2 } = await supabase
             .from('orders')
             .select('id, user_id')
             .eq('id', payRec.order_id)
             .maybeSingle();
+
+          if (anyErr2) {
+            console.error("Any order lookup error:", anyErr2);
+            return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+              status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
 
           if (anyOrder && anyOrder.user_id !== verifiedUserId) {
             return new Response(JSON.stringify({ error: "Access denied. Order belongs to another user." }), {
