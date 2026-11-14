@@ -526,12 +526,19 @@ BEGIN
     );
   END IF;
 
-  -- 4.5. VALIDATE PAYMENT ATTEMPT STATUS (Reject failed or refunded records)
-  IF v_payment_record.status NOT IN ('created', 'authorized', 'captured') THEN
+  -- 4.5. VALIDATE PAYMENT ATTEMPT STATUS (Allow failed attempts for late-capture reconciliation, flag for review)
+  IF v_payment_record.status NOT IN ('created', 'authorized', 'captured', 'failed') THEN
     RETURN jsonb_build_object(
       'success', false,
       'error', 'Payment attempt is not eligible for confirmation.'
     );
+  END IF;
+
+  -- If confirming a previously failed attempt, ensure refund review is required
+  IF v_payment_record.status = 'failed' THEN
+    UPDATE public.payments
+    SET refund_review_required = TRUE
+    WHERE id = v_payment_record.id;
   END IF;
 
   -- 5. VERIFY STORED PAYMENT RECORD AMOUNT & STRICT CURRENCY
