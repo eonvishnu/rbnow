@@ -148,24 +148,12 @@ Deno.serve(async (req: Request) => {
         !/^pay_[A-Za-z0-9]+$/.test(razorpayPaymentId) ||
         paymentAmount === undefined ||
         !Number.isSafeInteger(Number(paymentAmount)) ||
-        Number(paymentAmount) <= 0
+        Number(paymentAmount) <= 0 ||
+        paymentEntity?.status !== 'captured' ||
+        (paymentEntity?.captured !== undefined && paymentEntity.captured !== true)
       ) {
-        await updateWebhookStatus(supabase, webhookEventId, leaseToken, 'failed', "Missing or invalid Razorpay IDs or payment amount");
-        return new Response(JSON.stringify({ error: "Missing or invalid required Razorpay payment/order ID or amount." }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (paymentEntity?.status && paymentEntity.status !== 'captured') {
-        await updateWebhookStatus(supabase, webhookEventId, leaseToken, 'failed', `Payment entity status is not captured: ${paymentEntity.status}`);
-        return new Response(JSON.stringify({ error: "Payment is not in captured status." }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (paymentEntity?.captured !== undefined && paymentEntity.captured !== true) {
-        await updateWebhookStatus(supabase, webhookEventId, leaseToken, 'failed', "Payment entity captured flag is not true");
-        return new Response(JSON.stringify({ error: "Payment is not marked as captured." }), {
+        await updateWebhookStatus(supabase, webhookEventId, leaseToken, 'failed', "Missing or invalid Razorpay IDs, amount, or non-captured status");
+        return new Response(JSON.stringify({ error: "Missing or invalid required Razorpay payment/order ID, amount, or capture status." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -293,7 +281,7 @@ Deno.serve(async (req: Request) => {
 
     // 4. PROCESS PAYMENT FAILED
     if (event === "payment.failed") {
-      if (razorpayOrderId && /^order_[A-Za-z0-9]+$/.test(razorpayOrderId)) {
+      if (razorpayOrderId) {
         const { data: payRec, error: payErr } = await supabase
           .from('payments')
           .select('id, status')
@@ -309,7 +297,7 @@ Deno.serve(async (req: Request) => {
         }
 
         if (payRec && payRec.status === 'created') {
-          const { data: updatedPay, error: failUpdErr } = await supabase
+          const { error: failUpdErr } = await supabase
             .from('payments')
             .update({
               status: 'failed',
@@ -318,11 +306,9 @@ Deno.serve(async (req: Request) => {
               updated_at: new Date().toISOString(),
             })
             .eq('id', payRec.id)
-            .eq('status', 'created')
-            .select('id')
-            .maybeSingle();
+            .eq('status', 'created');
 
-          if (failUpdErr || !updatedPay) {
+          if (failUpdErr) {
             console.error("Failed to update payment failure status:", failUpdErr);
             await updateWebhookStatus(supabase, webhookEventId, leaseToken, 'failed', "Payment update failed");
             return new Response(JSON.stringify({ error: "Database update failed." }), {
