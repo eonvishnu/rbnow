@@ -849,49 +849,58 @@ $$;
 REVOKE ALL ON FUNCTION public.reserve_payment_attempt(UUID, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reserve_payment_attempt(UUID, UUID) TO service_role;
 
--- 30. WEBHOOK EVENTS LEDGER & ATOMIC CLAIM RPC (CONCURRENCY-SAFE DEDUPLICATION)
+-- 30. WEBHOOK EVENTS LEDGER & ATOMIC CLAIM RPC WITH FENCING TOKENS
 CREATE TABLE IF NOT EXISTS public.webhook_events (
   event_id TEXT PRIMARY KEY,
   event_type TEXT NOT NULL,
   payload JSONB,
   status TEXT NOT NULL DEFAULT 'processing' CHECK (status in ('processing', 'processed', 'failed')),
   error_message TEXT,
+  lease_token UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Ensure lease_token column exists if table was already created
+ALTER TABLE public.webhook_events
+  ADD COLUMN IF NOT EXISTS lease_token UUID;
 
 CREATE OR REPLACE FUNCTION public.claim_webhook_event(
   p_event_id TEXT,
   p_event_type TEXT,
   p_payload JSONB
-) RETURNS BOOLEAN
+) RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
+  v_token UUID;
   v_row_count BIGINT := 0;
 BEGIN
-  INSERT INTO public.webhook_events (event_id, event_type, payload, status)
-  VALUES (p_event_id, p_event_type, p_payload, 'processing')
+  v_token := gen_random_uuid();
+
+  INSERT INTO public.webhook_events (event_id, event_type, payload, status, lease_token)
+  VALUES (p_event_id, p_event_type, p_payload, 'processing', v_token)
   ON CONFLICT (event_id) DO NOTHING;
 
   GET DIAGNOSTICS v_row_count = ROW_COUNT;
   IF v_row_count > 0 THEN
-    RETURN TRUE;
+    RETURN v_token;
   END IF;
 
   -- If already exists, check if stuck in processing for > 10 minutes or failed
   UPDATE public.webhook_events
-  SET status = 'processing', payload = p_payload, updated_at = NOW()
+  SET status = 'processing', payload = p_payload, lease_token = v_token, updated_at = NOW()
   WHERE event_id = p_event_id
     AND (status = 'failed' OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes'));
 
   GET DIAGNOSTICS v_row_count = ROW_COUNT;
-  RETURN v_row_count > 0;
-END;
-$$;
-  RETURN v_inserted;
+  IF v_row_count > 0 THEN
+    RETURN v_token;
+  END IF;
+
+  RETURN NULL;
 END;
 $$;
 
