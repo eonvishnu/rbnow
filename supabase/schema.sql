@@ -464,7 +464,7 @@ CREATE OR REPLACE FUNCTION public.confirm_order_payment(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_order RECORD;
