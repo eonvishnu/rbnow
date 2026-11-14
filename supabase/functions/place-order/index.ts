@@ -792,7 +792,7 @@ Deno.serve(async (req: Request) => {
       );
 
       // -------------------------------------------------------
-      // 10. CALCULATE DELIVERY FEE & STORE-WIDE SERVICEABILITY CHECK
+      // 10. CALCULATE DELIVERY FEE & STORE-WIDE SERVICEABILITY CHECK (ALL MODES)
       // -------------------------------------------------------
 
       let calculatedDistanceKm = 0;
@@ -834,7 +834,6 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      const pricingMode = delSet.delivery_mode || "rules";
       const maxDistanceKm = Number(delSet.max_delivery_distance_km ?? 15.00);
 
       if (!Number.isFinite(maxDistanceKm) || maxDistanceKm <= 0) {
@@ -845,49 +844,47 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Serviceability check applies store-wide unless always_free mode is set
-      if (pricingMode !== "always_free") {
-        const rawLat = details?.lat;
-        const rawLng = details?.lng;
+      // Store-wide serviceability check across all delivery modes
+      const rawLat = details?.lat;
+      const rawLng = details?.lng;
 
-        if (
-          !isValidCoordinateInput(rawLat) ||
-          !isValidCoordinateInput(rawLng)
-        ) {
-          return jsonResponse(
-            { error: "Valid delivery coordinates are required." },
-            400,
-          );
-        }
-
-        const lat = Number(rawLat);
-        const lng = Number(rawLng);
-
-        if (
-          lat < -90 ||
-          lat > 90 ||
-          lng < -180 ||
-          lng > 180
-        ) {
-          return jsonResponse(
-            { error: "Invalid delivery coordinates provided." },
-            400,
-          );
-        }
-
-        calculatedDistanceKm = getDistanceFromLatLonInKm(
-          storeLat,
-          storeLng,
-          lat,
-          lng,
+      if (
+        !isValidCoordinateInput(rawLat) ||
+        !isValidCoordinateInput(rawLng)
+      ) {
+        return jsonResponse(
+          { error: "Valid delivery coordinates are required." },
+          400,
         );
+      }
 
-        if (calculatedDistanceKm > maxDistanceKm) {
-          return jsonResponse(
-            { error: `Sorry, delivery is not available for your location (distance exceeds maximum radius of ${maxDistanceKm} km).` },
-            400,
-          );
-        }
+      const lat = Number(rawLat);
+      const lng = Number(rawLng);
+
+      if (
+        lat < -90 ||
+        lat > 90 ||
+        lng < -180 ||
+        lng > 180
+      ) {
+        return jsonResponse(
+          { error: "Invalid delivery coordinates provided." },
+          400,
+        );
+      }
+
+      calculatedDistanceKm = getDistanceFromLatLonInKm(
+        storeLat,
+        storeLng,
+        lat,
+        lng,
+      );
+
+      if (calculatedDistanceKm > maxDistanceKm) {
+        return jsonResponse(
+          { error: `Sorry, delivery is not available for your location (distance exceeds maximum radius of ${maxDistanceKm} km).` },
+          400,
+        );
       }
 
       if (delSet.delivery_mode === "always_free") {
