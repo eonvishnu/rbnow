@@ -135,9 +135,14 @@ create table if not exists public.orders (
   order_type text default 'normal' check (order_type in ('normal', 'preorder')),
   order_source text default 'online_web' check (order_source in ('online_web', 'mobile_app', 'admin', 'whatsapp', 'phone', 'walk_in')),
   notes text,
+  fulfillment_exception text,
+  payment_id uuid,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Sequence for confirmed order numbers
+create sequence if not exists public.orders_confirmed_order_number_seq start 1001 increment 1;
 
 -- 9. ORDER ITEMS TABLE (Snapshots variant & price)
 create table if not exists public.order_items (
@@ -225,10 +230,6 @@ create table if not exists public.order_status_history (
 );
 
 -- 13. PAYMENTS TABLE (Multi-attempt payment audit ledger)
-ALTER TABLE public.payments
-  ADD COLUMN IF NOT EXISTS duplicate_payment BOOLEAN NOT NULL DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS refund_review_required BOOLEAN NOT NULL DEFAULT FALSE;
-
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   order_id uuid references public.orders(id) on delete cascade not null,
@@ -470,14 +471,20 @@ DECLARE
   v_order RECORD;
   v_item RECORD;
   v_payment_record RECORD;
+  v_existing_payment_record RECORD;
   v_variant_stock INT;
   v_variant_is_available BOOLEAN;
   v_has_stock_issue BOOLEAN := FALSE;
   v_failed_item_name TEXT := '';
   v_rows_updated INT;
   v_assigned_order_number BIGINT;
+  v_expected_amount_paise BIGINT;
 BEGIN
-  -- 1. STRICT PAYMENT ID AND AMOUNT VALIDATION
+  -- 1. STRICT INPUT VALIDATION
+  IF p_razorpay_order_id IS NULL OR TRIM(p_razorpay_order_id) = '' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Missing required Razorpay order ID');
+  END IF;
+
   IF p_razorpay_payment_id IS NULL OR TRIM(p_razorpay_payment_id) = '' THEN
     RETURN jsonb_build_object('success', false, 'error', 'Missing required Razorpay payment ID');
   END IF;
@@ -496,48 +503,158 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Order not found');
   END IF;
 
-  -- 3. FETCH SPECIFIC PAYMENT ATTEMPT RECORD
+  v_expected_amount_paise := ROUND(v_order.total * 100)::BIGINT;
+
+  -- 3. STRICT PAISE-ONLY AMOUNT VALIDATION
+  IF v_expected_amount_paise <> p_payment_amount THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', format('Payment amount mismatch: Expected %s paise, received %s paise', v_expected_amount_paise, p_payment_amount)
+    );
+  END IF;
+
+  -- 4. FETCH SPECIFIC PAYMENT ATTEMPT RECORD (Must exist from place-order)
   SELECT * INTO v_payment_record
   FROM public.payments
   WHERE order_id = p_order_id AND razorpay_order_id = p_razorpay_order_id
   FOR UPDATE;
 
   IF NOT FOUND THEN
-    INSERT INTO public.payments (order_id, razorpay_order_id, amount, currency, status)
-    VALUES (p_order_id, p_razorpay_order_id, p_payment_amount, 'INR', 'created')
-    RETURNING * INTO v_payment_record;
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', format('Payment record for order ID %s and Razorpay Order ID %s not found.', p_order_id, p_razorpay_order_id)
+    );
   END IF;
 
-  -- 4. IDEMPOTENCY CHECK (Preserves stock exception status for cancelled orders)
+  -- 4.5. VALIDATE PAYMENT ATTEMPT STATUS (Reject failed or refunded records)
+  IF v_payment_record.status NOT IN ('created', 'authorized', 'captured') THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Payment attempt is not eligible for confirmation.'
+    );
+  END IF;
+
+  -- 5. VERIFY STORED PAYMENT RECORD AMOUNT & STRICT CURRENCY
+  IF v_payment_record.amount <> p_payment_amount THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Stored payment record amount does not match received payment amount.'
+    );
+  END IF;
+
+  IF UPPER(TRIM(COALESCE(v_payment_record.currency, ''))) <> 'INR' THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', format('Invalid payment currency: Expected INR, received %s', v_payment_record.currency)
+    );
+  END IF;
+
+  -- 6. CONCURRENCY ADVISORY LOCK & STRICT PAYMENT ID OWNERSHIP CHECK
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_razorpay_payment_id, 0)
+  );
+
+  SELECT * INTO v_existing_payment_record
+  FROM public.payments
+  WHERE razorpay_payment_id = p_razorpay_payment_id
+  FOR UPDATE;
+
+  IF FOUND AND v_existing_payment_record.id <> v_payment_record.id THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Razorpay payment ID is already registered for a different payment record.'
+    );
+  END IF;
+
+  IF v_payment_record.razorpay_payment_id IS NOT NULL AND v_payment_record.razorpay_payment_id <> p_razorpay_payment_id THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'This payment record is already associated with a different Razorpay payment ID.'
+    );
+  END IF;
+
+  -- 7. ROBUST IDEMPOTENCY & DUPLICATE PAYMENT CHECK
   IF v_order.payment_status = 'paid' THEN
-    IF v_order.status = 'cancelled' THEN
+    -- Case A: Same payment ID confirming already paid order
+    IF v_order.razorpay_payment_id = p_razorpay_payment_id THEN
+      IF v_order.fulfillment_exception IS NOT NULL THEN
+        RETURN jsonb_build_object(
+          'success', false,
+          'already_paid', true,
+          'stock_exception', true,
+          'order_id', v_order.id,
+          'order_number', v_order.order_number,
+          'error', 'Order has a stock exception and requires fulfillment review/refund.'
+        );
+      END IF;
+
       RETURN jsonb_build_object(
-        'success', false,
+        'success', true,
         'already_paid', true,
-        'stock_exception', true,
         'order_id', v_order.id,
-        'order_number', v_order.order_number,
-        'error', 'Order has a stock exception and requires fulfillment review/refund.'
+        'order_number', v_order.order_number
       );
     END IF;
 
-    RETURN jsonb_build_object(
-      'success', true,
-      'already_paid', true,
-      'order_id', v_order.id,
-      'order_number', v_order.order_number
-    );
-  END IF;
+    -- Case B: A different payment attempt captured after order is already paid (Duplicate payment)
+    UPDATE public.payments
+    SET status = 'captured',
+        razorpay_payment_id = p_razorpay_payment_id,
+        duplicate_payment = true,
+        refund_review_required = true,
+        paid_at = NOW(),
+        updated_at = NOW()
+    WHERE id = v_payment_record.id;
 
-  -- 5. EXACT AMOUNT MATCH CHECK (amount in paise)
-  IF v_order.total * 100 <> p_payment_amount AND v_order.total <> p_payment_amount THEN
     RETURN jsonb_build_object(
       'success', false,
-      'error', format('Payment amount mismatch: Expected %s, received %s', v_order.total * 100, p_payment_amount)
+      'duplicate_payment', true,
+      'order_id', v_order.id,
+      'order_number', v_order.order_number,
+      'error', 'Order has already been paid with a different payment ID. Secondary payment captured and flagged for refund review.'
     );
   END IF;
 
-  -- 6. REJECT ORDERS WITH ZERO ITEMS
+  -- 8. LATE PAYMENT CAPTURE ON CANCELLED ORDERS CHECK
+  IF v_order.status = 'cancelled' AND v_order.payment_status IS DISTINCT FROM 'paid' THEN
+    UPDATE public.orders
+    SET payment_status = 'paid',
+        payment_id = v_payment_record.id,
+        razorpay_order_id = p_razorpay_order_id,
+        razorpay_payment_id = p_razorpay_payment_id,
+        fulfillment_exception = 'Payment captured after order cancellation. Refund required.',
+        notes = 'Payment captured after order cancellation. Refund required.',
+        updated_at = NOW()
+    WHERE id = p_order_id;
+
+    UPDATE public.payments
+    SET status = 'captured',
+        razorpay_payment_id = p_razorpay_payment_id,
+        refund_review_required = TRUE,
+        paid_at = NOW(),
+        updated_at = NOW()
+    WHERE id = v_payment_record.id;
+
+    RETURN jsonb_build_object(
+      'success', false,
+      'stock_exception', true,
+      'order_id', v_order.id,
+      'order_number', v_order.order_number,
+      'error', 'Payment captured after order cancellation. Refund required.'
+    );
+  END IF;
+
+  -- 9. REJECT ITEMS WITH NULL VARIANT_ID & REJECT ZERO ITEMS
+  IF EXISTS (
+    SELECT 1 FROM public.order_items
+    WHERE order_id = p_order_id AND variant_id IS NULL
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Order contains items with missing variant IDs.'
+    );
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM public.order_items
     WHERE order_id = p_order_id
@@ -548,7 +665,7 @@ BEGIN
     );
   END IF;
 
-  -- 6. AGGREGATE VARIANT QUANTITIES & LOCK IN ASCENDING ORDER TO PREVENT DEADLOCKS
+  -- 10. AGGREGATE VARIANT QUANTITIES & LOCK IN ASCENDING ORDER TO PREVENT DEADLOCKS
   FOR v_item IN
     SELECT variant_id, SUM(quantity) as total_qty, MAX(product_name) as sample_name
     FROM public.order_items
@@ -561,14 +678,14 @@ BEGIN
     WHERE id = v_item.variant_id
     FOR UPDATE;
 
-    IF v_variant_stock IS NULL OR v_variant_is_available = FALSE OR v_variant_stock < v_item.total_qty THEN
+    IF v_variant_stock IS NULL OR v_variant_is_available IS DISTINCT FROM TRUE OR v_variant_stock < v_item.total_qty THEN
       v_has_stock_issue := TRUE;
       v_failed_item_name := v_item.sample_name;
       EXIT;
     END IF;
   END LOOP;
 
-  -- IF STOCK OR AVAILABILITY ISSUE: Flag order for stock exception & alert staff
+  -- IF STOCK OR AVAILABILITY ISSUE: Flag order for stock exception & alert staff, preserve captured payment with review flag
   IF v_has_stock_issue THEN
     UPDATE public.orders
     SET payment_status = 'paid',
@@ -576,6 +693,7 @@ BEGIN
         payment_id = v_payment_record.id,
         razorpay_order_id = p_razorpay_order_id,
         razorpay_payment_id = p_razorpay_payment_id,
+        fulfillment_exception = format('Stock exception for %s. Refund/replacement required.', v_failed_item_name),
         notes = format('Stock exception for %s. Refund/replacement required.', v_failed_item_name),
         updated_at = NOW()
     WHERE id = p_order_id;
@@ -591,18 +709,20 @@ BEGIN
     RETURN jsonb_build_object(
       'success', false,
       'stock_exception', true,
+      'order_id', v_order.id,
+      'order_number', v_order.order_number,
       'error', format('Insufficient inventory for item %s. Order flagged for fulfillment review.', v_failed_item_name)
     );
   END IF;
 
-  -- 7. ASSIGN STRICTLY SEQUENTIAL ORDER NUMBER ONLY ON PAYMENT CONFIRMATION
+  -- 11. ASSIGN STRICTLY SEQUENTIAL ORDER NUMBER USING CORRECT SEQUENCE
   IF v_order.order_number IS NULL THEN
-    v_assigned_order_number := nextval('public.confirmed_order_number_seq');
+    v_assigned_order_number := nextval('public.orders_confirmed_order_number_seq');
   ELSE
     v_assigned_order_number := v_order.order_number;
   END IF;
 
-  -- 8. ATOMIC ORDER STATUS TRANSITION TO CONFIRMED
+  -- 12. ATOMIC ORDER STATUS TRANSITION TO CONFIRMED
   UPDATE public.orders
   SET order_number = v_assigned_order_number,
       payment_status = 'paid',
@@ -613,7 +733,7 @@ BEGIN
       updated_at = NOW()
   WHERE id = p_order_id;
 
-  -- 9. UPDATE PAYMENT RECORD TO CAPTURED
+  -- 13. UPDATE PAYMENT RECORD TO CAPTURED
   UPDATE public.payments
   SET status = 'captured',
       razorpay_payment_id = p_razorpay_payment_id,
@@ -621,7 +741,7 @@ BEGIN
       updated_at = NOW()
   WHERE id = v_payment_record.id;
 
-  -- 10. ATOMIC AGGREGATED STOCK DEDUCTION WITH ROW COUNT CHECK
+  -- 14. ATOMIC AGGREGATED STOCK DEDUCTION WITH ROW COUNT CHECK
   FOR v_item IN
     SELECT variant_id, SUM(quantity) as total_qty
     FROM public.order_items
@@ -635,7 +755,7 @@ BEGIN
     WHERE id = v_item.variant_id AND stock >= v_item.total_qty;
 
     GET DIAGNOSTICS v_rows_updated = ROW_COUNT;
-    If v_rows_updated = 0 THEN
+    IF v_rows_updated = 0 THEN
       RAISE EXCEPTION 'Atomic stock deduction failed for variant %', v_item.variant_id;
     END IF;
 
@@ -652,191 +772,6 @@ BEGIN
 END;
 $$;
 
--- Insert default store settings if missing
-insert into public.store_settings (id, is_store_open, store_name)
-values ('default', true, 'Royal Bengal')
-on conflict (id) do nothing;
-
--- ROW LEVEL SECURITY (RLS) POLICIES
-alter table public.profiles enable row level security;
-alter table public.categories enable row level security;
-alter table public.products enable row level security;
-alter table public.product_variants enable row level security;
-alter table public.banners enable row level security;
-alter table public.coupons enable row level security;
-alter table public.addresses enable row level security;
-alter table public.orders enable row level security;
-alter table public.order_items enable row level security;
-alter table public.store_settings enable row level security;
-alter table public.inventory_transactions enable row level security;
-alter table public.order_status_history enable row level security;
-alter table public.payments enable row level security;
-alter table public.coupon_usages enable row level security;
-alter table public.carts enable row level security;
-alter table public.cart_items enable row level security;
-alter table public.checkout_sessions enable row level security;
-alter table public.checkout_events enable row level security;
-alter table public.preorder_campaigns enable row level security;
-alter table public.discounts enable row level security;
-alter table public.discount_variants enable row level security;
-alter table public.order_item_changes enable row level security;
-alter table public.admin_audit_logs enable row level security;
-alter table public.suppliers enable row level security;
-alter table public.purchase_orders enable row level security;
-alter table public.purchase_order_items enable row level security;
-alter table public.payment_gateways enable row level security;
-alter table public.payment_gateway_credentials enable row level security;
-
--- Public Read Policies (SECURE: Filter active/available items & active categories)
-create policy "Public can read categories" on public.categories for select using (status = 'active');
-create policy "Public can read active products" on public.products for select using (
-  is_available = true and (
-    category_id is null or exists (
-      select 1 from public.categories
-      where categories.id = products.category_id and categories.status = 'active'
-    ) or exists (
-      select 1 from public.categories
-      where lower(categories.name) = lower(products.category_name) and categories.status = 'active'
-    )
-  )
-);
-create policy "Public can read active product_variants" on public.product_variants for select using (is_available = true);
-create policy "Public can read active banners" on public.banners for select using (status = 'active');
-create policy "Public can read store settings" on public.store_settings for select using (true);
-create policy "Public can read coupons" on public.coupons for select using (is_active = true and (expiry_date is null or expiry_date > now()));
-create policy "Public can read active preorder_campaigns" on public.preorder_campaigns for select using (status = 'active' and starts_at <= now() and (ends_at is null or ends_at > now()));
-create policy "Public can read active discounts" on public.discounts for select using (is_active = true and (ends_at is null or ends_at > now()));
-create policy "Public can read active discount_variants" on public.discount_variants for select using (
-  exists (
-    select 1 from public.discounts
-    where discounts.id = discount_variants.discount_id
-    and discounts.is_active = true
-    and discounts.starts_at <= now()
-    and (discounts.ends_at is null or discounts.ends_at > now())
-  )
-);
-create policy "Public can read payment_gateways" on public.payment_gateways for select using (true);
-
--- Customer Specific RLS Policies (SECURE: SELECT ONLY for orders, no client-side payment_status mutation)
-create policy "Users can view own addresses" on public.addresses for select using (auth.uid() = user_id);
-create policy "Users can insert own addresses" on public.addresses for insert with check (auth.uid() = user_id);
-create policy "Users can update own addresses" on public.addresses for update using (auth.uid() = user_id);
-create policy "Users can delete own addresses" on public.addresses for delete using (auth.uid() = user_id);
-
-create policy "Users can view own orders" on public.orders for select using (auth.uid() = user_id);
-create policy "Users can view own order items" on public.order_items for select using (
-  exists (select 1 from public.orders where orders.id = order_items.order_id and orders.user_id = auth.uid())
-);
-create policy "Users can view own order history" on public.order_status_history for select using (
-  exists (select 1 from public.orders where orders.id = order_status_history.order_id and orders.user_id = auth.uid())
-);
-create policy "Users can view own order item changes" on public.order_item_changes for select using (
-  exists (select 1 from public.orders where orders.id = order_item_changes.order_id and orders.user_id = auth.uid())
-);
-
-create policy "Users can view own coupon usages" on public.coupon_usages for select using (auth.uid() = user_id);
-
-create policy "Users can manage own carts" on public.carts for all using (
-  auth.uid() = user_id or (user_id is null and session_id is not null)
-);
-create policy "Users can manage own cart items" on public.cart_items for all using (
-  exists (select 1 from public.carts where carts.id = cart_items.cart_id and (carts.user_id = auth.uid() or (carts.user_id is null and carts.session_id is not null)))
-);
-create policy "Users can manage own checkout sessions" on public.checkout_sessions for all using (
-  auth.uid() = user_id or (user_id is null and session_id is not null)
-);
-
--- Admin & Staff Access Policies
-create policy "Admin read-only inventory_transactions" on public.inventory_transactions for select using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff', 'read_only')
-);
-create policy "Admin write inventory_transactions" on public.inventory_transactions for all using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff')
-);
-
-create policy "Admin read-only order_status_history" on public.order_status_history for select using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff', 'support_agent', 'read_only')
-);
-create policy "Admin write order_status_history" on public.order_status_history for all using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff', 'support_agent')
-);
-
-create policy "Admin read-only payments" on public.payments for select using (
-  public.current_user_role() in ('super_admin', 'admin', 'read_only')
-);
-create policy "Admin write payments" on public.payments for all using (
-  public.current_user_role() in ('super_admin', 'admin')
-);
-
-create policy "Admin full access categories" on public.categories for all using (
-  public.current_user_role() in ('super_admin', 'admin')
-);
-
-create policy "Admin full access products" on public.products for all using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff')
-);
-
-create policy "Admin full access product_variants" on public.product_variants for all using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff')
-);
-
-create policy "Admin full access banners" on public.banners for all using (
-  public.current_user_role() in ('super_admin', 'admin')
-);
-
-create policy "Admin full access coupons" on public.coupons for all using (
-  public.current_user_role() in ('super_admin', 'admin')
-);
-
-create policy "Admin full access carts" on public.carts for select using (
-  public.current_user_role() in ('super_admin', 'admin', 'support_agent', 'read_only')
-);
-
-create policy "Admin full access checkout_sessions" on public.checkout_sessions for select using (
-  public.current_user_role() in ('super_admin', 'admin', 'support_agent', 'read_only')
-);
-
-create policy "Admin full access preorder_campaigns" on public.preorder_campaigns for all using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff')
-);
-
-create policy "Admin full access discounts" on public.discounts for all using (
-  public.current_user_role() in ('super_admin', 'admin')
-);
-
-create policy "Admin full access discount_variants" on public.discount_variants for all using (
-  public.current_user_role() in ('super_admin', 'admin')
-);
-
-create policy "Admin full access order_item_changes" on public.order_item_changes for all using (
-  public.current_user_role() in ('super_admin', 'admin', 'support_agent')
-);
-
-create policy "Admin full access admin_audit_logs" on public.admin_audit_logs for select using (
-  public.current_user_role() in ('super_admin', 'admin', 'read_only')
-);
-
-create policy "Admin full access suppliers" on public.suppliers for all using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff')
-);
-
-create policy "Admin full access purchase_orders" on public.purchase_orders for all using (
-  public.current_user_role() in ('super_admin', 'admin', 'operations_staff')
-);
-
-create policy "Admin full access purchase_order_items" on public.purchase_order_items for all using (
-  public.current_user_role() = 'admin'
-);
-
-create policy "Staff can manage payment_gateways" on public.payment_gateways for all using (
-  exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.role in ('super_admin', 'admin'))
-);
-
-create policy "Staff can manage payment_gateway_credentials" on public.payment_gateway_credentials for all using (
-  exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.role in ('super_admin', 'admin'))
-);
-
--- STORAGE BUCKETS SETUP
-insert into storage.buckets (id, name, public) values ('products', 'products', true) on conflict (id) do nothing;
-insert into storage.buckets (id, name, public) values ('categories', 'categories', true) on conflict (id) do nothing;
-insert into storage.buckets (id, name, public) values ('banners', 'banners', true) on conflict (id) do nothing;
+-- Secure RPC execution permissions
+REVOKE ALL ON FUNCTION public.confirm_order_payment(UUID, TEXT, TEXT, NUMERIC) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.confirm_order_payment(UUID, TEXT, TEXT, NUMERIC) TO service_role;
