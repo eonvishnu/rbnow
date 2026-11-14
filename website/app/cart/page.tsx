@@ -325,6 +325,12 @@ export default function CartPage() {
       return;
     }
 
+    if (!location.lat || !location.lng) {
+      setCheckoutError('Please select your delivery location first.');
+      setIsModalOpen(true);
+      return;
+    }
+
     setIsPlacingOrder(true);
     try {
       const browserId = getOrCreateBrowserId();
@@ -367,17 +373,7 @@ export default function CartPage() {
           if (!serverMsg) serverMsg = edgeError.message;
         }
 
-        const isStockError = serverMsg && (
-          serverMsg.toLowerCase().includes('stock') ||
-          serverMsg.toLowerCase().includes('left') ||
-          serverMsg.toLowerCase().includes('inventory') ||
-          serverMsg.toLowerCase().includes('unavailable') ||
-          serverMsg.toLowerCase().includes('quantity')
-        );
-
-        const userFriendlyMsg = isStockError
-          ? serverMsg
-          : 'Unable to process your order at the moment. Please check your cart or try again.';
+        const userFriendlyMsg = serverMsg || 'Unable to process your order at the moment. Please check your cart or try again.';
 
         throw new Error(userFriendlyMsg);
       }
