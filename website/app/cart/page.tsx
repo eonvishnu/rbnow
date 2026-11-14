@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from "@/lib/supabase";
@@ -26,7 +26,9 @@ import {
   CheckCircle2,
   Loader2,
   AlertCircle,
-  Wallet
+  Wallet,
+  RefreshCw,
+  X
 } from 'lucide-react';
 
 function extractProductId(id: string): string {
@@ -63,6 +65,9 @@ export default function CartPage() {
   // Payment Placement State
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
+  const [paymentState, setPaymentState] = useState<'idle' | 'verifying' | 'failed'>('idle');
+  const [paymentResultMessage, setPaymentResultMessage] = useState('');
+
   const checkoutInProgressRef = useRef(false);
   const paymentVerificationInProgressRef = useRef(false);
 
@@ -240,8 +245,8 @@ export default function CartPage() {
   const hasStockIssues = useMemo(() => {
     return Object.values(groupedCart).some((item: any) => {
       const cleanId = extractProductId(item.id);
-      const stock = stockData[item.id] !== undefined ? stockData[item.id] : (stockData[cleanId] !== undefined ? stockData[cleanId] : 0);
-      return stock === 0 || item.qty > stock;
+      const stock = stockData[cleanId];
+      return stock !== undefined && stock === 0;
     });
   }, [groupedCart, stockData]);
 
@@ -335,6 +340,7 @@ export default function CartPage() {
 
     checkoutInProgressRef.current = true;
     setIsPlacingOrder(true);
+    setPaymentState('idle');
     let modalOpened = false;
     const pendingCheckoutKey = `royal_bengal_checkout_${user.id}`;
 
@@ -346,7 +352,7 @@ export default function CartPage() {
       }));
 
       const deliveryDetails = {
-        name: userData?.display_name || 'Customer',
+        name: userData?.display_name || user.email || 'Customer',
         phone: (userData?.phone_number || '').trim() || '7893274753',
         lat: location.lat,
         lng: location.lng,
@@ -442,22 +448,23 @@ export default function CartPage() {
         order_id: data.razorpayOrderId,
         prefill: {
           name: deliveryDetails.name,
-          email: (user.email && !user.email.endsWith('@royalbengal.internal')) ? user.email : '',
+          email: user.email,
           contact: deliveryDetails.phone,
         },
-        theme: { color: '#004D3B' },
+        theme: { color: '#022c22' },
         modal: {
           ondismiss: () => {
             if (!paymentVerificationInProgressRef.current) {
               setIsPlacingOrder(false);
               checkoutInProgressRef.current = false;
-              setCheckoutError('Payment window closed. Your checkout is saved; you can safely resume it.');
+              setPaymentResultMessage('Payment was not completed. No successful payment confirmation has been received for this checkout attempt.');
+              setPaymentState('failed');
             }
           },
         },
         handler: async (response: any) => {
           paymentVerificationInProgressRef.current = true;
-          setIsPlacingOrder(true);
+          setPaymentState('verifying');
           try {
             const { data: vData, error: vErr } = await supabase.functions.invoke('verify-payment', {
               body: {
@@ -483,18 +490,18 @@ export default function CartPage() {
                 console.warn('Could not clear reconciled checkout ID:', storageErr);
               }
               clearCart();
-              setCheckoutError(vData.error || 'Your payment was received, but the order needs staff review.');
-              router.push('/orders');
+              setPaymentResultMessage(vData.error || 'Your payment was received, but the order needs staff review.');
+              setPaymentState('failed');
             } else {
               const message = (vData && vData.error) || (vErr && vErr.message) || 'Payment confirmation is still pending.';
-              setCheckoutError(`${message} Do not pay again until you check your order status.`);
-              alert(`${message}\n\nDo not make another payment yet. Check your order status or contact support.`);
+              setPaymentResultMessage(`${message} Do not pay again until you check your order status.`);
+              setPaymentState('failed');
             }
           } catch (err: any) {
             console.error(err);
             const message = err?.message || 'Payment confirmation could not be completed.';
-            setCheckoutError(`${message} Do not pay again until you check your order status.`);
-            alert(`${message}\n\nDo not make another payment yet. Check your order status or contact support.`);
+            setPaymentResultMessage(`${message} Do not pay again until you check your order status.`);
+            setPaymentState('failed');
           } finally {
             paymentVerificationInProgressRef.current = false;
             setIsPlacingOrder(false);
@@ -506,15 +513,18 @@ export default function CartPage() {
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', (response: any) => {
         const description = response?.error?.description || 'Your payment was declined.';
-        setCheckoutError(`${description} Your checkout is saved. Close the payment window when you are finished; do not start another checkout.`);
+        setPaymentResultMessage(description);
+        setPaymentState('failed');
       });
       rzp.open();
       modalOpened = true;
     } catch (err: any) {
       console.error(err);
       setCheckoutError(err.message || 'Checkout failed. Please try again.');
+      setIsPlacingOrder(false);
+      checkoutInProgressRef.current = false;
     } finally {
-      if (!modalOpened) {
+      if (!modalOpened && paymentState === 'idle') {
         setIsPlacingOrder(false);
         checkoutInProgressRef.current = false;
       }
@@ -522,234 +532,313 @@ export default function CartPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#F5F7F6] text-[#17211D] pb-28 w-full max-w-[100vw] overflow-x-hidden selection:bg-[#FFC400] selection:text-[#004D3B]">
+    <main className="min-h-screen bg-[#022c22] text-white pb-28 selection:bg-amber-400 selection:text-emerald-950 w-full max-w-[100vw] overflow-x-hidden">
 
-      {/* Deep Emerald Header Bar (20% Brand Accent) */}
-      <div className="bg-[#004D3B] text-white p-4 sm:p-5 flex items-center justify-between sticky top-0 z-40 shadow-md">
-        <Link href="/" className="text-[#FFC400] font-bold text-xs uppercase tracking-widest flex items-center gap-2 hover:text-white transition-all">
-          <ArrowLeft size={16} /> Store
+      {/* Header Container */}
+      <div className="p-4 sm:p-6 border-b border-amber-400/30 flex items-center justify-between sticky top-0 bg-[#022c22]/95 backdrop-blur-md z-40">
+        <Link href="/" className="text-amber-300 font-bold text-xs uppercase tracking-widest flex items-center gap-2 hover:text-white transition-all">
+          <ArrowLeft size={16} /> Back
         </Link>
 
         <div className="flex items-center gap-2">
-          <Crown size={18} className="text-[#FFC400]" />
-          <h1 className="text-xs sm:text-sm font-serif font-black uppercase tracking-[0.2em] text-[#FFC400]">Checkout</h1>
+          <Crown size={18} className="text-amber-400" />
+          <h1 className="text-xs sm:text-sm font-serif font-black uppercase tracking-[0.25em] text-amber-300">Royal Express Checkout</h1>
         </div>
 
         <div className="w-16" />
       </div>
 
-      <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+      {/* Background Dimming / Cart Blocking Overlay when Razorpay Checkout is Open */}
+      {isPlacingOrder && paymentState === 'idle' && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center text-white p-6">
+          <div className="bg-[#022c22] border-2 border-amber-400/80 rounded-[28px] p-8 max-w-sm w-full text-center space-y-4 shadow-2xl">
+            <Loader2 className="animate-spin text-amber-400 mx-auto" size={40} />
+            <h3 className="font-serif font-black text-sm uppercase tracking-widest text-amber-300">Payment in Progress</h3>
+            <p className="text-xs text-emerald-100 font-medium leading-relaxed">Please complete payment in the secure Razorpay window. Cart modifications are locked while payment is active.</p>
+          </div>
+        </div>
+      )}
 
-        {/* 1. DELIVERY ADDRESS CARD (White Card with Subtle Border) */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E3EAE6] text-[#17211D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-[#E5F5EF] text-[#006B50] flex items-center justify-center font-black shrink-0">
-              <MapPin size={20} />
+      {/* Full-screen Loading State During Payment Verification */}
+      {paymentState === 'verifying' && (
+        <div className="fixed inset-0 bg-[#022c22] z-50 flex items-center justify-center p-6 text-white">
+          <div className="max-w-md w-full text-center space-y-6">
+            <Loader2 className="animate-spin text-amber-400 mx-auto" size={48} />
+            <div className="space-y-2">
+              <h2 className="text-lg font-serif font-black text-amber-300">Verifying Your Payment…</h2>
+              <p className="text-xs text-emerald-100 font-medium">Please wait while we confirm your payment and secure your order. Do not close this window.</p>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-black uppercase tracking-widest bg-[#E5F5EF] text-[#006B50] px-2.5 py-0.5 rounded-full border border-[#BCE2D3]">
-                  {location.label || 'HOME'}
-                </span>
-                <span className="text-xs font-black uppercase text-[#004D3B]">Delivering To</span>
-              </div>
-              <p className="text-xs text-[#17211D] font-bold truncate max-w-[280px] sm:max-w-md mt-0.5">
-                {location.address || `${location.area || 'Madhapur'}, ${location.city || 'Hyderabad'}`}
+          </div>
+        </div>
+      )}
+
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
+
+        {paymentState === 'failed' ? (
+          <div className="bg-emerald-900/80 border-2 border-amber-400/80 rounded-[32px] p-8 sm:p-12 text-center space-y-6 shadow-2xl max-w-lg mx-auto my-12 backdrop-blur-md">
+            <div className="w-16 h-16 bg-rose-950 text-rose-400 border border-rose-500 rounded-full flex items-center justify-center mx-auto shadow-lg">
+              <AlertCircle size={32} />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-serif font-black text-amber-300 uppercase tracking-wider">Payment Not Completed</h2>
+              <p className="text-xs text-emerald-100 font-medium leading-relaxed">
+                {paymentResultMessage || 'No successful payment confirmation has been received for this checkout attempt.'}
               </p>
             </div>
-          </div>
-
-          <button
-            onClick={handleAddressChangeClick}
-            className="bg-[#E5F5EF] hover:bg-[#D5EFE5] text-[#006B50] font-black text-[10px] uppercase px-3.5 py-2 rounded-xl border border-[#BCE2D3] tracking-wider transition-all shrink-0 flex items-center gap-1.5"
-          >
-            <Map size={14} /> Change Address
-          </button>
-        </div>
-
-        {cart.length === 0 ? (
-          <div className="py-20 max-w-md mx-auto text-center bg-white border border-[#E3EAE6] rounded-3xl p-8 shadow-xs">
-            <div className="w-16 h-16 bg-[#E5F5EF] text-[#006B50] rounded-2xl mx-auto flex items-center justify-center mb-5">
-              <ShoppingBag size={32} />
+            <div className="space-y-3 pt-2">
+              <button
+                onClick={handleExpressCheckout}
+                disabled={isPlacingOrder}
+                className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black text-xs uppercase py-4 rounded-2xl tracking-[0.2em] transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isPlacingOrder ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />} Retry Payment
+              </button>
+              <button
+                onClick={() => {
+                  setPaymentState('idle');
+                  setPaymentResultMessage('');
+                  setIsPlacingOrder(false);
+                  checkoutInProgressRef.current = false;
+                }}
+                className="w-full bg-emerald-950 hover:bg-emerald-900 text-amber-300 font-black text-[11px] uppercase py-4 rounded-2xl border border-amber-400/40 tracking-[0.2em] transition-all cursor-pointer"
+              >
+                Back to Cart / Modify Cart
+              </button>
             </div>
-            <h3 className="text-lg font-black uppercase tracking-tight mb-2 text-[#17211D]">Your Cart is Empty</h3>
-            <p className="text-[#75817B] text-xs font-medium uppercase tracking-widest mb-6 leading-relaxed">
-              Explore fresh Padma river fish, <br/> gourmet mutton & artisanal Bengal delicacies.
-            </p>
-            <Link href="/" className="inline-flex items-center gap-2 bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] font-black px-7 py-3.5 rounded-xl uppercase tracking-widest text-xs shadow-sm transition-all">
-              Explore Menu <ArrowRight size={16} />
-            </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-7 items-start">
-
-            {/* Left: Itemized Cart & Promo Coupon */}
-            <section className="lg:col-span-7 space-y-4">
-              <div className="flex justify-between items-center mb-1">
-                <h2 className="text-xs font-black text-[#75817B] uppercase tracking-[0.15em]">Selected Items ({Object.keys(groupedCart).length})</h2>
-              </div>
-
-              {/* 2. PRODUCT CARDS (Single Unified Card with Subtle Dividers) */}
-              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E3EAE6] space-y-4 shadow-xs">
-                {Object.values(groupedCart).map((item: any, idx: number, arr: any[]) => {
-                  const cleanId = extractProductId(item.id);
-                  const stockCount = stockData[item.id] !== undefined ? stockData[item.id] : (stockData[cleanId] !== undefined ? stockData[cleanId] : 99);
-                  const isOutOfStock = stockCount === 0;
-                  const isLowStock = stockCount > 0 && stockCount <= 5;
-
-                  return (
-                    <div key={item.id} className={`flex items-center justify-between ${idx !== arr.length - 1 ? 'border-b border-[#E3EAE6] pb-4' : ''}`}>
-                      <div className="flex items-center gap-3.5">
-                        <img
-                          src={item.img || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80'}
-                          className={`w-14 h-14 rounded-xl object-cover border border-[#E3EAE6] ${isOutOfStock ? 'grayscale opacity-50' : ''}`}
-                          alt={item.name}
-                        />
-                        <div>
-                          <p className={`text-xs sm:text-sm font-black ${isOutOfStock ? 'text-gray-400' : 'text-[#17211D]'}`}>{item.name}</p>
-                          <p className="text-[11px] text-[#006B50] font-bold uppercase mt-0.5">₹{item.price} / {item.unit}</p>
-                          {isOutOfStock && <p className="text-[10px] text-rose-600 font-black uppercase mt-1">⚠️ Out of Stock</p>}
-                          {isLowStock && <p className="text-[10px] text-amber-700 font-black uppercase mt-1">⚠️ Only {stockCount} left in stock</p>}
-                        </div>
-                      </div>
-
-                      {/* Quantity Controls (Selected Controls: Deep Emerald) */}
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center bg-[#006B50] text-white rounded-xl h-8 overflow-hidden shadow-xs">
-                          <button
-                            onClick={() => removeFromCart(item.id)}
-                            className="px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors"
-                          >
-                            −
-                          </button>
-                          <span className="text-xs font-black w-5 text-center">{item.qty}</span>
-                          <button
-                            onClick={() => addToCart(item, stockCount)}
-                            disabled={item.qty >= stockCount}
-                            className={`px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors ${item.qty >= stockCount ? 'opacity-40 cursor-not-allowed' : ''}`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* 3. COUPON SECTION (Clean White Card) */}
-              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E3EAE6] space-y-2.5 shadow-xs">
-                <div className="flex items-center gap-2 text-[#004D3B] text-xs font-black uppercase tracking-wider">
-                  <Tag size={15} /> Promo Code
+          <>
+            {/* TOP ACTIVE DELIVERY ADDRESS CARD */}
+            <div className="p-4 sm:p-5 rounded-[28px] bg-emerald-900/80 border-2 border-amber-400/80 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl backdrop-blur-md">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-amber-400 text-emerald-950 flex items-center justify-center font-black shrink-0 shadow-md">
+                  <MapPin size={22} />
                 </div>
-
-                <form onSubmit={handleApplyCoupon} className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Enter code (e.g. WELCOME10)"
-                    value={couponCode}
-                    onChange={e => setCouponCode(e.target.value.toUpperCase())}
-                    className="flex-1 bg-[#F5F7F6] border border-[#E3EAE6] focus:border-[#006B50] rounded-xl px-3.5 py-2.5 text-xs font-bold uppercase text-[#17211D] outline-none placeholder:text-[#75817B]"
-                  />
-                  <button
-                    type="submit"
-                    disabled={validatingCoupon}
-                    className="bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] font-black px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-xs transition-all shrink-0 disabled:opacity-50"
-                  >
-                    {validatingCoupon ? <Loader2 size={14} className="animate-spin" /> : "Apply"}
-                  </button>
-                </form>
-
-                {couponMsg && (
-                  <p className={`text-[11px] font-bold ${appliedCoupon ? 'text-[#006B50]' : 'text-rose-600'}`}>
-                    {couponMsg}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-black uppercase tracking-widest bg-amber-400 text-emerald-950 px-2.5 py-0.5 rounded-full">
+                      {location.label || 'HOME'}
+                    </span>
+                    <span className="text-xs font-black uppercase text-amber-300">Delivering To</span>
+                  </div>
+                  <p className="text-xs text-emerald-100 font-bold truncate max-w-[280px] sm:max-w-md mt-0.5">
+                    {location.address || `${location.area || 'Madhapur'}, ${location.city || 'Hyderabad'}`}
                   </p>
-                )}
+                </div>
               </div>
 
-            </section>
+              <button
+                onClick={handleAddressChangeClick}
+                className="bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black text-[10px] uppercase px-4 py-2.5 rounded-xl tracking-wider shadow-md transition-all active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Map size={14} /> Change / Add Address
+              </button>
+            </div>
 
-            {/* Right: Bill Summary */}
-            <section className="lg:col-span-5 lg:sticky lg:top-20 space-y-4">
-
-              {/* BILL SUMMARY BOX (Clean White Card with #004D3B Header & #FFC400 CTA) */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-[#E3EAE6] space-y-4 shadow-sm relative overflow-hidden">
-
-                <div className="flex items-center justify-between border-b border-[#E3EAE6] pb-3">
-                  <h2 className="text-xs font-black text-[#004D3B] uppercase tracking-[0.15em] flex items-center gap-2">
-                    <Sparkles size={14} className="text-[#FFC400]" /> Bill Summary
-                  </h2>
-                  <span className="text-[9px] font-black uppercase bg-[#E5F5EF] text-[#006B50] px-2.5 py-0.5 rounded-full border border-[#BCE2D3]">
-                    Standard Delivery
-                  </span>
+            {cart.length === 0 ? (
+              <div className="py-20 max-w-md mx-auto text-center border-2 border-amber-400/50 bg-emerald-900/60 rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-sm">
+                <div className="w-20 h-20 bg-amber-400 text-emerald-950 rounded-3xl mx-auto flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(212,175,55,0.3)]">
+                  <ShoppingBag size={40} />
                 </div>
+                <h3 className="text-xl font-black uppercase tracking-tight mb-2 text-white">Your Royal Cart is Empty</h3>
+                <p className="text-emerald-200 text-xs font-medium uppercase tracking-widest mb-8 leading-relaxed">
+                  Explore our fresh Padma river fish, <br/> gourmet mutton & artisanal Bengal delicacies.
+                </p>
+                <Link href="/" className="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black px-8 py-4 rounded-2xl uppercase tracking-[0.2em] text-xs shadow-xl active:scale-95 transition-all">
+                  Explore Menu <ArrowRight size={16} />
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
 
-                <div className="space-y-2.5 text-xs">
-                  <div className="flex justify-between font-bold text-[#75817B] uppercase tracking-wider">
-                    <span>Items Subtotal</span>
-                    <span className="text-[#17211D] font-black text-sm">₹{totalAmount}</span>
+                {/* Left: Itemized Cart & Promo Coupon */}
+                <section className="lg:col-span-7 space-y-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <h2 className="text-xs font-black text-amber-300/80 uppercase tracking-[0.2em]">Selected Items ({Object.keys(groupedCart).length})</h2>
                   </div>
 
-                  {couponDiscount > 0 && (
-                    <div className="flex justify-between font-bold text-[#006B50] uppercase tracking-wider">
-                      <span>Promo Discount</span>
-                      <span className="font-black text-[#006B50]">- ₹{couponDiscount}</span>
-                    </div>
-                  )}
+                  {Object.values(groupedCart).map((item: any) => {
+                    const cleanId = extractProductId(item.id);
+                    const isOutOfStock = stockData[cleanId] === 0;
 
-                  <div className="flex justify-between font-bold uppercase tracking-wider">
-                    <span className="text-[#75817B]">Delivery Fee</span>
-                    <span className={deliveryFee === 0 ? "text-[#006B50] font-black" : "text-[#17211D] font-black"}>
-                      {deliveryFee === 0 ? "FREE" : `₹${deliveryFee}`}
+                    return (
+                      <div key={item.id} className={`relative p-4 rounded-[24px] border transition-all duration-300 flex items-center justify-between shadow-lg ${
+                        isOutOfStock ? 'bg-rose-950/80 border-rose-500' : 'bg-emerald-900/60 border-amber-400/40 hover:border-amber-400'
+                      }`}>
+                        <div className="flex items-center gap-3.5 sm:gap-4">
+                          <div className="relative shrink-0">
+                            <img
+                              src={item.img || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80'}
+                              className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border border-amber-400/30 ${isOutOfStock ? 'grayscale opacity-50' : ''}`}
+                              alt={item.name}
+                            />
+                          </div>
+                          <div>
+                            <p className={`text-xs sm:text-sm font-black ${isOutOfStock ? 'text-gray-400' : 'text-white'}`}>{item.name}</p>
+                            <p className="text-[11px] text-amber-300 font-bold uppercase mt-0.5">₹{item.price} / {item.unit}</p>
+                            {isOutOfStock && <p className="text-[10px] text-rose-400 font-black uppercase mt-1 animate-pulse">⚠️ Out of Stock</p>}
+                          </div>
+                        </div>
+
+                        {/* Quantity Controls */}
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center bg-emerald-950 text-amber-300 rounded-xl h-9 border border-amber-400/40 shadow-sm">
+                            <button
+                              onClick={() => removeFromCart(item.id)}
+                              className="px-3 h-full font-black text-lg hover:bg-white/10 transition-colors cursor-pointer"
+                            >
+                              −
+                            </button>
+                            <span className="text-xs font-black w-5 text-center text-white">{item.qty}</span>
+                            <button
+                              onClick={() => addToCart(item, 99)}
+                              className="px-3 h-full font-black text-lg hover:bg-white/10 transition-colors cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              for(let i = 0; i < item.qty; i++) removeFromCart(item.id);
+                            }}
+                            className="p-2 text-emerald-300 hover:text-rose-400 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+
+                      </div>
+                    );
+                  })}
+
+                  {/* PROMO COUPON ACCORDION BOX */}
+                  <div className="bg-emerald-900/60 p-5 rounded-[24px] border border-amber-400/40 space-y-3">
+                    <div className="flex items-center gap-2 text-amber-300 text-xs font-black uppercase tracking-wider">
+                      <Tag size={16} /> Have a Promo Code?
+                    </div>
+
+                    <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Enter coupon (e.g. WELCOME10)"
+                        value={couponCode}
+                        onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                        className="flex-1 bg-emerald-950 border border-amber-400/40 rounded-xl px-4 py-2.5 text-xs font-black uppercase text-amber-300 outline-none placeholder:text-gray-500"
+                      />
+                      <button
+                        type="submit"
+                        disabled={validatingCoupon}
+                        className="bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all shrink-0 disabled:opacity-50 cursor-pointer"
+                      >
+                        {validatingCoupon ? <Loader2 size={14} className="animate-spin" /> : "Apply"}
+                      </button>
+                    </form>
+
+                    {couponMsg && (
+                      <p className={`text-[11px] font-bold ${appliedCoupon ? 'text-amber-300' : 'text-rose-400'}`}>
+                        {couponMsg}
+                      </p>
+                    )}
+                  </div>
+
+                </section>
+
+                {/* Right: Payment Method & Bill Summary Section */}
+                <section className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
+
+                  {/* PAYMENT METHOD BADGE */}
+                  <div className="bg-emerald-900/80 p-4 rounded-[28px] border-2 border-amber-400/80 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <CreditCard size={18} className="text-amber-400" />
+                      <div>
+                        <span className="text-xs font-black text-amber-300 uppercase block">Razorpay Online Payment</span>
+                        <span className="text-[9px] font-bold text-emerald-200">GPay, PhonePe, Cards, NetBanking</span>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-black uppercase bg-amber-400 text-emerald-950 px-2.5 py-1 rounded-full shadow-xs">
+                      SECURE
                     </span>
                   </div>
 
-                  {totalAmount > 0 && Number.isFinite(freeThreshold) && totalAmount < freeThreshold && (
-                    <div className="pt-1">
-                       <span className="text-[10px] font-bold text-[#006B50] bg-[#E5F5EF] px-3 py-1.5 rounded-xl border border-[#BCE2D3] block text-center">
-                         Add ₹{freeThreshold - totalAmount} more for FREE Delivery
-                       </span>
+                  {/* BILL SUMMARY BOX */}
+                  <div className="bg-gradient-to-br from-emerald-900 via-emerald-950 to-emerald-900 p-6 sm:p-8 rounded-[32px] border-2 border-amber-400/80 space-y-5 shadow-2xl relative overflow-hidden">
+
+                    <div className="flex items-center justify-between border-b border-emerald-800 pb-3">
+                      <h2 className="text-xs font-black text-amber-300 uppercase tracking-[0.2em] flex items-center gap-2">
+                        <Sparkles size={14} /> Bill Summary
+                      </h2>
+                      <span className="text-[10px] font-black uppercase bg-amber-400 text-emerald-950 px-2.5 py-0.5 rounded-full">
+                        Gourmet Delivery
+                      </span>
                     </div>
-                  )}
 
-                  <div className="h-px bg-[#E3EAE6] w-full my-2.5" />
+                    <div className="space-y-3 text-xs">
+                      <div className="flex justify-between font-bold text-emerald-200 uppercase tracking-wider">
+                        <span>Items Subtotal</span>
+                        <span className="text-white font-black text-sm">₹{totalAmount}</span>
+                      </div>
 
-                  <div className="flex justify-between items-center pt-0.5">
-                    <span className="text-xs font-black text-[#004D3B] uppercase tracking-widest">Grand Total</span>
-                    <span className="text-2xl font-black text-[#004D3B] tracking-tight">₹{grandTotal}</span>
+                      {couponDiscount > 0 && (
+                        <div className="flex justify-between font-bold text-amber-300 uppercase tracking-wider">
+                          <span>Promo Discount</span>
+                          <span className="font-black text-amber-300">- ₹{couponDiscount}</span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between font-bold uppercase tracking-wider">
+                        <span className="text-emerald-200">Express Delivery Fee</span>
+                        <span className={deliveryFee === 0 ? "text-amber-300 font-black" : "text-white font-black"}>
+                          {deliveryFee === 0 ? "FREE" : `₹{deliveryFee}`}
+                        </span>
+                      </div>
+
+                      {totalAmount > 0 && Number.isFinite(freeThreshold) && totalAmount < freeThreshold && (
+                        <div className="pt-1">
+                           <span className="text-[10px] font-extrabold text-amber-300 bg-emerald-900/90 px-3 py-1.5 rounded-xl border border-amber-400/30 block text-center">
+                             Add ₹{freeThreshold - totalAmount} more for FREE Express Delivery
+                           </span>
+                        </div>
+                      )}
+
+                      <div className="h-px bg-emerald-800/80 w-full my-3" />
+
+                      <div className="flex justify-between items-center pt-1">
+                        <span className="text-xs font-black text-amber-300 uppercase tracking-[0.2em]">Grand Total</span>
+                        <span className="text-2xl sm:text-3xl font-black text-amber-400 tracking-tight">₹{grandTotal}</span>
+                      </div>
+                    </div>
+
+                    {checkoutError && (
+                      <div className="p-3.5 rounded-2xl bg-rose-950/80 border border-rose-500 text-rose-300 text-xs font-bold flex items-center gap-2">
+                        <AlertCircle size={16} className="shrink-0" />
+                        <span>{checkoutError}</span>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleExpressCheckout}
+                      disabled={hasStockIssues || checkingStock || isPlacingOrder}
+                      className={`w-full text-center font-black py-5 rounded-2xl shadow-xl uppercase tracking-[0.2em] text-xs transition-all duration-300 flex items-center justify-center gap-2 active:scale-95 cursor-pointer ${
+                        hasStockIssues || checkingStock || isPlacingOrder
+                        ? 'bg-emerald-950/60 text-gray-500 border border-emerald-800 cursor-not-allowed shadow-none'
+                        : 'bg-amber-400 hover:bg-amber-300 text-emerald-950 border border-amber-300 shadow-amber-400/20'
+                      }`}
+                    >
+                      {isPlacingOrder ? <Loader2 size={16} className="animate-spin" /> : <>⚡ Place Order & Pay (₹{grandTotal}) <ArrowRight size={16} /></>}
+                    </button>
+
+                    <div className="p-3 rounded-2xl bg-emerald-900/60 border border-emerald-800 flex items-center gap-2.5 text-[10px] text-emerald-200 font-bold">
+                      <ShieldCheck size={16} className="text-amber-400 shrink-0" />
+                      <span>Insulated temperature packaging on all fresh catches.</span>
+                    </div>
+
                   </div>
-                </div>
-
-                {checkoutError && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
-                    <AlertCircle size={15} className="shrink-0" />
-                    <span>{checkoutError}</span>
-                  </div>
-                )}
-
-                {/* PRIMARY CTA BUTTON: #FFC400 GOLD */}
-                <button
-                  onClick={handleExpressCheckout}
-                  disabled={hasStockIssues || checkingStock || isPlacingOrder}
-                  className={`w-full text-center font-black py-4 rounded-xl uppercase tracking-[0.15em] text-xs transition-all flex items-center justify-center gap-2 active:scale-95 ${
-                    hasStockIssues || checkingStock || isPlacingOrder
-                    ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed shadow-none'
-                    : 'bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] shadow-xs'
-                  }`}
-                >
-                  {isPlacingOrder ? <Loader2 size={16} className="animate-spin" /> : <>Place Order & Pay <ArrowRight size={16} /></>}
-                </button>
-
-                <div className="p-3 rounded-xl bg-[#F5F7F6] border border-[#E3EAE6] flex items-center gap-2 text-[10px] text-[#75817B] font-bold">
-                  <ShieldCheck size={15} className="text-[#006B50] shrink-0" />
-                  <span>Insulated temperature packaging on all fresh catches.</span>
-                </div>
+                </section>
 
               </div>
-            </section>
-
-          </div>
+            )}
+          </>
         )}
       </div>
     </main>
