@@ -85,7 +85,7 @@ Deno.serve(async (req: Request) => {
 
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
 
-    // 1. DERIVE VERIFIED AUTHENTICATED USER ID EXCLUSIVELY FROM STRICT BEARER TOKEN
+    // 1. DERIVE VERIFIED AUTHENTICATED USER ID EXCLUSIVELY FROM STRICT BEARER TOKEN (UNCONDITIONAL AUTH REQUIRED)
     const authorization = req.headers.get("Authorization") || "";
     if (authorization && !authorization.toLowerCase().startsWith("bearer ")) {
       return new Response(JSON.stringify({ error: "Invalid authorization format. Bearer token required." }), {
@@ -122,9 +122,30 @@ Deno.serve(async (req: Request) => {
       verifiedUserId = user.id;
     }
 
+    if (!verifiedUserId) {
+      return new Response(JSON.stringify({ error: "Please log in to place an order." }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const finalUserId = verifiedUserId;
+
     const body = await req.json();
     const { items, details, couponCode, browserId, checkoutId } = body;
-    const finalUserId = verifiedUserId || null;
+
+    // Strict validation of malformed checkoutId
+    if (
+      checkoutId !== undefined &&
+      checkoutId !== null &&
+      (
+        typeof checkoutId !== "string" ||
+        !isValidUuid(checkoutId)
+      )
+    ) {
+      return new Response(JSON.stringify({ error: "Invalid checkout ID." }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     let order: any = null;
     let verifiedSubtotal = 0;
@@ -135,12 +156,6 @@ Deno.serve(async (req: Request) => {
 
     // RETRY FLOW: If checkoutId is provided, reuse the existing pending order securely
     if (checkoutId && isValidUuid(checkoutId)) {
-      if (!finalUserId) {
-        return new Response(JSON.stringify({ error: "Authentication required to retry payment." }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
       const { data: existingOrder, error: exOrderErr } = await supabase
         .from('orders')
         .select('*')
@@ -178,28 +193,26 @@ Deno.serve(async (req: Request) => {
       }
 
       // Temporary double-click guard with explicit database error check
-      if (finalUserId) {
-        const { data: recentOrders, error: recentErr } = await supabase
-          .from('orders')
-          .select('id, created_at')
-          .eq('user_id', finalUserId)
-          .eq('status', 'pending_payment')
-          .gte('created_at', new Date(Date.now() - 30000).toISOString())
-          .limit(1);
+      const { data: recentOrders, error: recentErr } = await supabase
+        .from('orders')
+        .select('id, created_at')
+        .eq('user_id', finalUserId)
+        .eq('status', 'pending_payment')
+        .gte('created_at', new Date(Date.now() - 30000).toISOString())
+        .limit(1);
 
-        if (recentErr) {
-          console.error("Recent orders check failed:", recentErr);
-          return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
-            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+      if (recentErr) {
+        console.error("Recent orders check failed:", recentErr);
+        return new Response(JSON.stringify({ error: "Server error: Database query failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-        if (recentOrders && recentOrders.length > 0) {
-          return new Response(JSON.stringify({ error: "A checkout request is already in progress. Please wait a moment." }), {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+      if (recentOrders && recentOrders.length > 0) {
+        return new Response(JSON.stringify({ error: "A checkout request is already in progress. Please wait a moment." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       // Fetch active variant discounts with strict error check
@@ -267,7 +280,7 @@ Deno.serve(async (req: Request) => {
         aggregatedQuantities[candidateVariantId] = aggregatedQty;
       }
 
-      let verifiedSubtotal = 0;
+      verifiedSubtotal = 0;
       const verifiedItems = [];
 
       // 2. STRICT DATABASE VARIANT VALIDATION & AGGREGATED STOCK CHECK
@@ -356,7 +369,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // 3. STRICT COUPON VALIDATION WITH ERROR CHECKS & BOUNDS
-      let discountAmount = 0;
+      discountAmount = 0;
       if (couponCode) {
         const { data: coupon, error: cErr } = await supabase
           .from('coupons')
@@ -409,15 +422,6 @@ Deno.serve(async (req: Request) => {
         }
 
         if (coupon.is_first_order_only) {
-          if (!finalUserId) {
-            return new Response(JSON.stringify({
-              error: `Promo code "${coupon.code}" is valid for registered customer orders only. Please log in.`
-            }), {
-              status: 401,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
-
           const { count: previousOrdersCount, error: oCountErr } = await supabase
             .from('orders')
             .select('id', { count: 'exact', head: true })
