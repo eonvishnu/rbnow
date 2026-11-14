@@ -854,7 +854,7 @@ CREATE TABLE IF NOT EXISTS public.webhook_events (
   event_id TEXT PRIMARY KEY,
   event_type TEXT NOT NULL,
   payload JSONB,
-  status TEXT NOT NULL DEFAULT 'processing' CHECK (status in ('processing', 'processed', 'failed')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status in ('pending', 'processing', 'processed', 'failed')),
   error_message TEXT,
   lease_token UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -864,6 +864,13 @@ CREATE TABLE IF NOT EXISTS public.webhook_events (
 -- Ensure lease_token column exists if table was already created
 ALTER TABLE public.webhook_events
   ADD COLUMN IF NOT EXISTS lease_token UUID;
+
+ALTER TABLE public.webhook_events
+  DROP CONSTRAINT IF EXISTS webhook_events_status_check;
+
+ALTER TABLE public.webhook_events
+  ADD CONSTRAINT webhook_events_status_check
+  CHECK (status IN ('pending', 'processing', 'processed', 'failed'));
 
 CREATE OR REPLACE FUNCTION public.claim_webhook_event(
   p_event_id TEXT,
@@ -889,11 +896,14 @@ BEGIN
     RETURN v_token;
   END IF;
 
-  -- If already exists, check if stuck in processing for > 10 minutes or failed
+  -- Reclaim if pending, failed, or stuck in processing for > 10 minutes
   UPDATE public.webhook_events
   SET status = 'processing', payload = p_payload, lease_token = v_token, updated_at = NOW()
   WHERE event_id = p_event_id
-    AND (status = 'failed' OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes'));
+    AND (
+      status IN ('pending', 'failed')
+      OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes')
+    );
 
   GET DIAGNOSTICS v_row_count = ROW_COUNT;
   IF v_row_count > 0 THEN
