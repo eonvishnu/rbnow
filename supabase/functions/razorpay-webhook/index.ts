@@ -20,16 +20,35 @@ async function calculateHmacSha256Hex(secret: string, body: string): Promise<str
     .join("");
 }
 
+function constantTimeEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
 async function verifyHmacSha256(secret: string, body: string, signature: string): Promise<boolean> {
   if (!signature || !secret || !body) return false;
-  const expectedSignature = await calculateHmacSha256Hex(secret, body);
-  return expectedSignature.toLowerCase() === signature.trim().toLowerCase();
+  try {
+    const expectedSignature = await calculateHmacSha256Hex(secret, body);
+    return constantTimeEquals(expectedSignature.toLowerCase(), signature.trim().toLowerCase());
+  } catch {
+    return false;
+  }
 }
 
 // @ts-ignore
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed." }), {
+      status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -54,7 +73,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 1. MANDATORY HMAC SIGNATURE VERIFICATION
+    // 1. MANDATORY HMAC SIGNATURE VERIFICATION (Constant-time)
     const isValid = await verifyHmacSha256(webhookSecret, rawBody, webhookSignature);
     if (!isValid) {
       return new Response(JSON.stringify({ error: "Invalid webhook signature" }), {
@@ -67,8 +86,9 @@ Deno.serve(async (req: Request) => {
     const paymentEntity = payload.payload?.payment?.entity;
     const razorpayOrderId = paymentEntity?.order_id;
     const razorpayPaymentId = paymentEntity?.id;
+    const paymentAmount = paymentEntity?.amount;
 
-    // Enforce official Razorpay x-razorpay-event-id header exclusively for stable deduplication
+    // Enforce official Razorpay x-razorpay-event-id header for deduplication
     const webhookEventId = req.headers.get("x-razorpay-event-id") || req.headers.get("X-Razorpay-Event-Id");
 
     if (!webhookEventId || webhookEventId.trim() === '') {
@@ -77,151 +97,178 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. EVENT DEDUPLICATION GUARD WITH STATE MACHINE (webhook_events)
-    const { data: existingEvent } = await supabase
-      .from('webhook_events')
-      .select('id, status')
-      .eq('event_id', webhookEventId)
-      .maybeSingle();
+    // 2. ATOMIC EVENT CLAIMING GUARD VIA RPC
+    const { data: claimed, error: claimErr } = await supabase.rpc('claim_webhook_event', {
+      p_event_id: webhookEventId,
+      p_event_type: event,
+      p_payload: payload,
+    });
 
-    if (existingEvent && existingEvent.status === 'processed') {
-      return new Response(JSON.stringify({ success: true, message: "Webhook event already processed." }), {
+    if (claimErr) {
+      console.error("Atomic event claim RPC error:", claimErr);
+      return new Response(JSON.stringify({ error: "Database error during event claim." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!claimed) {
+      return new Response(JSON.stringify({ success: true, message: "Webhook event already processed or locked." }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let webhookRecordId = existingEvent?.id;
-
-    if (!webhookRecordId) {
-      const { data: newEvent, error: insertErr } = await supabase.from('webhook_events').insert({
-        event_id: webhookEventId,
-        event_type: event,
-        payload: payload,
-        status: 'pending',
-      }).select('id').single();
-
-      if (insertErr || !newEvent) {
-        console.error("Webhook event ledger insert failed:", insertErr);
-        return new Response(JSON.stringify({ error: "Failed to record webhook event in ledger." }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-      webhookRecordId = newEvent.id;
-    }
-
-    // 3. PROCESS CAPTURED PAYMENT
+    // 3. PROCESS CAPTURED PAYMENT / ORDER PAID
     if (event === "payment.captured" || event === "order.paid") {
-      if (!razorpayOrderId || !razorpayPaymentId) {
-        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Missing Razorpay order/payment ID" }).eq('id', webhookRecordId);
-        return new Response(JSON.stringify({ error: "Missing required Razorpay payment or order ID." }), {
+      if (!razorpayOrderId || !razorpayPaymentId || paymentAmount === undefined) {
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Missing Razorpay order/payment ID or amount" }).eq('event_id', webhookEventId);
+        return new Response(JSON.stringify({ error: "Missing required Razorpay payment/order ID or amount." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Resolve exact pre-created payment record using razorpay_order_id
-      const { data: payRecord } = await supabase
+      // Resolve exact pre-created payment record using razorpay_order_id with strict error check
+      const { data: payRecord, error: payErr } = await supabase
         .from('payments')
         .select('*')
         .eq('razorpay_order_id', razorpayOrderId)
         .maybeSingle();
 
+      if (payErr) {
+        console.error("Payment lookup error:", payErr);
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Payment query failed" }).eq('event_id', webhookEventId);
+        return new Response(JSON.stringify({ error: "Database query failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       if (!payRecord) {
-        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Payment record not found" }).eq('id', webhookRecordId);
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Payment record not found" }).eq('event_id', webhookEventId);
         return new Response(JSON.stringify({ error: `No stored payment record found for Razorpay Order ID "${razorpayOrderId}".` }), {
           status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Resolve linked order
-      const { data: order } = await supabase
+      // Resolve linked order with strict error check
+      const { data: order, error: orderErr } = await supabase
         .from('orders')
         .select('*')
         .eq('id', payRecord.order_id)
         .maybeSingle();
 
+      if (orderErr) {
+        console.error("Order lookup error:", orderErr);
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Order query failed" }).eq('event_id', webhookEventId);
+        return new Response(JSON.stringify({ error: "Database query failed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       if (!order) {
-        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Order not found" }).eq('id', webhookRecordId);
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Order not found" }).eq('event_id', webhookEventId);
         return new Response(JSON.stringify({ error: `Order for payment record "${payRecord.id}" not found.` }), {
           status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Verify amount & currency matching
-      const expectedAmountPaise = Math.round(Number(order.total) * 100);
-      if (paymentEntity.amount !== expectedAmountPaise || paymentEntity.currency !== "INR") {
-        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Payment amount mismatch" }).eq('id', webhookRecordId);
-        return new Response(JSON.stringify({ error: `Webhook payment amount mismatch. Expected ₹${order.total}, received ₹${paymentEntity.amount / 100}` }), {
+      // Verify amount & currency matching against stored payment record
+      if (Number(paymentEntity.amount) !== Number(payRecord.amount) || paymentEntity.currency !== payRecord.currency) {
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Payment amount/currency mismatch" }).eq('event_id', webhookEventId);
+        return new Response(JSON.stringify({ error: "Webhook payment amount or currency mismatch." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Mark payment captured
-      await supabase
-        .from('payments')
-        .update({
-          razorpay_payment_id: razorpayPaymentId,
-          status: 'captured',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', payRecord.id);
-
-      // Confirm order and deduct inventory (via confirm_order_payment RPC)
-      const { error: confErr } = await supabase.rpc('confirm_order_payment', {
+      // AUTHORITATIVE STATE TRANSITION: Delegate entirely to confirm_order_payment RPC (DO NOT update payments.status = 'captured' directly here)
+      const { data: confirmation, error: confErr } = await supabase.rpc('confirm_order_payment', {
         p_order_id: order.id,
         p_razorpay_order_id: razorpayOrderId,
         p_razorpay_payment_id: razorpayPaymentId,
-        p_payment_amount: paymentEntity.amount,
+        p_payment_amount: Number(paymentEntity.amount),
       });
 
       if (confErr) {
         console.error("Webhook Order Confirmation Error:", confErr);
-        await supabase.from('webhook_events').update({ status: 'failed', error_message: confErr.message }).eq('id', webhookRecordId);
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: confErr.message }).eq('event_id', webhookEventId);
         return new Response(JSON.stringify({ error: confErr.message }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Mark webhook event successfully processed in audit ledger
-      const { error: ledgerErr } = await supabase
-        .from('webhook_events')
-        .update({ status: 'processed', error_message: null })
-        .eq('id', webhookRecordId);
+      if (!confirmation || confirmation.success !== true) {
+        const errorMsg = confirmation?.error || "Order confirmation failed.";
+        const isStockException = confirmation?.stock_exception === true;
+        const isDuplicatePayment = confirmation?.duplicate_payment === true;
 
-      if (ledgerErr) {
-        console.error("Webhook ledger update to processed failed:", ledgerErr);
-        return new Response(JSON.stringify({ error: "Failed to mark webhook event as processed in ledger." }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        await supabase.from('webhook_events').update({ status: isStockException ? 'processed' : 'failed', error_message: errorMsg }).eq('event_id', webhookEventId);
+
+        return new Response(JSON.stringify({
+          success: false,
+          stockException: isStockException,
+          duplicatePayment: isDuplicatePayment,
+          error: errorMsg,
+        }), {
+          status: isStockException ? 200 : 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
+      // Mark webhook event successfully processed
+      await supabase
+        .from('webhook_events')
+        .update({ status: 'processed', error_message: null })
+        .eq('event_id', webhookEventId);
+
       return new Response(JSON.stringify({
         success: true,
-        orderId: convResult?.order_id,
-        orderNumber: convResult?.order_number,
-        alreadyConverted: convResult?.already_converted || false,
+        orderId: confirmation.order_id,
+        orderNumber: confirmation.order_number,
+        alreadyPaid: confirmation.already_paid || false,
       }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Default event acknowledgment
-    const { error: defaultLedgerErr } = await supabase
-      .from('webhook_events')
-      .update({ status: 'processed' })
-      .eq('id', webhookRecordId);
+    // 4. PROCESS PAYMENT FAILED
+    if (event === "payment.failed") {
+      if (razorpayOrderId) {
+        const { data: payRec, error: payErr } = await supabase
+          .from('payments')
+          .select('id, status')
+          .eq('razorpay_order_id', razorpayOrderId)
+          .maybeSingle();
 
-    if (defaultLedgerErr) {
-      console.error("Default webhook ledger update failed:", defaultLedgerErr);
-      return new Response(JSON.stringify({ error: "Failed to update webhook event status." }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        if (!payErr && payRec && payRec.status === 'created') {
+          await supabase
+            .from('payments')
+            .update({
+              status: 'failed',
+              failure_code: paymentEntity?.error_code,
+              failure_description: paymentEntity?.error_description,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', payRec.id)
+            .eq('status', 'created');
+        }
+      }
+
+      await supabase.from('webhook_events').update({ status: 'processed' }).eq('event_id', webhookEventId);
+      return new Response(JSON.stringify({ success: true, event: "payment.failed processed" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Default event acknowledgment
+    await supabase
+      .from('webhook_events')
+      .update({ status: 'processed' })
+      .eq('event_id', webhookEventId);
+
     return new Response(JSON.stringify({ success: true, event }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err: any) {
     console.error("Webhook processing error:", err);
-    return new Response(JSON.stringify({ error: err.message || "Webhook processing failed" }), {
+    return new Response(JSON.stringify({ error: "Webhook processing failed" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
