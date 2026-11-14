@@ -117,7 +117,7 @@ create table if not exists public.addresses (
 -- 8. ORDERS TABLE (SECURE: Unique razorpay_order_id constraint)
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
-  order_number bigint generated always as identity,
+  order_number bigint,
   user_id uuid references auth.users(id) on delete set null,
   user_name text,
   user_email text,
@@ -154,7 +154,7 @@ create table if not exists public.order_items (
   variant_unit text,
   product_image text,
   price numeric(10, 2) not null,
-  quantity integer not null,
+  quantity integer not null CHECK (quantity > 0),
   total_price numeric(10, 2) not null,
   purchase_type text default 'normal' check (purchase_type in ('normal', 'preorder')),
   expected_available_at timestamptz,
