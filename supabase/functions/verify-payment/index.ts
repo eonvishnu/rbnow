@@ -5,17 +5,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-async function calculateHmacSha256Hex(secret: string, body: string): Promise<string> {
-  const encoder = new TextEncoder();
+async function calculateHmacSha256Hex(secret: string, data: string): Promise<string> {
+  const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(secret),
+    enc.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
-  return Array.from(new Uint8Array(signatureBuffer))
+  const signature = await crypto.subtle.sign("HMAC", key, enc.encode(data));
+  return Array.from(new Uint8Array(signature))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
@@ -46,11 +46,11 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     let razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
-    let secretRef = "RAZORPAY_KEY_SECRET";
+    let razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
 
     const { data: activeGw } = await supabase
       .from("payment_gateways")
-      .select("key_id, secret_reference")
+      .select("key_id, secret_key")
       .eq("is_active", true)
       .eq("provider", "razorpay")
       .maybeSingle();
@@ -58,11 +58,9 @@ Deno.serve(async (req: Request) => {
     if (activeGw?.key_id) {
       razorpayKeyId = activeGw.key_id;
     }
-    if (activeGw?.secret_reference) {
-      secretRef = activeGw.secret_reference;
+    if (activeGw?.secret_key) {
+      razorpayKeySecret = activeGw.secret_key;
     }
-
-    const razorpayKeySecret = Deno.env.get(secretRef) || Deno.env.get("RAZORPAY_KEY_SECRET");
 
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
 
@@ -72,6 +70,7 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
     const body = await req.json();
     const {
       razorpay_order_id,
@@ -98,79 +97,60 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. FETCH CHECKOUT SESSION SNAPSHOT
-    const targetCheckoutId = checkoutId || checkoutSessionId;
-    let checkout = null;
+    // 2. FETCH PENDING ORDER
+    const targetOrderId = checkoutId || checkoutSessionId;
+    let order = null;
 
-    if (targetCheckoutId) {
-      const { data: cData } = await supabase
-        .from('checkouts')
-        .select('*, checkout_items(*)')
-        .eq('id', targetCheckoutId)
+    if (targetOrderId) {
+      const { data: oData } = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .eq('id', targetOrderId)
         .maybeSingle();
-      checkout = cData;
+      order = oData;
     }
 
-    if (!checkout && razorpay_order_id) {
+    if (!order && razorpay_order_id) {
       const { data: payRec } = await supabase
         .from('payments')
-        .select('checkout_id')
+        .select('order_id')
         .eq('razorpay_order_id', razorpay_order_id)
         .maybeSingle();
 
-      if (payRec?.checkout_id) {
-        const { data: cData } = await supabase
-          .from('checkouts')
-          .select('*, checkout_items(*)')
-          .eq('id', payRec.checkout_id)
+      if (payRec?.order_id) {
+        const { data: oData } = await supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .eq('id', payRec.order_id)
           .maybeSingle();
-        checkout = cData;
+        order = oData;
       }
     }
 
-    if (!checkout) {
-      return new Response(JSON.stringify({ error: `Checkout session for Razorpay Order ID "${razorpay_order_id}" not found.` }), {
+    if (!order) {
+      return new Response(JSON.stringify({ error: `Order for Razorpay Order ID "${razorpay_order_id}" not found.` }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 3. STRICT PAYMENT-TO-CHECKOUT BINDING CHECK:
-    // Verify that 'payments' table ALREADY has a pre-created record linking checkout_id & razorpay_order_id
+    // 3. FETCH PAYMENT RECORD
     const { data: paymentRecord } = await supabase
       .from('payments')
       .select('*')
-      .eq('checkout_id', checkout.id)
+      .eq('order_id', order.id)
       .eq('razorpay_order_id', razorpay_order_id)
       .maybeSingle();
 
     if (!paymentRecord) {
-      return new Response(JSON.stringify({ error: "Razorpay order ID is not linked to this checkout session." }), {
+      return new Response(JSON.stringify({ error: "Razorpay order ID is not linked to this order." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 4. IDEMPOTENCY CHECK: If checkout already converted to order, return existing order
-    if (checkout.status === 'converted') {
-      const { data: existingOrder } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('checkout_id', checkout.id)
-        .maybeSingle();
-
-      return new Response(JSON.stringify({
-        success: true,
-        orderId: existingOrder?.id,
-        orderNumber: existingOrder ? `RB-${existingOrder.order_number}` : 'RB-101',
-        message: "Checkout already converted to order."
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // 5. DIRECT RAZORPAY SERVER-TO-SERVER PAYMENT API VERIFICATION
+    // 4. DIRECT RAZORPAY API PAYMENT VERIFICATION
+    let expectedAmountPaise = Number(paymentRecord.amount);
     try {
       const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
       const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${razorpay_payment_id}`, {
@@ -185,23 +165,36 @@ Deno.serve(async (req: Request) => {
       }
 
       const rzpPay = await rzpPayRes.json();
-      const expectedAmountPaise = Math.round(Number(checkout.grand_total) * 100);
+      if (
+        rzpPay.id !== razorpay_payment_id ||
+        rzpPay.order_id !== razorpay_order_id
+      ) {
+        return new Response(JSON.stringify({
+          error: "Payment does not belong to this Razorpay order."
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const orderAmountPaise = Math.round(Number(order.total) * 100);
+
+      if (
+        !Number.isSafeInteger(expectedAmountPaise) ||
+        expectedAmountPaise !== orderAmountPaise ||
+        rzpPay.amount !== expectedAmountPaise
+      ) {
+        return new Response(JSON.stringify({
+          error: "Payment amount mismatch."
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       if (rzpPay.status !== "captured" || rzpPay.currency !== "INR") {
         return new Response(JSON.stringify({ error: "Razorpay has not captured this INR payment." }), {
           status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (rzpPay.order_id !== razorpay_order_id || rzpPay.order_id !== paymentRecord.razorpay_order_id) {
-        return new Response(JSON.stringify({ error: "Payment gateway order ID mismatch." }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-
-      if (rzpPay.amount !== expectedAmountPaise) {
-        return new Response(JSON.stringify({ error: `Payment amount mismatch. Expected ₹${checkout.grand_total}, received ₹${rzpPay.amount / 100}` }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
     } catch (rzpErr) {
@@ -211,38 +204,53 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Update payment record to captured
-    await supabase.from('payments').update({
-      razorpay_payment_id,
-      razorpay_signature,
-      status: 'captured',
-      updated_at: new Date().toISOString(),
-    }).eq('id', paymentRecord.id);
-
-    // 6. ATOMIC CONVERSION TO CONFIRMED ORDER (Stage 3 via PostgreSQL RPC Procedure)
-    const { data: convResult, error: convErr } = await supabase.rpc('convert_checkout_to_order', {
-      p_checkout_id: checkout.id,
-      p_payment_id: paymentRecord.id,
+    // 5. CONFIRM ORDER & DEDUCT INVENTORY (via atomic confirm_order_payment RPC)
+    const { data: confirmation, error: confirmationError } = await supabase.rpc('confirm_order_payment', {
+      p_order_id: order.id,
+      p_razorpay_order_id: razorpay_order_id,
+      p_razorpay_payment_id: razorpay_payment_id,
+      p_payment_amount: expectedAmountPaise,
     });
 
-    if (convErr) {
-      console.error("Atomic Conversion RPC Error:", convErr);
-      throw convErr;
+    if (confirmationError) {
+      console.error("Order confirmation RPC failed:", confirmationError);
+      return new Response(JSON.stringify({
+        success: false,
+        paymentCaptured: true,
+        error: "Payment received, but order confirmation is pending. Please contact support if this persists."
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!confirmation?.success) {
+      return new Response(JSON.stringify({
+        success: false,
+        paymentCaptured: true,
+        stockException: confirmation?.stock_exception || false,
+        error: confirmation?.error || "Order confirmation failed."
+      }), {
+        status: confirmation?.stock_exception ? 200 : 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     return new Response(JSON.stringify({
       success: true,
-      orderId: convResult?.order_id,
-      orderNumber: convResult?.order_number ? `RB-${convResult.order_number}` : 'RB-101',
-      alreadyConverted: convResult?.already_converted || false,
+      orderId: confirmation.order_id,
+      orderNumber: confirmation.order_number
+        ? `RB-${confirmation.order_number}`
+        : null,
+      message: "Payment verified and order confirmed successfully!"
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
-  } catch (error: any) {
-    console.error("Error in verify-payment edge function:", error);
-    return new Response(JSON.stringify({ error: error.message || "Payment verification failed" }), {
+  } catch (err: any) {
+    console.error("Error in verify-payment edge function:", err);
+    return new Response(JSON.stringify({ error: err.message || "Server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

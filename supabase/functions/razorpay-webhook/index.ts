@@ -44,21 +44,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
-    let webhookSecretRef = "RAZORPAY_WEBHOOK_SECRET";
-
-    const { data: activeGw } = await supabase
-      .from("payment_gateways")
-      .select("webhook_secret_reference")
-      .eq("is_active", true)
-      .eq("provider", "razorpay")
-      .maybeSingle();
-
-    if (activeGw?.webhook_secret_reference) {
-      webhookSecretRef = activeGw.webhook_secret_reference;
-    }
-
-    const webhookSecret = Deno.env.get(webhookSecretRef) || Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
-
+    const webhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
     const webhookSignature = req.headers.get("x-razorpay-signature") || "";
     const rawBody = await req.text();
 
@@ -146,25 +132,25 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Resolve linked checkout session
-      const { data: checkout } = await supabase
-        .from('checkouts')
+      // Resolve linked order
+      const { data: order } = await supabase
+        .from('orders')
         .select('*')
-        .eq('id', payRecord.checkout_id)
+        .eq('id', payRecord.order_id)
         .maybeSingle();
 
-      if (!checkout) {
-        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Checkout session not found" }).eq('id', webhookRecordId);
-        return new Response(JSON.stringify({ error: `Checkout session for payment record "${payRecord.id}" not found.` }), {
+      if (!order) {
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: "Order not found" }).eq('id', webhookRecordId);
+        return new Response(JSON.stringify({ error: `Order for payment record "${payRecord.id}" not found.` }), {
           status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       // Verify amount & currency matching
-      const expectedAmountPaise = Math.round(Number(checkout.grand_total) * 100);
+      const expectedAmountPaise = Math.round(Number(order.total) * 100);
       if (paymentEntity.amount !== expectedAmountPaise || paymentEntity.currency !== "INR") {
         await supabase.from('webhook_events').update({ status: 'failed', error_message: "Payment amount mismatch" }).eq('id', webhookRecordId);
-        return new Response(JSON.stringify({ error: `Webhook payment amount mismatch. Expected ₹${checkout.grand_total}, received ₹${paymentEntity.amount / 100}` }), {
+        return new Response(JSON.stringify({ error: `Webhook payment amount mismatch. Expected ₹${order.total}, received ₹${paymentEntity.amount / 100}` }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -179,16 +165,18 @@ Deno.serve(async (req: Request) => {
         })
         .eq('id', payRecord.id);
 
-      // Execute atomic order conversion RPC
-      const { data: convResult, error: convErr } = await supabase.rpc('convert_checkout_to_order', {
-        p_checkout_id: checkout.id,
-        p_payment_id: payRecord.id,
+      // Confirm order and deduct inventory (via confirm_order_payment RPC)
+      const { error: confErr } = await supabase.rpc('confirm_order_payment', {
+        p_order_id: order.id,
+        p_razorpay_order_id: razorpayOrderId,
+        p_razorpay_payment_id: razorpayPaymentId,
+        p_payment_amount: paymentEntity.amount,
       });
 
-      if (convErr || (convResult && !convResult.success)) {
-        console.error("Webhook Order Conversion Error:", convErr || convResult?.error);
-        await supabase.from('webhook_events').update({ status: 'failed', error_message: convErr?.message || convResult?.error || "Order conversion failed" }).eq('id', webhookRecordId);
-        return new Response(JSON.stringify({ error: convErr?.message || convResult?.error || "Order conversion failed." }), {
+      if (confErr) {
+        console.error("Webhook Order Confirmation Error:", confErr);
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: confErr.message }).eq('id', webhookRecordId);
+        return new Response(JSON.stringify({ error: confErr.message }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthProvider';
 import { useCart } from '@/context/CartProvider';
 import Link from 'next/link';
-import { 
+import { useRouter } from 'next/navigation';
+import {
   ArrowLeft, 
   Package, 
   Check,
@@ -29,6 +30,7 @@ import {
 export default function OrdersPage() {
   const { user, loading: authLoading } = useAuth();
   const { addToCart } = useCart();
+  const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'active' | 'past'>('active');
   const [orders, setOrders] = useState<any[]>([]);
@@ -37,6 +39,19 @@ export default function OrdersPage() {
 
   // Accordion Expand/Collapse Map
   const [expandedOrderMap, setExpandedOrderMap] = useState<Record<string, boolean>>({});
+
+  const handleRetryPayment = (order: any) => {
+    order.items.forEach((item: any) => {
+      addToCart({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        unit: item.unit,
+        img: item.img,
+      }, item.qty);
+    });
+    router.push('/cart');
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -263,9 +278,15 @@ export default function OrdersPage() {
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="text-xl font-black text-[#004d3b] font-mono tracking-tight">{order.orderId}</span>
-                          <span className="bg-[#fef08a] text-[#854d0e] text-[11px] font-black px-3 py-0.5 rounded-full flex items-center gap-1 uppercase">
-                            <Clock size={12} /> {statusVal.replace(/_/g, ' ')}
-                          </span>
+                          {statusVal === 'pending_payment' ? (
+                            <span className="bg-rose-100 text-rose-800 text-[11px] font-black px-3 py-0.5 rounded-full flex items-center gap-1 uppercase">
+                              <XCircle size={12} /> Payment Failed / Pending
+                            </span>
+                          ) : (
+                            <span className="bg-[#fef08a] text-[#854d0e] text-[11px] font-black px-3 py-0.5 rounded-full flex items-center gap-1 uppercase">
+                              <Clock size={12} /> {statusVal.replace(/_/g, ' ')}
+                            </span>
+                          )}
                         </div>
 
                         <p className="text-xs text-gray-500 font-medium">
@@ -292,6 +313,25 @@ export default function OrdersPage() {
                     {/* EXPANDED DETAILS AREA */}
                     {isExpanded && (
                       <div className="p-5 pt-0 space-y-5 border-t border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
+
+                        {/* Retry Payment Banner if payment failed / pending */}
+                        {statusVal === 'pending_payment' && (
+                          <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4 space-y-3 mt-4">
+                            <div className="flex items-center gap-2 text-rose-900 font-bold text-xs">
+                              <XCircle size={16} className="text-rose-600 shrink-0" />
+                              <span>Payment was not completed for this order. Would you like to retry payment?</span>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRetryPayment(order);
+                              }}
+                              className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest shadow-sm transition-all"
+                            >
+                              Retry Payment Now
+                            </button>
+                          </div>
+                        )}
 
                         {/* Status Heading & Call Support Button */}
                         <div className="pt-4 flex justify-between items-start gap-3">

@@ -224,17 +224,29 @@ create table if not exists public.order_status_history (
   created_at timestamptz default now()
 );
 
--- 13. PAYMENTS TABLE (SECURE: Default status is 'pending', unique provider_payment_id)
+-- 13. PAYMENTS TABLE (Multi-attempt payment audit ledger)
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   order_id uuid references public.orders(id) on delete cascade not null,
-  provider text default 'razorpay',
-  provider_order_id text unique,
-  provider_payment_id text unique,
-  amount numeric(10, 2) not null,
-  status text default 'pending' check (status in ('pending', 'paid', 'failed', 'refunded')),
-  created_at timestamptz default now()
+  razorpay_order_id text,
+  razorpay_payment_id text,
+  amount bigint not null, -- in paise
+  currency text not null default 'INR',
+  status text not null default 'created' check (status in ('created', 'authorized', 'captured', 'failed', 'refunded')),
+  method text,
+  failure_code text,
+  failure_description text,
+  refund_id text,
+  refund_amount bigint default 0,
+  refund_status text check (refund_status in ('pending', 'processed', 'failed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  paid_at timestamptz,
+  refunded_at timestamptz
 );
+
+create index if not exists idx_payments_order_id on public.payments(order_id);
+create index if not exists idx_payments_razorpay_order_id on public.payments(razorpay_order_id);
 
 -- 14. COUPON USAGES TABLE (Multi-signal promo anti-abuse tracking)
 create table if not exists public.coupon_usages (
@@ -439,6 +451,7 @@ create unique index if not exists idx_payment_gateways_single_active
 -- 27. ATOMIC STORED PROCEDURE FOR PAYMENT CONFIRMATION & INVENTORY DEDUCTION
 CREATE OR REPLACE FUNCTION public.confirm_order_payment(
   p_order_id UUID,
+  p_razorpay_order_id TEXT,
   p_razorpay_payment_id TEXT,
   p_payment_amount NUMERIC
 ) RETURNS JSONB
@@ -449,12 +462,13 @@ AS $$
 DECLARE
   v_order RECORD;
   v_item RECORD;
-  v_existing_payment_order_id UUID;
+  v_payment_record RECORD;
   v_variant_stock INT;
   v_variant_is_available BOOLEAN;
   v_has_stock_issue BOOLEAN := FALSE;
   v_failed_item_name TEXT := '';
   v_rows_updated INT;
+  v_assigned_order_number BIGINT;
 BEGIN
   -- 1. STRICT PAYMENT ID AND AMOUNT VALIDATION
   IF p_razorpay_payment_id IS NULL OR TRIM(p_razorpay_payment_id) = '' THEN
@@ -475,14 +489,16 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Order not found');
   END IF;
 
-  -- 3. PAYMENT ID OWNERSHIP CHECK (Ensure payment ID is not registered to a different order)
-  SELECT order_id INTO v_existing_payment_order_id
+  -- 3. FETCH SPECIFIC PAYMENT ATTEMPT RECORD
+  SELECT * INTO v_payment_record
   FROM public.payments
-  WHERE provider_payment_id = p_razorpay_payment_id
+  WHERE order_id = p_order_id AND razorpay_order_id = p_razorpay_order_id
   FOR UPDATE;
 
-  IF v_existing_payment_order_id IS NOT NULL AND v_existing_payment_order_id <> p_order_id THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Payment ID is already registered for another order');
+  IF NOT FOUND THEN
+    INSERT INTO public.payments (order_id, razorpay_order_id, amount, currency, status)
+    VALUES (p_order_id, p_razorpay_order_id, p_payment_amount, 'INR', 'created')
+    RETURNING * INTO v_payment_record;
   END IF;
 
   -- 4. IDEMPOTENCY CHECK (Preserves stock exception status for cancelled orders)
@@ -498,10 +514,6 @@ BEGIN
       );
     END IF;
 
-    IF v_order.razorpay_payment_id IS NOT NULL AND v_order.razorpay_payment_id <> p_razorpay_payment_id THEN
-      RETURN jsonb_build_object('success', false, 'error', 'Order already paid with a different payment ID');
-    END IF;
-
     RETURN jsonb_build_object(
       'success', true,
       'already_paid', true,
@@ -510,11 +522,11 @@ BEGIN
     );
   END IF;
 
-  -- 5. EXACT AMOUNT MATCH CHECK
-  IF v_order.total <> p_payment_amount THEN
+  -- 5. EXACT AMOUNT MATCH CHECK (amount in paise)
+  IF v_order.total * 100 <> p_payment_amount AND v_order.total <> p_payment_amount THEN
     RETURN jsonb_build_object(
       'success', false,
-      'error', format('Payment amount mismatch: Expected %s, received %s', v_order.total, p_payment_amount)
+      'error', format('Payment amount mismatch: Expected %s, received %s', v_order.total * 100, p_payment_amount)
     );
   END IF;
 
@@ -543,14 +555,20 @@ BEGIN
     UPDATE public.orders
     SET payment_status = 'paid',
         status = 'cancelled',
+        payment_id = v_payment_record.id,
+        razorpay_order_id = p_razorpay_order_id,
         razorpay_payment_id = p_razorpay_payment_id,
         notes = format('Stock exception for %s. Refund/replacement required.', v_failed_item_name),
         updated_at = NOW()
     WHERE id = p_order_id;
 
-    INSERT INTO public.payments (order_id, provider, provider_order_id, provider_payment_id, amount, status)
-    VALUES (v_order.id, 'razorpay', v_order.razorpay_order_id, p_razorpay_payment_id, p_payment_amount, 'paid')
-    ON CONFLICT (provider_payment_id) DO NOTHING;
+    UPDATE public.payments
+    SET status = 'captured',
+        razorpay_payment_id = p_razorpay_payment_id,
+        refund_review_required = TRUE,
+        paid_at = NOW(),
+        updated_at = NOW()
+    WHERE id = v_payment_record.id;
 
     RETURN jsonb_build_object(
       'success', false,
@@ -559,20 +577,33 @@ BEGIN
     );
   END IF;
 
-  -- 7. ATOMIC ORDER STATUS TRANSITION TO CONFIRMED
+  -- 7. ASSIGN STRICTLY SEQUENTIAL ORDER NUMBER ONLY ON PAYMENT CONFIRMATION
+  IF v_order.order_number IS NULL THEN
+    v_assigned_order_number := nextval('public.confirmed_order_number_seq');
+  ELSE
+    v_assigned_order_number := v_order.order_number;
+  END IF;
+
+  -- 8. ATOMIC ORDER STATUS TRANSITION TO CONFIRMED
   UPDATE public.orders
-  SET payment_status = 'paid',
+  SET order_number = v_assigned_order_number,
+      payment_status = 'paid',
       status = 'confirmed',
+      payment_id = v_payment_record.id,
+      razorpay_order_id = p_razorpay_order_id,
       razorpay_payment_id = p_razorpay_payment_id,
       updated_at = NOW()
   WHERE id = p_order_id;
 
-  -- 8. INSERT PAYMENT RECORD
-  INSERT INTO public.payments (order_id, provider, provider_order_id, provider_payment_id, amount, status)
-  VALUES (v_order.id, 'razorpay', v_order.razorpay_order_id, p_razorpay_payment_id, p_payment_amount, 'paid')
-  ON CONFLICT (provider_payment_id) DO NOTHING;
+  -- 9. UPDATE PAYMENT RECORD TO CAPTURED
+  UPDATE public.payments
+  SET status = 'captured',
+      razorpay_payment_id = p_razorpay_payment_id,
+      paid_at = NOW(),
+      updated_at = NOW()
+  WHERE id = v_payment_record.id;
 
-  -- 9. ATOMIC AGGREGATED STOCK DEDUCTION WITH ROW COUNT CHECK
+  -- 10. ATOMIC AGGREGATED STOCK DEDUCTION WITH ROW COUNT CHECK
   FOR v_item IN
     SELECT variant_id, SUM(quantity) as total_qty
     FROM public.order_items
@@ -586,7 +617,7 @@ BEGIN
     WHERE id = v_item.variant_id AND stock >= v_item.total_qty;
 
     GET DIAGNOSTICS v_rows_updated = ROW_COUNT;
-    IF v_rows_updated = 0 THEN
+    If v_rows_updated = 0 THEN
       RAISE EXCEPTION 'Atomic stock deduction failed for variant %', v_item.variant_id;
     END IF;
 
@@ -598,7 +629,7 @@ BEGIN
     'success', true,
     'already_paid', false,
     'order_id', v_order.id,
-    'order_number', v_order.order_number
+    'order_number', v_assigned_order_number
   );
 END;
 $$;
