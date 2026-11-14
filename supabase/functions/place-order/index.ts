@@ -217,6 +217,277 @@ Deno.serve(async (req: Request) => {
     // ---------------------------------------------------------
 
     if (isRetry) {
+      // Resolve the existing order before reserving another attempt.
+      const { data: retryOrder, error: retryOrderErr } = await supabase
+        .from("orders")
+        .select("id, user_id, status, payment_status, currency, total, order_number, fulfillment_exception")
+        .eq("id", checkoutId)
+        .eq("user_id", finalUserId)
+        .maybeSingle();
+
+      if (retryOrderErr) {
+        console.error("Retry order lookup failed:", retryOrderErr);
+        return jsonResponse({ error: "Unable to verify your existing order. Please try again." }, 500);
+      }
+
+      if (!retryOrder) {
+        return jsonResponse({ error: "Pending order not found." }, 404);
+      }
+
+      if (retryOrder.payment_status === "paid") {
+        return jsonResponse({
+          success: true,
+          paymentConfirmed: true,
+          requiresReview: retryOrder.fulfillment_exception !== null,
+          checkoutId,
+          orderNumber: retryOrder.order_number,
+        });
+      }
+
+      if (retryOrder.status !== "pending_payment" || retryOrder.payment_status !== "pending") {
+        return jsonResponse({ error: "This order is no longer eligible for payment." }, 409);
+      }
+
+      const retryTotal = Number(retryOrder.total);
+      const retryAmountPaise = Math.round(retryTotal * 100);
+
+      if (!Number.isFinite(retryTotal) || retryTotal <= 0 || !Number.isSafeInteger(retryAmountPaise)) {
+        return jsonResponse({ error: "Stored order amount is invalid. Please contact support." }, 409);
+      }
+
+      // Reconcile every attempt that could still represent money movement.
+      // A gateway/API error is never treated as proof that an attempt failed.
+      const { data: priorAttempts, error: priorAttemptsErr } = await supabase
+        .from("payments")
+        .select("id, razorpay_order_id, razorpay_payment_id, amount, currency, status")
+        .eq("order_id", checkoutId)
+        .in("status", ["created", "authorized", "captured", "failed"])
+        .order("created_at", { ascending: true });
+
+      if (priorAttemptsErr) {
+        console.error("Prior payment attempts lookup failed:", priorAttemptsErr);
+        return jsonResponse({ error: "Unable to reconcile your previous payment. Please try again later." }, 500);
+      }
+
+      const razorpayAuth = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
+      let reconciledCapture = false;
+      let capturedOrderNumber: number | null = retryOrder.order_number ?? null;
+      let capturedNeedsReview = false;
+
+      const fetchRazorpayJson = async (url: string) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), RAZORPAY_TIMEOUT_MS);
+        try {
+          const response = await fetch(url, {
+            method: "GET",
+            signal: controller.signal,
+            headers: { Authorization: razorpayAuth },
+          });
+          const raw = await response.text();
+          let parsed: any;
+          try {
+            parsed = raw ? JSON.parse(raw) : null;
+          } catch {
+            throw new Error("Razorpay returned invalid JSON.");
+          }
+          if (!response.ok || !parsed || typeof parsed !== "object") {
+            throw new Error(`Razorpay reconciliation request failed (${response.status}).`);
+          }
+          return parsed;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      };
+
+      for (const attempt of priorAttempts || []) {
+        if (!isValidRazorpayOrderId(attempt.razorpay_order_id)) {
+          // A failed attempt with no gateway order ID can be a definite
+          // pre-gateway rejection. Any unresolved attempt without an ID is
+          // ambiguous and must not be retried automatically.
+          if (attempt.status === "failed") continue;
+          return jsonResponse({
+            error: "A previous payment attempt has an uncertain gateway outcome. Please contact support before trying again.",
+            checkoutId,
+          }, 409);
+        }
+
+        if (Number(attempt.amount) !== retryAmountPaise || String(attempt.currency).toUpperCase() !== "INR") {
+          return jsonResponse({ error: "Previous payment attempt details do not match this order. Please contact support." }, 409);
+        }
+
+        let gatewayOrder: any;
+        let paymentCollection: any;
+        try {
+          gatewayOrder = await fetchRazorpayJson(
+            `https://api.razorpay.com/v1/orders/${encodeURIComponent(attempt.razorpay_order_id)}`,
+          );
+          paymentCollection = await fetchRazorpayJson(
+            `https://api.razorpay.com/v1/orders/${encodeURIComponent(attempt.razorpay_order_id)}/payments`,
+          );
+        } catch (reconcileErr) {
+          console.error("Razorpay retry reconciliation failed:", attempt.id, reconcileErr);
+          return jsonResponse({
+            error: "We could not safely verify your previous payment with Razorpay. Please do not pay again yet; try later or contact support.",
+            checkoutId,
+          }, 409);
+        }
+
+        const items = paymentCollection?.items;
+        if (
+          gatewayOrder.id !== attempt.razorpay_order_id ||
+          Number(gatewayOrder.amount) !== retryAmountPaise ||
+          gatewayOrder.currency !== "INR" ||
+          gatewayOrder.notes?.order_id !== checkoutId ||
+          gatewayOrder.notes?.payment_attempt_id !== attempt.id ||
+          !Array.isArray(items) ||
+          !Number.isSafeInteger(Number(paymentCollection.count)) ||
+          Number(paymentCollection.count) !== items.length ||
+          !Number.isSafeInteger(Number(gatewayOrder.attempts)) ||
+          Number(gatewayOrder.attempts) !== items.length
+        ) {
+          return jsonResponse({
+            error: "Razorpay returned incomplete or mismatched payment information. Please contact support before retrying.",
+            checkoutId,
+          }, 409);
+        }
+
+        const capturedPayments = items.filter((payment: any) =>
+          payment?.status === "captured" && payment?.captured === true
+        );
+
+        if (capturedPayments.length > 1) {
+          return jsonResponse({
+            error: "Multiple captured payments were found for one gateway order. The order requires manual payment reconciliation.",
+            checkoutId,
+            paymentCaptured: true,
+          }, 409);
+        }
+
+        if (capturedPayments.length === 1) {
+          const capturedPayment = capturedPayments[0];
+          if (
+            gatewayOrder.status !== "paid" ||
+            Number(gatewayOrder.amount_paid) !== retryAmountPaise ||
+            capturedPayment.order_id !== attempt.razorpay_order_id ||
+            !/^pay_[A-Za-z0-9]+$/.test(capturedPayment.id || "") ||
+            Number(capturedPayment.amount) !== retryAmountPaise ||
+            capturedPayment.currency !== "INR"
+          ) {
+            return jsonResponse({
+              error: "A captured payment was detected, but the gateway order details are inconsistent. Please contact support.",
+              checkoutId,
+              paymentCaptured: true,
+            }, 409);
+          }
+
+          const { data: confirmResult, error: confirmErr } = await supabase.rpc(
+            "confirm_order_payment",
+            {
+              p_order_id: checkoutId,
+              p_razorpay_order_id: attempt.razorpay_order_id,
+              p_razorpay_payment_id: capturedPayment.id,
+              p_payment_amount: retryAmountPaise,
+            },
+          );
+
+          if (confirmErr) {
+            console.error("Payment reconciliation RPC failed:", confirmErr);
+            return jsonResponse({
+              error: "Razorpay confirms your payment, but order confirmation is still being reconciled. Please do not pay again.",
+              checkoutId,
+              paymentCaptured: true,
+            }, 500);
+          }
+
+          if (!confirmResult || typeof confirmResult !== "object") {
+            return jsonResponse({ error: "Payment confirmation returned an invalid result. Please contact support.", checkoutId, paymentCaptured: true }, 500);
+          }
+
+          if (confirmResult.success === true || confirmResult.stock_exception === true || confirmResult.duplicate_payment === true) {
+            reconciledCapture = true;
+            capturedOrderNumber = confirmResult.order_number ?? capturedOrderNumber;
+            if (confirmResult.stock_exception === true || confirmResult.duplicate_payment === true) {
+              capturedNeedsReview = true;
+            }
+          } else {
+            return jsonResponse({
+              error: confirmResult.error || "Payment was captured but could not be reconciled. Please contact support.",
+              checkoutId,
+              paymentCaptured: true,
+            }, 409);
+          }
+          continue;
+        }
+
+        const allPaymentsFailed = items.length > 0 && items.every((payment: any) =>
+          payment?.status === "failed" &&
+          payment?.captured === false &&
+          payment?.order_id === attempt.razorpay_order_id &&
+          Number(payment?.amount) === retryAmountPaise &&
+          payment?.currency === "INR" &&
+          /^pay_[A-Za-z0-9]+$/.test(payment?.id || "")
+        );
+
+        const noPaymentWasAttempted =
+          items.length === 0 &&
+          gatewayOrder.status === "created" &&
+          Number(gatewayOrder.attempts) === 0 &&
+          Number(gatewayOrder.amount_paid) === 0;
+
+        const gatewayConfirmsAllFailed =
+          allPaymentsFailed &&
+          gatewayOrder.status === "attempted" &&
+          Number(gatewayOrder.amount_paid) === 0;
+
+        if (!noPaymentWasAttempted && !gatewayConfirmsAllFailed) {
+          return jsonResponse({
+            error: "A previous payment is still active or its outcome is uncertain. Please do not pay again until it has been reconciled.",
+            checkoutId,
+          }, 409);
+        }
+
+        if (attempt.status === "authorized" || attempt.status === "captured") {
+          return jsonResponse({
+            error: "The internal payment record is not consistent with Razorpay's latest status. Manual reconciliation is required.",
+            checkoutId,
+          }, 409);
+        }
+
+        if (attempt.status === "created") {
+          const { data: failedAttempt, error: failAttemptErr } = await supabase
+            .from("payments")
+            .update({
+              status: "failed",
+              failure_description: noPaymentWasAttempted
+                ? "Razorpay confirmed that no payment was attempted during retry reconciliation."
+                : "Razorpay confirmed that all payment attempts failed during retry reconciliation.",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", attempt.id)
+            .eq("status", "created")
+            .select("id")
+            .maybeSingle();
+
+          if (failAttemptErr || !failedAttempt) {
+            console.error("Conditional payment-attempt reconciliation update failed:", attempt.id, failAttemptErr);
+            return jsonResponse({
+              error: "The previous payment changed while it was being reconciled. Please retry the order-status check before paying again.",
+              checkoutId,
+            }, 409);
+          }
+        }
+      }
+
+      if (reconciledCapture) {
+        return jsonResponse({
+          success: true,
+          paymentConfirmed: true,
+          requiresReview: capturedNeedsReview,
+          checkoutId,
+          orderNumber: capturedOrderNumber,
+        });
+      }
+
       const { data: reservation, error: resErr } = await supabase.rpc(
         "reserve_payment_attempt",
         {
@@ -350,16 +621,13 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Temporary duplicate-submission guard.
+      // Durable pending-checkout guard: return the existing checkout instead of creating another order.
       const { data: recentOrders, error: recentErr } = await supabase
         .from("orders")
         .select("id, created_at")
         .eq("user_id", finalUserId)
         .eq("status", "pending_payment")
-        .gte(
-          "created_at",
-          new Date(Date.now() - 30000).toISOString(),
-        )
+        .order("created_at", { ascending: false })
         .limit(1);
 
       if (recentErr) {
@@ -374,9 +642,10 @@ Deno.serve(async (req: Request) => {
         return jsonResponse(
           {
             error:
-              "A checkout request is already in progress. Please wait a moment or retry your existing order.",
+              "You already have a pending checkout. Resume that checkout instead of creating another order.",
+            checkoutId: recentOrders[0].id,
           },
-          429,
+          409,
         );
       }
 

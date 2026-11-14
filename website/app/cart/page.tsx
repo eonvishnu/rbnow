@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from "@/lib/supabase";
 import { useCart } from '@/context/CartProvider';
 import { useAuth } from '@/context/AuthProvider';
@@ -43,7 +43,7 @@ export default function CartPage() {
   const { user, userData, loading: authLoading } = useAuth();
   const { location, setIsModalOpen } = useLocation();
   const router = useRouter();
-  
+
   const [stockData, setStockData] = useState<Record<string, number>>({});
   const [checkingStock, setCheckingStock] = useState(true);
 
@@ -63,6 +63,8 @@ export default function CartPage() {
   // Payment Placement State
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
+  const checkoutInProgressRef = useRef(false);
+  const paymentVerificationInProgressRef = useRef(false);
 
   // Helper to load Razorpay SDK dynamically
   const loadRazorpaySDK = (): Promise<boolean> => {
@@ -317,7 +319,7 @@ export default function CartPage() {
   };
 
   const handleExpressCheckout = async () => {
-    if (authLoading || hasStockIssues) return;
+    if (checkoutInProgressRef.current || authLoading || hasStockIssues) return;
     setCheckoutError('');
 
     if (!user) {
@@ -331,7 +333,11 @@ export default function CartPage() {
       return;
     }
 
+    checkoutInProgressRef.current = true;
     setIsPlacingOrder(true);
+    let modalOpened = false;
+    const pendingCheckoutKey = `royal_bengal_checkout_${user.id}`;
+
     try {
       const browserId = getOrCreateBrowserId();
       const payloadItems = Object.values(groupedCart).map((item: any) => ({
@@ -351,41 +357,80 @@ export default function CartPage() {
         address: location.address || `${location.area || 'Madhapur'}, ${location.city || 'Hyderabad'}`,
       };
 
+      let storedCheckoutId: string | null = null;
+      try {
+        storedCheckoutId = window.sessionStorage.getItem(pendingCheckoutKey);
+      } catch (storageErr) {
+        console.warn('Could not read pending checkout from session storage:', storageErr);
+      }
+
+      // A retry reuses the immutable server-side order snapshot. Do not send
+      // the current cart, address or coupon as replacement order data.
+      const requestBody = storedCheckoutId
+        ? { checkoutId: storedCheckoutId }
+        : {
+            items: payloadItems,
+            details: deliveryDetails,
+            couponCode: appliedCoupon ? appliedCoupon.code : null,
+            userId: user.id,
+            browserId,
+          };
+
       const { data, error: edgeError } = await supabase.functions.invoke('place-order', {
-        body: {
-          items: payloadItems,
-          details: deliveryDetails,
-          couponCode: appliedCoupon ? appliedCoupon.code : null,
-          userId: user.id,
-          browserId: browserId,
-        }
+        body: requestBody,
       });
 
+      if (data?.checkoutId) {
+        try {
+          window.sessionStorage.setItem(pendingCheckoutKey, data.checkoutId);
+        } catch (storageErr) {
+          console.warn('Could not save pending checkout ID:', storageErr);
+        }
+      }
+
+      if (data?.success === true && data?.paymentConfirmed === true) {
+        try {
+          window.sessionStorage.removeItem(pendingCheckoutKey);
+        } catch (storageErr) {
+          console.warn('Could not clear confirmed checkout ID:', storageErr);
+        }
+        clearCart();
+        router.push('/orders');
+        return;
+      }
+
       if (edgeError || !data || data.error) {
-        let serverMsg = data?.error;
-        if (edgeError) {
+        let errorBody: any = data || null;
+        if (edgeError?.context && typeof edgeError.context.json === 'function') {
           try {
-            if (edgeError.context && typeof edgeError.context.json === 'function') {
-              const errBody = await edgeError.context.json();
-              if (errBody && errBody.error) serverMsg = errBody.error;
+            const parsedBody = await edgeError.context.json();
+            if (parsedBody && typeof parsedBody === 'object') {
+              errorBody = parsedBody;
+              if (parsedBody.checkoutId) {
+                try {
+                  window.sessionStorage.setItem(pendingCheckoutKey, parsedBody.checkoutId);
+                } catch (storageErr) {
+                  console.warn('Could not save recovered checkout ID:', storageErr);
+                }
+              }
             }
-          } catch (e) {}
-          if (!serverMsg) serverMsg = edgeError.message;
+          } catch (e) {
+            // Keep the original invoke error if the response body is unavailable.
+          }
         }
 
-        const userFriendlyMsg = serverMsg || 'Unable to process your order at the moment. Please check your cart or try again.';
-
-        throw new Error(userFriendlyMsg);
+        const serverMsg = errorBody?.error || edgeError?.message;
+        throw new Error(serverMsg || 'Unable to process checkout. Please try again.');
       }
 
-      if (!data.keyId || !data.razorpayOrderId) {
-        throw new Error("Invalid payment initialization response from server.");
+      if (!data.keyId || !data.razorpayOrderId || !data.checkoutId) {
+        throw new Error('Invalid payment initialization response from server. Your pending checkout has been retained if it was created.');
       }
 
-      // Ensure Razorpay SDK is loaded
+      // Ensure Razorpay SDK is loaded.
       const isLoaded = await loadRazorpaySDK();
       if (!isLoaded || !(window as any).Razorpay) {
-        throw new Error('Could not load Razorpay payment gateway. Please check internet connection and try again.');
+        throw new Error('Could not load Razorpay payment gateway. Your pending checkout has been saved; please try again.');
       }
 
       const options = {
@@ -401,7 +446,18 @@ export default function CartPage() {
           contact: deliveryDetails.phone,
         },
         theme: { color: '#004D3B' },
+        modal: {
+          ondismiss: () => {
+            if (!paymentVerificationInProgressRef.current) {
+              setIsPlacingOrder(false);
+              checkoutInProgressRef.current = false;
+              setCheckoutError('Payment window closed. Your checkout is saved; you can safely resume it.');
+            }
+          },
+        },
         handler: async (response: any) => {
+          paymentVerificationInProgressRef.current = true;
+          setIsPlacingOrder(true);
           try {
             const { data: vData, error: vErr } = await supabase.functions.invoke('verify-payment', {
               body: {
@@ -409,36 +465,65 @@ export default function CartPage() {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
-              }
+              },
             });
 
-            if (!vErr && vData && vData.success) {
+            if (!vErr && vData?.success === true) {
+              try {
+                window.sessionStorage.removeItem(pendingCheckoutKey);
+              } catch (storageErr) {
+                console.warn('Could not clear confirmed checkout ID:', storageErr);
+              }
               clearCart();
               router.push('/orders');
+            } else if (!vErr && (vData?.stockException === true || vData?.duplicatePayment === true)) {
+              try {
+                window.sessionStorage.removeItem(pendingCheckoutKey);
+              } catch (storageErr) {
+                console.warn('Could not clear reconciled checkout ID:', storageErr);
+              }
+              clearCart();
+              setCheckoutError(vData.error || 'Your payment was received, but the order needs staff review.');
+              router.push('/orders');
             } else {
-              alert('Payment verification failed: ' + ((vData && vData.error) || 'Signature error'));
+              const message = (vData && vData.error) || (vErr && vErr.message) || 'Payment confirmation is still pending.';
+              setCheckoutError(`${message} Do not pay again until you check your order status.`);
+              alert(`${message}\n\nDo not make another payment yet. Check your order status or contact support.`);
             }
           } catch (err: any) {
             console.error(err);
-            alert('Payment verification error: ' + err.message);
+            const message = err?.message || 'Payment confirmation could not be completed.';
+            setCheckoutError(`${message} Do not pay again until you check your order status.`);
+            alert(`${message}\n\nDo not make another payment yet. Check your order status or contact support.`);
+          } finally {
+            paymentVerificationInProgressRef.current = false;
+            setIsPlacingOrder(false);
+            checkoutInProgressRef.current = false;
           }
         },
       };
 
       const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', (response: any) => {
+        const description = response?.error?.description || 'Your payment was declined.';
+        setCheckoutError(`${description} Your checkout is saved. Close the payment window when you are finished; do not start another checkout.`);
+      });
       rzp.open();
-
+      modalOpened = true;
     } catch (err: any) {
       console.error(err);
       setCheckoutError(err.message || 'Checkout failed. Please try again.');
     } finally {
-      setIsPlacingOrder(false);
+      if (!modalOpened) {
+        setIsPlacingOrder(false);
+        checkoutInProgressRef.current = false;
+      }
     }
   };
 
   return (
     <main className="min-h-screen bg-[#F5F7F6] text-[#17211D] pb-28 w-full max-w-[100vw] overflow-x-hidden selection:bg-[#FFC400] selection:text-[#004D3B]">
-      
+
       {/* Deep Emerald Header Bar (20% Brand Accent) */}
       <div className="bg-[#004D3B] text-white p-4 sm:p-5 flex items-center justify-between sticky top-0 z-40 shadow-md">
         <Link href="/" className="text-[#FFC400] font-bold text-xs uppercase tracking-widest flex items-center gap-2 hover:text-white transition-all">
@@ -481,7 +566,7 @@ export default function CartPage() {
             <Map size={14} /> Change Address
           </button>
         </div>
-        
+
         {cart.length === 0 ? (
           <div className="py-20 max-w-md mx-auto text-center bg-white border border-[#E3EAE6] rounded-3xl p-8 shadow-xs">
             <div className="w-16 h-16 bg-[#E5F5EF] text-[#006B50] rounded-2xl mx-auto flex items-center justify-center mb-5">
