@@ -870,14 +870,14 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
-  v_inserted BOOLEAN := FALSE;
+  v_row_count BIGINT := 0;
 BEGIN
   INSERT INTO public.webhook_events (event_id, event_type, payload, status)
   VALUES (p_event_id, p_event_type, p_payload, 'processing')
   ON CONFLICT (event_id) DO NOTHING;
 
-  GET DIAGNOSTICS v_inserted = ROW_COUNT;
-  IF v_inserted THEN
+  GET DIAGNOSTICS v_row_count = ROW_COUNT;
+  IF v_row_count > 0 THEN
     RETURN TRUE;
   END IF;
 
@@ -887,7 +887,10 @@ BEGIN
   WHERE event_id = p_event_id
     AND (status = 'failed' OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes'));
 
-  GET DIAGNOSTICS v_inserted = ROW_COUNT;
+  GET DIAGNOSTICS v_row_count = ROW_COUNT;
+  RETURN v_row_count > 0;
+END;
+$$;
   RETURN v_inserted;
 END;
 $$;

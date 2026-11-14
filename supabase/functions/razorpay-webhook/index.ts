@@ -178,7 +178,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // AUTHORITATIVE STATE TRANSITION: Delegate entirely to confirm_order_payment RPC (DO NOT update payments.status = 'captured' directly here)
+      // AUTHORITATIVE STATE TRANSITION: Delegate entirely to confirm_order_payment RPC
       const { data: confirmation, error: confErr } = await supabase.rpc('confirm_order_payment', {
         p_order_id: order.id,
         p_razorpay_order_id: razorpayOrderId,
@@ -199,15 +199,28 @@ Deno.serve(async (req: Request) => {
         const isStockException = confirmation?.stock_exception === true;
         const isDuplicatePayment = confirmation?.duplicate_payment === true;
 
-        await supabase.from('webhook_events').update({ status: isStockException ? 'processed' : 'failed', error_message: errorMsg }).eq('event_id', webhookEventId);
+        if (isStockException || isDuplicatePayment) {
+          // Acknowledge event so Razorpay stops retrying, while preserving exception/duplicate flags in ledger
+          await supabase.from('webhook_events').update({ status: 'processed', error_message: errorMsg }).eq('event_id', webhookEventId);
+
+          return new Response(JSON.stringify({
+            success: false,
+            stockException: isStockException,
+            duplicatePayment: isDuplicatePayment,
+            error: errorMsg,
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        await supabase.from('webhook_events').update({ status: 'failed', error_message: errorMsg }).eq('event_id', webhookEventId);
 
         return new Response(JSON.stringify({
           success: false,
-          stockException: isStockException,
-          duplicatePayment: isDuplicatePayment,
           error: errorMsg,
         }), {
-          status: isStockException ? 200 : 409,
+          status: 409,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -228,7 +241,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4. PROCESS PAYMENT FAILED
+    // 4. PROCESS PAYMENT FAILED (Strict DB error checking & status guard)
     if (event === "payment.failed") {
       if (razorpayOrderId) {
         const { data: payRec, error: payErr } = await supabase
@@ -237,8 +250,16 @@ Deno.serve(async (req: Request) => {
           .eq('razorpay_order_id', razorpayOrderId)
           .maybeSingle();
 
-        if (!payErr && payRec && payRec.status === 'created') {
-          await supabase
+        if (payErr) {
+          console.error("Payment lookup error for failure event:", payErr);
+          await supabase.from('webhook_events').update({ status: 'failed', error_message: "Payment lookup failed" }).eq('event_id', webhookEventId);
+          return new Response(JSON.stringify({ error: "Database query failed." }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (payRec && payRec.status === 'created') {
+          const { error: failUpdErr } = await supabase
             .from('payments')
             .update({
               status: 'failed',
@@ -248,10 +269,25 @@ Deno.serve(async (req: Request) => {
             })
             .eq('id', payRec.id)
             .eq('status', 'created');
+
+          if (failUpdErr) {
+            console.error("Failed to update payment failure status:", failUpdErr);
+            await supabase.from('webhook_events').update({ status: 'failed', error_message: "Payment update failed" }).eq('event_id', webhookEventId);
+            return new Response(JSON.stringify({ error: "Database update failed." }), {
+              status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
         }
       }
 
-      await supabase.from('webhook_events').update({ status: 'processed' }).eq('event_id', webhookEventId);
+      const { error: failLedgerErr } = await supabase.from('webhook_events').update({ status: 'processed' }).eq('event_id', webhookEventId);
+      if (failLedgerErr) {
+        console.error("Failed to mark webhook event as processed:", failLedgerErr);
+        return new Response(JSON.stringify({ error: "Failed to mark webhook event as processed." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       return new Response(JSON.stringify({ success: true, event: "payment.failed processed" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
