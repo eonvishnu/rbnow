@@ -244,8 +244,11 @@ Deno.serve(async (req: Request) => {
               const validPct = Math.min(100, Math.max(0, discVal));
               variantDiscountPercent = Math.max(variantDiscountPercent, validPct);
             } else {
-              const percentEquiv = Math.round((discVal / rawPrice) * 100);
-              variantDiscountPercent = Math.max(variantDiscountPercent, Math.min(100, percentEquiv));
+              const flatDiscount = Number(disc.discount_value);
+              const percentEquiv = rawPrice > 0
+                ? Math.min(100, Math.round((flatDiscount / rawPrice) * 100))
+                : (flatDiscount > 0 ? 100 : 0);
+              variantDiscountPercent = Math.max(variantDiscountPercent, percentEquiv);
             }
           }
         }
@@ -297,16 +300,30 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
-        return new Response(JSON.stringify({ error: `Promo code "${coupon.code}" has expired.` }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+      if (coupon.expiry_date) {
+        const expiryDate = new Date(coupon.expiry_date);
+        if (isNaN(expiryDate.getTime())) {
+          return new Response(JSON.stringify({ error: "Invalid coupon configuration." }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if (expiryDate < new Date()) {
+          return new Response(JSON.stringify({ error: `Promo code "${coupon.code}" has expired.` }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      const minOrderAmt = Number(coupon.min_order_amount || 0);
+      if (!Number.isFinite(minOrderAmt) || minOrderAmt < 0) {
+        return new Response(JSON.stringify({ error: "Invalid coupon configuration." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      if (verifiedSubtotal < Number(coupon.min_order_amount || 0)) {
+      if (verifiedSubtotal < minOrderAmt) {
         return new Response(JSON.stringify({
-          error: `Minimum order subtotal of ₹${coupon.min_order_amount} required for code "${coupon.code}".`
+          error: `Minimum order subtotal of ₹${minOrderAmt} required for code "${coupon.code}".`
         }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -390,7 +407,7 @@ Deno.serve(async (req: Request) => {
 
     if (delErr || !delSet) {
       console.error("Delivery settings fetch error:", delErr);
-      return new Response(JSON.stringify({ error: "Server configuration error: Delivery settings are not configured." }), {
+      return new Response(JSON.stringify({ error: "Server error: Delivery settings are not configured." }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -543,7 +560,7 @@ Deno.serve(async (req: Request) => {
 
     const customReceiptId = `RB-${order.id}`;
 
-    // 7. CREATE RAZORPAY ORDER WITH RECONCILIATION-SAFE TIMEOUT & 4xx vs 5xx / 2xx MALFORMED HANDLING
+    // 7. CREATE RAZORPAY ORDER WITH RECONCILIATION-SAFE TIMEOUT & AMBIGUOUS 2xx/5xx HANDLING
     let razorpayOrder: any;
     try {
       const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
@@ -598,21 +615,24 @@ Deno.serve(async (req: Request) => {
           ) {
             console.error("Failed to preserve Razorpay order ID:", preserveErr);
           }
-        } else {
-          await supabase.from('payments').update({
-            status: 'failed',
-            failure_description: razorpayOrder?.error?.description || 'Invalid Razorpay order response',
-            updated_at: new Date().toISOString(),
-          }).eq('id', paymentRecord.id);
         }
 
         if (razorpayRes.status >= 400 && razorpayRes.status < 500) {
+          // Definite client rejection: no usable Razorpay Order ID was returned or 4xx error without valid ID
           if (!hasValidId) {
-            await supabase.from('payments').update({
-              status: 'failed',
-              failure_description: razorpayOrder?.error?.description || 'Invalid Razorpay order response (4xx)',
-              updated_at: new Date().toISOString(),
-            }).eq('id', paymentRecord.id);
+            const { error: failErr } = await supabase
+              .from('payments')
+              .update({
+                status: 'failed',
+                failure_description:
+                  razorpayOrder?.error?.description || 'Razorpay rejected order creation',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', paymentRecord.id);
+
+            if (failErr) {
+              console.error("Failed to record Razorpay rejection:", failErr);
+            }
           }
 
           await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
@@ -622,7 +642,21 @@ Deno.serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         } else {
-          // HTTP 2xx malformed or 5xx: ambiguous outcome, keep payment as created and order as pending_payment for reconciliation
+          // Ambiguous outcome (5xx or malformed 2xx): preserve created status for reconciliation.
+          const { error: reconcileErr } = await supabase
+            .from('payments')
+            .update({
+              status: 'created',
+              failure_description:
+                'Razorpay order creation outcome unknown - requires reconciliation',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', paymentRecord.id);
+
+          if (reconcileErr) {
+            console.error("Failed to record reconciliation state:", reconcileErr);
+          }
+
           return new Response(JSON.stringify({ error: "Payment gateway temporary error. Please try again." }), {
             status: 502,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
