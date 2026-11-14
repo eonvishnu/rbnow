@@ -1,212 +1,122 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { supabase } from "@/lib/supabase";
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartProvider';
 import { useAuth } from '@/context/AuthProvider';
 import { useLocation } from '@/context/LocationContext';
-import { useRouter } from 'next/navigation';
-import { getOrCreateBrowserId } from '@/lib/browserId';
-import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 import {
-  ArrowLeft,
-  ShoppingBag,
-  Sparkles,
-  Truck,
-  ShieldCheck,
-  Trash2,
-  Plus,
-  Minus,
-  ArrowRight,
-  Crown,
-  MapPin,
-  Map,
-  Tag,
-  CreditCard,
-  CheckCircle2,
-  Loader2,
-  AlertCircle,
-  Wallet
+  ShoppingBag, Trash2, Plus, Minus, ArrowLeft, Crown,
+  MapPin, Map, Tag, Check, AlertCircle, Loader2, ArrowRight, RefreshCw, X
 } from 'lucide-react';
+
+const STORE_LAT = 17.35145220439656;
+const STORE_LNG = 78.39103902563603;
+
+function deg2rad(deg: number) { return deg * (Math.PI / 180); }
+
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 function extractProductId(id: string): string {
   if (!id) return '';
-  if (id.length >= 36) {
-    return id.substring(0, 36);
+  return id.includes('_') ? id.split('_')[0] : id;
+}
+
+function getOrCreateBrowserId(): string {
+  if (typeof window === 'undefined') return 'server_browser';
+  try {
+    let bid = window.localStorage.getItem('rb_browser_id');
+    if (!bid) {
+      bid = 'browser_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+      window.localStorage.setItem('rb_browser_id', bid);
+    }
+    return bid;
+  } catch (e) {
+    return 'fallback_browser';
   }
-  const lastDash = id.lastIndexOf('-');
-  return lastDash !== -1 ? id.substring(0, lastDash) : id;
+}
+
+function loadRazorpaySDK(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && (window as any).Razorpay) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
 }
 
 export default function CartPage() {
-  const { cart, addToCart, removeFromCart, clearCart, totalAmount } = useCart();
-  const { user, userData, loading: authLoading } = useAuth();
-  const { location, setIsModalOpen } = useLocation();
   const router = useRouter();
+  const { cart, updateQuantity, removeFromCart, clearCart, subtotal: rawCartSubtotal } = useCart();
+  const { user, userData, authLoading } = useAuth();
+  const { location, setIsModalOpen } = useLocation();
 
   const [stockData, setStockData] = useState<Record<string, number>>({});
   const [checkingStock, setCheckingStock] = useState(true);
+  const [deliverySettings, setDeliverySettings] = useState<any>(null);
 
-  // Dynamic Store Settings
-  const [storeSettings, setStoreSettings] = useState({
-    freeDeliveryThreshold: 700,
-    minOrderAmount: 0,
-  });
-
-  // Coupon State
-  const [couponCode, setCouponCode] = useState('');
+  const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponMsg, setCouponMsg] = useState('');
   const [validatingCoupon, setValidatingCoupon] = useState(false);
 
-  // Payment Placement State
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
+  const [paymentState, setPaymentState] = useState<'idle' | 'verifying' | 'failed'>('idle');
+  const [paymentResultMessage, setPaymentResultMessage] = useState('');
+
   const checkoutInProgressRef = useRef(false);
   const paymentVerificationInProgressRef = useRef(false);
 
-  // Helper to load Razorpay SDK dynamically
-  const loadRazorpaySDK = (): Promise<boolean> => {
-    return new Promise((resolve) => {
-      if (typeof window !== 'undefined' && (window as any).Razorpay) {
-        resolve(true);
-        return;
-      }
-      const scriptId = 'razorpay-checkout-js';
-      const existingScript = document.getElementById(scriptId);
-      if (existingScript) {
-        if ((window as any).Razorpay) {
-          resolve(true);
-        } else {
-          existingScript.addEventListener('load', () => resolve(true));
-        }
-        return;
-      }
-      const script = document.createElement('script');
-      script.id = scriptId;
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  };
-
-  // Pre-load Razorpay SDK on Cart Page Mount
-  useEffect(() => {
-    loadRazorpaySDK();
-  }, []);
-
-  // Dynamic Delivery Settings State
-  const [deliverySettings, setDeliverySettings] = useState<any>(null);
-
-  // Fetch Dynamic Delivery Settings from Supabase
-  useEffect(() => {
-    const fetchDeliverySettings = async () => {
-      try {
-        const { data } = await supabase
-          .from('delivery_settings')
-          .select('*')
-          .eq('id', 'default')
-          .maybeSingle();
-
-        if (data) {
-          setDeliverySettings(data);
-        }
-      } catch (err) {
-        console.error('Error loading delivery settings:', err);
-      }
-    };
-    fetchDeliverySettings();
-  }, []);
-
-  // Calculate Distance in KM from Dark Store Hub (Dynamic Store Coordinates)
-  const distanceKm = useMemo(() => {
-    if (!location.lat || !location.lng) return 0;
-    const storeLat = Number(deliverySettings?.store_latitude ?? 17.351452);
-    const storeLng = Number(deliverySettings?.store_longitude ?? 78.391039);
-    const R = 6371;
-    const dLat = (location.lat - storeLat) * (Math.PI / 180);
-    const dLon = (location.lng - storeLng) * (Math.PI / 180);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(storeLat * (Math.PI / 180)) * Math.cos(location.lat * (Math.PI / 180)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }, [location.lat, location.lng, deliverySettings]);
-
-  // Dynamically Compute Delivery Fee & Free Threshold from delivery_settings
-  const { deliveryFee, freeThreshold } = useMemo(() => {
-    if (totalAmount === 0 || !deliverySettings) {
-      return { deliveryFee: 0, freeThreshold: 499 };
-    }
-
-    if (!deliverySettings.is_free_delivery_enabled || deliverySettings.delivery_mode === 'flat_fee') {
-      const flatFee = Number(deliverySettings.flat_delivery_fee || 65);
-      return { deliveryFee: flatFee, freeThreshold: Infinity };
-    }
-
-    if (deliverySettings.delivery_mode === 'preset_rules') {
-      const radius = Number(deliverySettings.preset_zone_radius_km || 5);
-      const isZone1 = distanceKm <= radius;
-
-      const targetSubtotal = isZone1
-        ? Number(deliverySettings.preset_zone1_subtotal || 299)
-        : Number(deliverySettings.preset_zone2_subtotal || 499);
-      const standardFee = isZone1
-        ? Number(deliverySettings.preset_zone1_fee || 30)
-        : Number(deliverySettings.preset_zone2_fee || 30);
-
-      const fee = totalAmount >= targetSubtotal ? 0 : standardFee;
-      return { deliveryFee: fee, freeThreshold: targetSubtotal };
-    }
-
-    // distance_tiered mode
-    const t1Max = Number(deliverySettings.tier1_max_km || 5);
-    const t2Max = Number(deliverySettings.tier2_max_km || 10);
-
-    let targetSubtotal = Number(deliverySettings.tier1_subtotal || 299);
-    let standardFee = Number(deliverySettings.tier1_fee || 30);
-
-    if (distanceKm > t1Max && distanceKm <= t2Max) {
-      targetSubtotal = Number(deliverySettings.tier2_subtotal || 500);
-      standardFee = Number(deliverySettings.tier2_fee || 30);
-    } else if (distanceKm > t2Max) {
-      targetSubtotal = Number(deliverySettings.tier3_subtotal || 699);
-      standardFee = Number(deliverySettings.tier3_fee || 30);
-    }
-
-    const fee = totalAmount >= targetSubtotal ? 0 : standardFee;
-    return { deliveryFee: fee, freeThreshold: targetSubtotal };
-  }, [totalAmount, deliverySettings, distanceKm]);
-
-  const subtotalAfterCoupon = Math.max(0, totalAmount - couponDiscount);
-  const grandTotal = subtotalAfterCoupon + deliveryFee;
-
   const groupedCart = useMemo(() => {
-    return cart.reduce((acc: any, item: any) => {
+    return cart.reduce((acc: Record<string, any>, item: any) => {
       acc[item.id] = acc[item.id] || { ...item, qty: 0 };
-      acc[item.id].qty += 1;
+      acc[item.id].qty += (item.qty || 1);
       return acc;
     }, {});
   }, [cart]);
 
   useEffect(() => {
-    const fetchStock = async () => {
-      if (cart.length === 0) {
-        setCheckingStock(false);
-        return;
-      }
-      const variantIds = [...new Set(cart.map((item: any) => item.id))];
-      const uniqueCleanIds = [...new Set(cart.map((item: any) => extractProductId(item.id)))];
-      const stockMap: Record<string, number> = {};
-
+    const fetchStockAndSettings = async () => {
       try {
+        const { data: delSet } = await supabase
+          .from('delivery_settings')
+          .select('*')
+          .limit(1)
+          .maybeSingle();
+        if (delSet) setDeliverySettings(delSet);
+
+        if (cart.length === 0) {
+          setCheckingStock(false);
+          return;
+        }
+
+        const variantIds = [...new Set(cart.map((item: any) => item.id))];
+        const uniqueCleanIds = [...new Set(cart.map((item: any) => extractProductId(item.id)))];
+        const stockMap: Record<string, number> = {};
+
         const { data: variantData } = await supabase
-          .from("product_variants")
-          .select("id, stock")
-          .in("id", variantIds);
+          .from('product_variants')
+          .select('id, stock')
+          .in('id', variantIds);
 
         if (variantData) {
           variantData.forEach(v => {
@@ -215,9 +125,9 @@ export default function CartPage() {
         }
 
         const { data: prodData } = await supabase
-          .from("products")
-          .select("id, stock")
-          .in("id", uniqueCleanIds);
+          .from('products')
+          .select('id, stock')
+          .in('id', uniqueCleanIds);
 
         if (prodData) {
           prodData.forEach(p => {
@@ -234,7 +144,7 @@ export default function CartPage() {
         setCheckingStock(false);
       }
     };
-    fetchStock();
+    fetchStockAndSettings();
   }, [cart]);
 
   const hasStockIssues = useMemo(() => {
@@ -255,51 +165,45 @@ export default function CartPage() {
 
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!couponCode.trim()) return;
-
+    if (!couponInput.trim()) return;
     setValidatingCoupon(true);
     setCouponMsg('');
-    setCheckoutError('');
 
     try {
-      const codeKey = couponCode.trim().toUpperCase();
       const { data: coupon, error } = await supabase
         .from('coupons')
         .select('*')
-        .eq('code', codeKey)
-        .single();
+        .eq('code', couponInput.trim().toUpperCase())
+        .eq('is_active', true)
+        .maybeSingle();
 
-      if (error || !coupon || !coupon.is_active) {
+      if (error || !coupon) {
         setCouponMsg('Invalid or expired promo code.');
         setAppliedCoupon(null);
         setCouponDiscount(0);
+        setValidatingCoupon(false);
         return;
       }
 
-      if (totalAmount < Number(coupon.min_order_amount || 0)) {
-        setCouponMsg(`Minimum order amount of ₹${coupon.min_order_amount} required for code ${codeKey}.`);
+      if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
+        setCouponMsg('This promo code has expired.');
         setAppliedCoupon(null);
         setCouponDiscount(0);
+        setValidatingCoupon(false);
         return;
       }
 
-      if (coupon.is_first_order_only && user) {
-        const { count: previousOrdersCount } = await supabase
-          .from('orders')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id);
-
-        if (previousOrdersCount && previousOrdersCount > 0) {
-          setCouponMsg(`Promo code "${codeKey}" is valid for first-time orders only.`);
-          setAppliedCoupon(null);
-          setCouponDiscount(0);
-          return;
-        }
+      if (rawCartSubtotal < Number(coupon.min_order_amount || 0)) {
+        setCouponMsg(`Minimum order of ₹${coupon.min_order_amount} required for this code.`);
+        setAppliedCoupon(null);
+        setCouponDiscount(0);
+        setValidatingCoupon(false);
+        return;
       }
 
       let calcDiscount = 0;
       if (coupon.discount_type === 'percentage') {
-        calcDiscount = Math.floor((totalAmount * Number(coupon.discount_value)) / 100);
+        calcDiscount = Math.floor((rawCartSubtotal * Number(coupon.discount_value)) / 100);
         if (coupon.max_discount_amount) {
           calcDiscount = Math.min(calcDiscount, Number(coupon.max_discount_amount));
         }
@@ -309,7 +213,7 @@ export default function CartPage() {
 
       setAppliedCoupon(coupon);
       setCouponDiscount(calcDiscount);
-      setCouponMsg(`Promo code "${codeKey}" applied! You saved ₹${calcDiscount}.`);
+      setCouponMsg(`Promo code "${coupon.code}" applied! You saved ₹${calcDiscount}.`);
     } catch (err) {
       console.error(err);
       setCouponMsg('Failed to validate promo code.');
@@ -335,6 +239,7 @@ export default function CartPage() {
 
     checkoutInProgressRef.current = true;
     setIsPlacingOrder(true);
+    setPaymentState('idle');
     let modalOpened = false;
     const pendingCheckoutKey = `royal_bengal_checkout_${user.id}`;
 
@@ -364,8 +269,6 @@ export default function CartPage() {
         console.warn('Could not read pending checkout from session storage:', storageErr);
       }
 
-      // A retry reuses the immutable server-side order snapshot. Do not send
-      // the current cart, address or coupon as replacement order data.
       const requestBody = storedCheckoutId
         ? { checkoutId: storedCheckoutId }
         : {
@@ -414,9 +317,7 @@ export default function CartPage() {
                 }
               }
             }
-          } catch (e) {
-            // Keep the original invoke error if the response body is unavailable.
-          }
+          } catch (e) {}
         }
 
         const serverMsg = errorBody?.error || edgeError?.message;
@@ -424,13 +325,12 @@ export default function CartPage() {
       }
 
       if (!data.keyId || !data.razorpayOrderId || !data.checkoutId) {
-        throw new Error('Invalid payment initialization response from server. Your pending checkout has been retained if it was created.');
+        throw new Error('Invalid payment initialization response from server.');
       }
 
-      // Ensure Razorpay SDK is loaded.
       const isLoaded = await loadRazorpaySDK();
       if (!isLoaded || !(window as any).Razorpay) {
-        throw new Error('Could not load Razorpay payment gateway. Your pending checkout has been saved; please try again.');
+        throw new Error('Could not load Razorpay payment gateway. Please check your connection and try again.');
       }
 
       const options = {
@@ -451,13 +351,14 @@ export default function CartPage() {
             if (!paymentVerificationInProgressRef.current) {
               setIsPlacingOrder(false);
               checkoutInProgressRef.current = false;
-              setCheckoutError('Payment window closed. Your checkout is saved; you can safely resume it.');
+              setPaymentResultMessage('Payment was not completed. No successful payment confirmation has been received for this checkout attempt.');
+              setPaymentState('failed');
             }
           },
         },
         handler: async (response: any) => {
           paymentVerificationInProgressRef.current = true;
-          setIsPlacingOrder(true);
+          setPaymentState('verifying');
           try {
             const { data: vData, error: vErr } = await supabase.functions.invoke('verify-payment', {
               body: {
@@ -483,18 +384,18 @@ export default function CartPage() {
                 console.warn('Could not clear reconciled checkout ID:', storageErr);
               }
               clearCart();
-              setCheckoutError(vData.error || 'Your payment was received, but the order needs staff review.');
-              router.push('/orders');
+              setPaymentResultMessage(vData.error || 'Your payment was received, but the order needs staff review.');
+              setPaymentState('failed');
             } else {
               const message = (vData && vData.error) || (vErr && vErr.message) || 'Payment confirmation is still pending.';
-              setCheckoutError(`${message} Do not pay again until you check your order status.`);
-              alert(`${message}\n\nDo not make another payment yet. Check your order status or contact support.`);
+              setPaymentResultMessage(`${message} Do not pay again until you check your order status.`);
+              setPaymentState('failed');
             }
           } catch (err: any) {
             console.error(err);
             const message = err?.message || 'Payment confirmation could not be completed.';
-            setCheckoutError(`${message} Do not pay again until you check your order status.`);
-            alert(`${message}\n\nDo not make another payment yet. Check your order status or contact support.`);
+            setPaymentResultMessage(`${message} Do not pay again until you check your order status.`);
+            setPaymentState('failed');
           } finally {
             paymentVerificationInProgressRef.current = false;
             setIsPlacingOrder(false);
@@ -506,20 +407,59 @@ export default function CartPage() {
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', (response: any) => {
         const description = response?.error?.description || 'Your payment was declined.';
-        setCheckoutError(`${description} Your checkout is saved. Close the payment window when you are finished; do not start another checkout.`);
+        setPaymentResultMessage(description);
+        setPaymentState('failed');
       });
       rzp.open();
       modalOpened = true;
     } catch (err: any) {
       console.error(err);
       setCheckoutError(err.message || 'Checkout failed. Please try again.');
+      setIsPlacingOrder(false);
+      checkoutInProgressRef.current = false;
     } finally {
-      if (!modalOpened) {
+      if (!modalOpened && paymentState === 'idle') {
         setIsPlacingOrder(false);
         checkoutInProgressRef.current = false;
       }
     }
   };
+
+  const calculatedDistanceKm = useMemo(() => {
+    if (!location.lat || !location.lng || !deliverySettings) return 0;
+    const storeLat = Number(deliverySettings.store_latitude ?? STORE_LAT);
+    const storeLng = Number(deliverySettings.store_longitude ?? STORE_LNG);
+    return getDistanceFromLatLonInKm(storeLat, storeLng, location.lat, location.lng);
+  }, [location, deliverySettings]);
+
+  const deliveryFee = useMemo(() => {
+    if (!deliverySettings) return 65;
+    if (deliverySettings.delivery_mode === 'always_free') return 0;
+    if (!deliverySettings.is_free_delivery_enabled || deliverySettings.delivery_mode === 'flat_fee') {
+      return Number(deliverySettings.flat_delivery_fee ?? 65);
+    }
+    if (deliverySettings.delivery_mode === 'preset_rules') {
+      const radius = Number(deliverySettings.preset_zone_radius_km ?? 5);
+      const isZone1 = calculatedDistanceKm <= radius;
+      const targetSub = isZone1 ? Number(deliverySettings.preset_zone1_subtotal ?? 299) : Number(deliverySettings.preset_zone2_subtotal ?? 499);
+      const stdFee = isZone1 ? Number(deliverySettings.preset_zone1_fee ?? 30) : Number(deliverySettings.preset_zone2_fee ?? 30);
+      return rawCartSubtotal >= targetSub ? 0 : stdFee;
+    }
+    const t1Max = Number(deliverySettings.tier1_max_km ?? 5);
+    const t2Max = Number(deliverySettings.tier2_max_km ?? 10);
+    let targetSub = Number(deliverySettings.tier1_subtotal ?? 299);
+    let stdFee = Number(deliverySettings.tier1_fee ?? 30);
+    if (calculatedDistanceKm > t1Max && calculatedDistanceKm <= t2Max) {
+      targetSub = Number(deliverySettings.tier2_subtotal ?? 500);
+      stdFee = Number(deliverySettings.tier2_fee ?? 30);
+    } else if (calculatedDistanceKm > t2Max) {
+      targetSub = Number(deliverySettings.tier3_subtotal ?? 699);
+      stdFee = Number(deliverySettings.tier3_fee ?? 30);
+    }
+    return rawCartSubtotal >= targetSub ? 0 : stdFee;
+  }, [calculatedDistanceKm, deliverySettings, rawCartSubtotal]);
+
+  const finalTotal = Math.max(0, rawCartSubtotal - couponDiscount) + deliveryFee;
 
   return (
     <main className="min-h-screen bg-[#F5F7F6] text-[#17211D] pb-28 w-full max-w-[100vw] overflow-x-hidden selection:bg-[#FFC400] selection:text-[#004D3B]">
@@ -538,219 +478,242 @@ export default function CartPage() {
         <div className="w-16" />
       </div>
 
+      {/* Background Dimming / Cart Blocking Overlay when Razorpay Checkout is Open */}
+      {isPlacingOrder && paymentState === 'idle' && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center text-white p-6">
+          <div className="bg-[#004D3B] border border-[#006B50] rounded-3xl p-8 max-w-sm w-full text-center space-y-4 shadow-2xl">
+            <Loader2 className="animate-spin text-[#FFC400] mx-auto" size={40} />
+            <h3 className="font-serif font-black text-sm uppercase tracking-widest text-[#FFC400]">Payment in Progress</h3>
+            <p className="text-xs text-[#E5F5EF] font-medium leading-relaxed">Please complete payment in the secure Razorpay window. Cart modifications are locked while payment is active.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Full-screen Loading State During Payment Verification */}
+      {paymentState === 'verifying' && (
+        <div className="fixed inset-0 bg-white z-50 flex items-center justify-center p-6">
+          <div className="max-w-md w-full text-center space-y-6">
+            <Loader2 className="animate-spin text-[#004D3B] mx-auto" size={48} />
+            <div className="space-y-2">
+              <h2 className="text-lg font-serif font-black text-[#17211D]">Verifying Your Payment…</h2>
+              <p className="text-xs text-[#75817B] font-medium">Please wait while we confirm your payment and secure your order. Do not close this window.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
 
-        {/* 1. DELIVERY ADDRESS CARD (White Card with Subtle Border) */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E3EAE6] text-[#17211D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-[#E5F5EF] text-[#006B50] flex items-center justify-center font-black shrink-0">
-              <MapPin size={20} />
+        {paymentState === 'failed' ? (
+          <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E3EAE6] text-center space-y-6 shadow-sm max-w-lg mx-auto my-12">
+            <div className="w-16 h-16 bg-[#FFF2F2] text-[#D32F2F] rounded-full flex items-center justify-center mx-auto">
+              <AlertCircle size={32} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-black uppercase tracking-widest bg-[#E5F5EF] text-[#006B50] px-2.5 py-0.5 rounded-full border border-[#BCE2D3]">
-                  {location.label || 'HOME'}
-                </span>
-                <span className="text-xs font-black uppercase text-[#004D3B]">Delivering To</span>
-              </div>
-              <p className="text-xs text-[#17211D] font-bold truncate max-w-[280px] sm:max-w-md mt-0.5">
-                {location.address || `${location.area || 'Madhapur'}, ${location.city || 'Hyderabad'}`}
+            <div className="space-y-2">
+              <h2 className="text-lg font-serif font-black text-[#17211D]">Payment Not Completed</h2>
+              <p className="text-xs text-[#75817B] font-medium leading-relaxed">
+                {paymentResultMessage || 'No successful payment confirmation has been received for this checkout attempt.'}
               </p>
             </div>
-          </div>
-
-          <button
-            onClick={handleAddressChangeClick}
-            className="bg-[#E5F5EF] hover:bg-[#D5EFE5] text-[#006B50] font-black text-[10px] uppercase px-3.5 py-2 rounded-xl border border-[#BCE2D3] tracking-wider transition-all shrink-0 flex items-center gap-1.5"
-          >
-            <Map size={14} /> Change Address
-          </button>
-        </div>
-
-        {cart.length === 0 ? (
-          <div className="py-20 max-w-md mx-auto text-center bg-white border border-[#E3EAE6] rounded-3xl p-8 shadow-xs">
-            <div className="w-16 h-16 bg-[#E5F5EF] text-[#006B50] rounded-2xl mx-auto flex items-center justify-center mb-5">
-              <ShoppingBag size={32} />
+            <div className="space-y-3 pt-2">
+              <button
+                onClick={handleExpressCheckout}
+                disabled={isPlacingOrder}
+                className="w-full bg-[#004D3B] hover:bg-[#00382B] text-white font-black text-xs uppercase py-3.5 rounded-2xl tracking-widest transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isPlacingOrder ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />} Retry Payment
+              </button>
+              <button
+                onClick={() => {
+                  setPaymentState('idle');
+                  setPaymentResultMessage('');
+                  setIsPlacingOrder(false);
+                  checkoutInProgressRef.current = false;
+                }}
+                className="w-full bg-[#E5F5EF] hover:bg-[#D5EFE5] text-[#006B50] font-black text-[11px] uppercase py-3.5 rounded-2xl border border-[#BCE2D3] tracking-widest transition-all cursor-pointer"
+              >
+                Back to Cart / Modify Cart
+              </button>
             </div>
-            <h3 className="text-lg font-black uppercase tracking-tight mb-2 text-[#17211D]">Your Cart is Empty</h3>
-            <p className="text-[#75817B] text-xs font-medium uppercase tracking-widest mb-6 leading-relaxed">
-              Explore fresh Padma river fish, <br/> gourmet mutton & artisanal Bengal delicacies.
-            </p>
-            <Link href="/" className="inline-flex items-center gap-2 bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] font-black px-7 py-3.5 rounded-xl uppercase tracking-widest text-xs shadow-sm transition-all">
-              Explore Menu <ArrowRight size={16} />
-            </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-7 items-start">
-
-            {/* Left: Itemized Cart & Promo Coupon */}
-            <section className="lg:col-span-7 space-y-4">
-              <div className="flex justify-between items-center mb-1">
-                <h2 className="text-xs font-black text-[#75817B] uppercase tracking-[0.15em]">Selected Items ({Object.keys(groupedCart).length})</h2>
-              </div>
-
-              {/* 2. PRODUCT CARDS (Single Unified Card with Subtle Dividers) */}
-              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E3EAE6] space-y-4 shadow-xs">
-                {Object.values(groupedCart).map((item: any, idx: number, arr: any[]) => {
-                  const cleanId = extractProductId(item.id);
-                  const stockCount = stockData[item.id] !== undefined ? stockData[item.id] : (stockData[cleanId] !== undefined ? stockData[cleanId] : 99);
-                  const isOutOfStock = stockCount === 0;
-                  const isLowStock = stockCount > 0 && stockCount <= 5;
-
-                  return (
-                    <div key={item.id} className={`flex items-center justify-between ${idx !== arr.length - 1 ? 'border-b border-[#E3EAE6] pb-4' : ''}`}>
-                      <div className="flex items-center gap-3.5">
-                        <img
-                          src={item.img || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80'}
-                          className={`w-14 h-14 rounded-xl object-cover border border-[#E3EAE6] ${isOutOfStock ? 'grayscale opacity-50' : ''}`}
-                          alt={item.name}
-                        />
-                        <div>
-                          <p className={`text-xs sm:text-sm font-black ${isOutOfStock ? 'text-gray-400' : 'text-[#17211D]'}`}>{item.name}</p>
-                          <p className="text-[11px] text-[#006B50] font-bold uppercase mt-0.5">₹{item.price} / {item.unit}</p>
-                          {isOutOfStock && <p className="text-[10px] text-rose-600 font-black uppercase mt-1">⚠️ Out of Stock</p>}
-                          {isLowStock && <p className="text-[10px] text-amber-700 font-black uppercase mt-1">⚠️ Only {stockCount} left in stock</p>}
-                        </div>
-                      </div>
-
-                      {/* Quantity Controls (Selected Controls: Deep Emerald) */}
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center bg-[#006B50] text-white rounded-xl h-8 overflow-hidden shadow-xs">
-                          <button
-                            onClick={() => removeFromCart(item.id)}
-                            className="px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors"
-                          >
-                            −
-                          </button>
-                          <span className="text-xs font-black w-5 text-center">{item.qty}</span>
-                          <button
-                            onClick={() => addToCart(item, stockCount)}
-                            disabled={item.qty >= stockCount}
-                            className={`px-2.5 h-full font-black text-base hover:bg-black/10 transition-colors ${item.qty >= stockCount ? 'opacity-40 cursor-not-allowed' : ''}`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* 3. COUPON SECTION (Clean White Card) */}
-              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E3EAE6] space-y-2.5 shadow-xs">
-                <div className="flex items-center gap-2 text-[#004D3B] text-xs font-black uppercase tracking-wider">
-                  <Tag size={15} /> Promo Code
+          <>
+            {/* DELIVERY ADDRESS CARD */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E3EAE6] text-[#17211D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-[#E5F5EF] text-[#006B50] flex items-center justify-center font-black shrink-0">
+                  <MapPin size={20} />
                 </div>
-
-                <form onSubmit={handleApplyCoupon} className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Enter code (e.g. WELCOME10)"
-                    value={couponCode}
-                    onChange={e => setCouponCode(e.target.value.toUpperCase())}
-                    className="flex-1 bg-[#F5F7F6] border border-[#E3EAE6] focus:border-[#006B50] rounded-xl px-3.5 py-2.5 text-xs font-bold uppercase text-[#17211D] outline-none placeholder:text-[#75817B]"
-                  />
-                  <button
-                    type="submit"
-                    disabled={validatingCoupon}
-                    className="bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] font-black px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-xs transition-all shrink-0 disabled:opacity-50"
-                  >
-                    {validatingCoupon ? <Loader2 size={14} className="animate-spin" /> : "Apply"}
-                  </button>
-                </form>
-
-                {couponMsg && (
-                  <p className={`text-[11px] font-bold ${appliedCoupon ? 'text-[#006B50]' : 'text-rose-600'}`}>
-                    {couponMsg}
-                  </p>
-                )}
-              </div>
-
-            </section>
-
-            {/* Right: Bill Summary */}
-            <section className="lg:col-span-5 lg:sticky lg:top-20 space-y-4">
-
-              {/* BILL SUMMARY BOX (Clean White Card with #004D3B Header & #FFC400 CTA) */}
-              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-[#E3EAE6] space-y-4 shadow-sm relative overflow-hidden">
-
-                <div className="flex items-center justify-between border-b border-[#E3EAE6] pb-3">
-                  <h2 className="text-xs font-black text-[#004D3B] uppercase tracking-[0.15em] flex items-center gap-2">
-                    <Sparkles size={14} className="text-[#FFC400]" /> Bill Summary
-                  </h2>
-                  <span className="text-[9px] font-black uppercase bg-[#E5F5EF] text-[#006B50] px-2.5 py-0.5 rounded-full border border-[#BCE2D3]">
-                    Standard Delivery
-                  </span>
-                </div>
-
-                <div className="space-y-2.5 text-xs">
-                  <div className="flex justify-between font-bold text-[#75817B] uppercase tracking-wider">
-                    <span>Items Subtotal</span>
-                    <span className="text-[#17211D] font-black text-sm">₹{totalAmount}</span>
-                  </div>
-
-                  {couponDiscount > 0 && (
-                    <div className="flex justify-between font-bold text-[#006B50] uppercase tracking-wider">
-                      <span>Promo Discount</span>
-                      <span className="font-black text-[#006B50]">- ₹{couponDiscount}</span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between font-bold uppercase tracking-wider">
-                    <span className="text-[#75817B]">Delivery Fee</span>
-                    <span className={deliveryFee === 0 ? "text-[#006B50] font-black" : "text-[#17211D] font-black"}>
-                      {deliveryFee === 0 ? "FREE" : `₹${deliveryFee}`}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-black uppercase tracking-widest bg-[#E5F5EF] text-[#006B50] px-2.5 py-0.5 rounded-full border border-[#BCE2D3]">
+                      {location.label || 'HOME'}
                     </span>
+                    <span className="text-xs font-black uppercase text-[#004D3B]">Delivering To</span>
                   </div>
-
-                  {totalAmount > 0 && Number.isFinite(freeThreshold) && totalAmount < freeThreshold && (
-                    <div className="pt-1">
-                       <span className="text-[10px] font-bold text-[#006B50] bg-[#E5F5EF] px-3 py-1.5 rounded-xl border border-[#BCE2D3] block text-center">
-                         Add ₹{freeThreshold - totalAmount} more for FREE Delivery
-                       </span>
-                    </div>
-                  )}
-
-                  <div className="h-px bg-[#E3EAE6] w-full my-2.5" />
-
-                  <div className="flex justify-between items-center pt-0.5">
-                    <span className="text-xs font-black text-[#004D3B] uppercase tracking-widest">Grand Total</span>
-                    <span className="text-2xl font-black text-[#004D3B] tracking-tight">₹{grandTotal}</span>
-                  </div>
+                  <p className="text-xs text-[#17211D] font-bold truncate max-w-[280px] sm:max-w-md mt-0.5">
+                    {location.address || `${location.area || 'Madhapur'}, ${location.city || 'Hyderabad'}`}
+                  </p>
                 </div>
-
-                {checkoutError && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
-                    <AlertCircle size={15} className="shrink-0" />
-                    <span>{checkoutError}</span>
-                  </div>
-                )}
-
-                {/* PRIMARY CTA BUTTON: #FFC400 GOLD */}
-                <button
-                  onClick={handleExpressCheckout}
-                  disabled={hasStockIssues || checkingStock || isPlacingOrder}
-                  className={`w-full text-center font-black py-4 rounded-xl uppercase tracking-[0.15em] text-xs transition-all flex items-center justify-center gap-2 active:scale-95 ${
-                    hasStockIssues || checkingStock || isPlacingOrder
-                    ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed shadow-none'
-                    : 'bg-[#FFC400] hover:bg-[#F5B800] text-[#004D3B] shadow-xs'
-                  }`}
-                >
-                  {isPlacingOrder ? <Loader2 size={16} className="animate-spin" /> : <>Place Order & Pay <ArrowRight size={16} /></>}
-                </button>
-
-                <div className="p-3 rounded-xl bg-[#F5F7F6] border border-[#E3EAE6] flex items-center gap-2 text-[10px] text-[#75817B] font-bold">
-                  <ShieldCheck size={15} className="text-[#006B50] shrink-0" />
-                  <span>Insulated temperature packaging on all fresh catches.</span>
-                </div>
-
               </div>
-            </section>
 
-          </div>
+              <button
+                onClick={handleAddressChangeClick}
+                className="bg-[#E5F5EF] hover:bg-[#D5EFE5] text-[#006B50] font-black text-[10px] uppercase px-3.5 py-2 rounded-xl border border-[#BCE2D3] tracking-wider transition-all shrink-0 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Map size={14} /> Change Address
+              </button>
+            </div>
+
+            {cart.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 border border-[#E3EAE6] text-center space-y-4 shadow-xs">
+                <div className="w-16 h-16 bg-[#E5F5EF] text-[#006B50] rounded-full flex items-center justify-center mx-auto">
+                  <ShoppingBag size={28} />
+                </div>
+                <h3 className="font-serif font-black text-lg text-[#17211D]">Your cart is empty</h3>
+                <p className="text-xs text-[#75817B]">Add fresh groceries and gourmet items to start your checkout.</p>
+                <Link href="/" className="inline-block bg-[#004D3B] text-white font-black text-xs uppercase px-6 py-3 rounded-2xl tracking-widest hover:bg-[#00382B] transition-all shadow-md mt-2">
+                  Explore Store
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* ITEMS LIST */}
+                <div className="lg:col-span-7 space-y-3">
+                  <h2 className="text-xs font-black text-[#75817B] uppercase tracking-[0.15em] px-1">Selected Items ({Object.values(groupedCart).length})</h2>
+
+                  <div className="bg-white rounded-2xl border border-[#E3EAE6] divide-y divide-[#E3EAE6] shadow-xs overflow-hidden">
+                    {Object.values(groupedCart).map((item: any, idx: number, arr: any[]) => {
+                      const cleanId = extractProductId(item.id);
+                      const stockCount = stockData[item.id] !== undefined ? stockData[item.id] : (stockData[cleanId] !== undefined ? stockData[cleanId] : 99);
+                      const isOutOfStock = stockCount === 0;
+                      const isOverStock = item.qty > stockCount;
+
+                      return (
+                        <div key={item.id} className="p-4 flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-14 h-14 rounded-xl bg-[#F5F7F6] border border-[#E3EAE6] flex items-center justify-center shrink-0 overflow-hidden relative">
+                              {item.image_url ? (
+                                <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <ShoppingBag size={20} className="text-[#75817B]" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-black text-[#17211D] truncate">{item.name}</h4>
+                              <p className="text-[10px] font-bold text-[#75817B] mt-0.5">{item.unit || 'Standard Pack'}</p>
+                              <p className="text-xs font-black text-[#004D3B] mt-1">₹{item.price * item.qty}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="flex items-center bg-[#F5F7F6] border border-[#E3EAE6] rounded-xl overflow-hidden shadow-2xs">
+                              <button
+                                onClick={() => updateQuantity(item.id, item.qty - 1)}
+                                className="w-8 h-8 flex items-center justify-center text-[#75817B] hover:bg-[#E3EAE6] hover:text-[#17211D] transition-all cursor-pointer"
+                              >
+                                <Minus size={12} />
+                              </button>
+                              <span className="w-8 text-center text-xs font-black text-[#17211D]">{item.qty}</span>
+                              <button
+                                onClick={() => updateQuantity(item.id, item.qty + 1)}
+                                className="w-8 h-8 flex items-center justify-center text-[#75817B] hover:bg-[#E3EAE6] hover:text-[#17211D] transition-all cursor-pointer"
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </div>
+
+                            <button
+                              onClick={() => removeFromCart(item.id)}
+                              className="w-8 h-8 rounded-xl bg-[#FFF2F2] text-[#D32F2F] hover:bg-[#FFE5E5] flex items-center justify-center transition-all cursor-pointer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* BILLING & CHECKOUT SUMMARY */}
+                <div className="lg:col-span-5 space-y-4">
+                  <div className="bg-white rounded-2xl border border-[#E3EAE6] p-5 shadow-xs space-y-4 sticky top-24">
+                    <h3 className="text-xs font-black text-[#75817B] uppercase tracking-[0.15em]">Bill Details</h3>
+
+                    {/* Promo Code Box */}
+                    <form onSubmit={handleApplyCoupon} className="space-y-2">
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Tag size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#75817B]" />
+                          <input
+                            type="text"
+                            placeholder="Promo Code"
+                            value={couponInput}
+                            onChange={(e) => setCouponInput(e.target.value)}
+                            className="w-full bg-[#F5F7F6] border border-[#E3EAE6] rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-[#17211D] uppercase tracking-wider outline-none focus:border-[#004D3B] transition-all"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={validatingCoupon || !couponInput.trim()}
+                          className="bg-[#E5F5EF] hover:bg-[#D5EFE5] text-[#006B50] font-black text-[11px] uppercase px-4 py-2.5 rounded-xl border border-[#BCE2D3] tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {validatingCoupon ? <Loader2 className="animate-spin" size={14} /> : 'Apply'}
+                        </button>
+                      </div>
+                      {couponMsg && (
+                        <p className={`text-[11px] font-bold px-1 ${appliedCoupon ? 'text-[#006B50]' : 'text-[#D32F2F]'}`}>
+                          {couponMsg}
+                        </p>
+                      )}
+                    </form>
+
+                    <div className="space-y-2.5 pt-2 border-t border-[#E3EAE6] text-xs font-medium text-[#75817B]">
+                      <div className="flex justify-between">
+                        <span>Items Subtotal</span>
+                        <span className="font-bold text-[#17211D]">₹{rawCartSubtotal}</span>
+                      </div>
+                      {couponDiscount > 0 && (
+                        <div className="flex justify-between text-[#006B50]">
+                          <span>Discount</span>
+                          <span className="font-bold">-₹{couponDiscount}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>Delivery Fee</span>
+                        <span className="font-bold text-[#17211D]">{deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}</span>
+                      </div>
+                      <div className="flex justify-between pt-3 border-t border-[#E3EAE6] text-sm font-black text-[#17211D]">
+                        <span>To Pay</span>
+                        <span className="text-[#004D3B] text-base">₹{finalTotal}</span>
+                      </div>
+                    </div>
+
+                    {checkoutError && (
+                      <div className="p-3 bg-[#FFF2F2] border border-[#FFCDD2] rounded-xl text-xs font-bold text-[#D32F2F]">
+                        {checkoutError}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleExpressCheckout}
+                      disabled={isPlacingOrder || hasStockIssues || checkingStock}
+                      className="w-full bg-[#004D3B] hover:bg-[#00382B] text-white font-black text-xs uppercase py-4 rounded-2xl tracking-[0.2em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isPlacingOrder ? (
+                        <><Loader2 className="animate-spin" size={16} /> Initializing Secure Checkout...</>
+                      ) : (
+                        <><ShoppingBag size={16} /> Proceed to Pay (₹{finalTotal}) <ArrowRight size={16} /></>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
+
       </div>
     </main>
   );
