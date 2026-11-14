@@ -239,6 +239,8 @@ create table if not exists public.payments (
   refund_id text,
   refund_amount bigint default 0,
   refund_status text check (refund_status in ('pending', 'processed', 'failed')),
+  duplicate_payment boolean not null default false,
+  refund_review_required boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   paid_at timestamptz,
