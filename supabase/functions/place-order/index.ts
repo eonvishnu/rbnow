@@ -153,7 +153,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: "Invalid request body." }, 400);
     }
 
-    const { items, details, couponCode, checkoutId } = body;
+    const { items, details, couponCode, checkoutId, action } = body;
 
     if (
       checkoutId !== undefined &&
@@ -161,6 +161,19 @@ Deno.serve(async (req: Request) => {
       !isValidUuid(checkoutId)
     ) {
       return jsonResponse({ error: "Invalid checkout ID." }, 400);
+    }
+
+    if (action === 'abandon' && checkoutId && isValidUuid(checkoutId)) {
+      const { data: abResult, error: abErr } = await supabase.rpc('abandon_pending_order', {
+        p_order_id: checkoutId,
+        p_user_id: finalUserId,
+      });
+
+      if (abErr || !abResult?.success) {
+        console.error("Abandon order RPC error:", abErr || abResult?.error);
+        return jsonResponse({ error: abErr?.message || abResult?.error || "Failed to abandon pending order." }, 400);
+      }
+      return jsonResponse({ success: true, abandoned: true });
     }
 
     if (
