@@ -326,25 +326,7 @@ create table if not exists public.checkout_events (
   created_at timestamptz default now()
 );
 
--- 19. PRE-ORDER CAMPAIGNS TABLE
-create table if not exists public.preorder_campaigns (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  product_id uuid references public.products(id) on delete cascade,
-  product_variant_id uuid references public.product_variants(id) on delete cascade not null,
-  status text default 'active' check (status in ('draft', 'active', 'ended', 'fulfilled', 'cancelled')),
-  starts_at timestamptz default now(),
-  ends_at timestamptz,
-  expected_available_at timestamptz not null,
-  max_quantity integer not null default 100,
-  reserved_quantity integer not null default 0,
-  price numeric(10, 2) not null,
-  deposit_amount numeric(10, 2),
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
--- 20. DISCOUNTS TABLE
+-- 19. DISCOUNTS TABLE
 create table if not exists public.discounts (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -526,8 +508,8 @@ BEGIN
     );
   END IF;
 
-  -- 4.5. VALIDATE PAYMENT ATTEMPT STATUS (Reject failed or refunded records)
-  IF v_payment_record.status NOT IN ('created', 'authorized', 'captured') THEN
+  -- 4.5. VALIDATE PAYMENT ATTEMPT STATUS (Allow created, authorized, captured, or late-captured failed attempts)
+  IF v_payment_record.status NOT IN ('created', 'authorized', 'captured', 'failed') THEN
     RETURN jsonb_build_object(
       'success', false,
       'error', 'Payment attempt is not eligible for confirmation.'

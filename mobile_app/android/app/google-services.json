@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "97258519689",
+    "project_id": "rbnowin",
+    "storage_bucket": "rbnowin.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:97258519689:android:22c34f9e183342fff81a58",
+        "android_client_info": {
+          "package_name": "com.eonlink.rbnow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUV-90lJYSx7MyaICt3eJ_y7D37BrtaQ8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

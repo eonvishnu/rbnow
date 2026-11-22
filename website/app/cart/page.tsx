@@ -66,6 +66,94 @@ export default function CartPage() {
   const checkoutInProgressRef = useRef(false);
   const paymentVerificationInProgressRef = useRef(false);
 
+  // Recommended Products State
+  const [recommended, setRecommended] = useState<any[]>([]);
+
+  // Fetch Recommended Products with robust array/object variant mapping
+  useEffect(() => {
+    const fetchRecommended = async () => {
+      try {
+        const cached = localStorage.getItem('royal_bengal_cached_products');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const mapped = parsed.map((p: any) => ({
+              id: p.variantId || p.id,
+              product_id: p.product_id || p.id,
+              name: p.name,
+              price: p.price || 0,
+              unit: p.unit || 'pack',
+              img: p.img || p.imageUrl,
+              variantId: p.variantId || p.id,
+              stock: p.stock ?? 999,
+            }));
+            setRecommended(mapped);
+            return;
+          }
+        }
+
+        const { data: upsellsData, error: upsellsErr } = await supabase
+          .from('cart_upsells')
+          .select('id, title, display_order, is_active, products(id, name, image_url), product_variants(id, unit, price, stock)')
+          .eq('is_active', true)
+          .order('display_order');
+
+        if (!upsellsErr && upsellsData && upsellsData.length > 0) {
+          const mapped = upsellsData.map((u: any) => {
+            const p = u.products;
+            const vars = Array.isArray(u.product_variants) ? u.product_variants : (u.product_variants ? [u.product_variants] : []);
+            const v = vars[0];
+            const variantId = v?.id || u.variant_id || p?.id;
+            const productId = p?.id || u.product_id;
+            return {
+              id: variantId,
+              product_id: productId,
+              name: p?.name || 'Product',
+              upsellTitle: u.title,
+              price: v?.price || 0,
+              unit: v?.unit || 'pack',
+              img: p?.image_url,
+              variantId: variantId,
+              stock: v?.stock ?? 999,
+            };
+          }).filter(item => item.variantId);
+
+          if (mapped.length > 0) {
+            setRecommended(mapped);
+            return;
+          }
+        }
+
+        const { data: prodData } = await supabase
+          .from('products')
+          .select('*, product_variants(*)')
+          .limit(10);
+
+        if (prodData) {
+          const mapped = prodData.map((p: any) => {
+            const vars = Array.isArray(p.product_variants) ? p.product_variants : (p.product_variants ? [p.product_variants] : []);
+            const v = vars[0];
+            const variantId = v?.id || p.id;
+            return {
+              id: variantId,
+              product_id: p.id,
+              name: p.name,
+              price: v?.price || p.price || 0,
+              unit: v?.unit || 'pack',
+              img: p.image_url,
+              variantId: variantId,
+              stock: v?.stock ?? 999,
+            };
+          });
+          setRecommended(mapped);
+        }
+      } catch (err) {
+        console.error('Error loading recommended products:', err);
+      }
+    };
+    fetchRecommended();
+  }, []);
+
   // Helper to load Razorpay SDK dynamically
   const loadRazorpaySDK = (): Promise<boolean> => {
     return new Promise((resolve) => {
