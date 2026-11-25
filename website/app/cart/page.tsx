@@ -183,12 +183,41 @@ export default function CartPage() {
     return cart.reduce((sum: number, item: any) => sum + (item.price || 0), 0);
   }, [cart]);
 
+  const [storeCreditBalance, setStoreCreditBalance] = useState(0);
+  const [useStoreCredit, setUseStoreCredit] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setStoreCreditBalance(0);
+      setUseStoreCredit(false);
+      return;
+    }
+    const fetchWallet = async () => {
+      const { data } = await supabase
+        .from('customer_wallets')
+        .select('balance')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (data) {
+        setStoreCreditBalance(Number(data.balance || 0));
+      }
+    };
+    fetchWallet();
+  }, [user]);
+
   // Dynamic Delivery Fee calculated directly from public.delivery_settings and customer distance
   const deliveryFee = useMemo(() => {
     return computeDeliveryFee(deliverySettings, totalAmount, location.lat, location.lng);
   }, [deliverySettings, totalAmount, location.lat, location.lng]);
 
-  const grandTotal = Math.max(0, totalAmount - couponDiscount + deliveryFee);
+  const storeCreditDiscount = useMemo(() => {
+    if (!useStoreCredit) return 0;
+    const subtotalAfterCoupon = Math.max(0, totalAmount - couponDiscount);
+    const totalBeforeCredit = subtotalAfterCoupon + deliveryFee;
+    return Math.min(storeCreditBalance, totalBeforeCredit);
+  }, [useStoreCredit, storeCreditBalance, totalAmount, couponDiscount, deliveryFee]);
+
+  const grandTotal = Math.max(0, totalAmount - couponDiscount + deliveryFee - storeCreditDiscount);
 
   const groupedCart = useMemo(() => {
     return cart.reduce((acc: any, item: any) => {
@@ -642,6 +671,29 @@ export default function CartPage() {
         if (rawHistory) checkoutHistory = JSON.parse(rawHistory);
       } catch (storageErr) {
         console.warn('Could not read checkout history:', storageErr);
+      }
+
+      if (useStoreCredit && storeCreditDiscount > 0) {
+        try {
+          const { data: walletRes } = await supabase
+            .from('customer_wallets')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (walletRes) {
+            await supabase.rpc('adjust_customer_wallet', {
+              p_wallet_id: walletRes.id,
+              p_user_id: user.id,
+              p_amount: storeCreditDiscount,
+              p_type: 'debit',
+              p_description: `Store credit applied toward order (Checkout ID: ${data.checkoutId})`,
+              p_performed_by: user.id,
+            });
+          }
+        } catch (e) {
+          console.error('Error debiting store credit at checkout:', e);
+        }
       }
 
       const checkoutRecord = {
@@ -1109,35 +1161,62 @@ export default function CartPage() {
           </div>
         )}
 
-        {/* COUPON & BILLING SUMMARY */}
+        {/* COUPON, STORE CREDIT & BILLING SUMMARY */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
-          {/* Coupon Input */}
-          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E3EAE6] shadow-sm space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-wider text-[#004D3B] flex items-center gap-2">
-              <Tag size={15} /> Apply Coupon
-            </h3>
-            <form onSubmit={handleApplyCoupon} className="flex gap-2">
-              <input
-                type="text"
-                placeholder="ENTER PROMO CODE"
-                value={couponCode}
-                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                className="flex-1 bg-[#F5F7F6] border border-[#E3EAE6] rounded-2xl px-4 py-3 text-xs font-bold text-[#17211D] outline-none focus:border-[#004D3B]"
-              />
-              <button
-                type="submit"
-                disabled={validatingCoupon || !couponCode.trim()}
-                className="bg-[#004D3B] hover:bg-[#00382B] text-[#FFC400] font-black px-5 py-3 rounded-2xl text-xs uppercase tracking-wider transition-all shadow-sm disabled:opacity-50 cursor-pointer"
-              >
-                {validatingCoupon ? <Loader2 size={15} className="animate-spin" /> : 'Apply'}
-              </button>
-            </form>
-            {couponMsg && (
-              <p className={`text-xs font-bold ${appliedCoupon ? 'text-[#006B50]' : 'text-[#D32F2F]'}`}>
-                {couponMsg}
-              </p>
+          {/* Left Column: Coupon & Store Credit */}
+          <div className="space-y-5">
+            {/* Store Credit Option */}
+            {user && storeCreditBalance > 0 && (
+              <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E3EAE6] shadow-sm space-y-3">
+                <h3 className="text-xs font-black uppercase tracking-wider text-[#004D3B] flex items-center gap-2">
+                  <Wallet size={15} /> Store Credit
+                </h3>
+                <div className="flex items-center justify-between p-3.5 bg-[#F5F7F6] rounded-2xl border border-[#E3EAE6]">
+                  <div>
+                    <p className="text-xs font-black text-[#17211D]">Available Balance: ₹{storeCreditBalance}</p>
+                    <p className="text-[10px] text-[#75817B] font-medium mt-0.5">Use store credit to pay for this order</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useStoreCredit}
+                      onChange={(e) => setUseStoreCredit(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#004D3B]" />
+                  </label>
+                </div>
+              </div>
             )}
+
+            {/* Coupon Input */}
+            <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E3EAE6] shadow-sm space-y-3">
+              <h3 className="text-xs font-black uppercase tracking-wider text-[#004D3B] flex items-center gap-2">
+                <Tag size={15} /> Apply Coupon
+              </h3>
+              <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="ENTER PROMO CODE"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  className="flex-1 bg-[#F5F7F6] border border-[#E3EAE6] rounded-2xl px-4 py-3 text-xs font-bold text-[#17211D] outline-none focus:border-[#004D3B]"
+                />
+                <button
+                  type="submit"
+                  disabled={validatingCoupon || !couponCode.trim()}
+                  className="bg-[#004D3B] hover:bg-[#00382B] text-[#FFC400] font-black px-5 py-3 rounded-2xl text-xs uppercase tracking-wider transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {validatingCoupon ? <Loader2 size={15} className="animate-spin" /> : 'Apply'}
+                </button>
+              </form>
+              {couponMsg && (
+                <p className={`text-xs font-bold ${appliedCoupon ? 'text-[#006B50]' : 'text-[#D32F2F]'}`}>
+                  {couponMsg}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Bill Details */}
@@ -1156,6 +1235,13 @@ export default function CartPage() {
                 <div className="flex justify-between text-[#006B50]">
                   <span>Discount ({appliedCoupon?.code})</span>
                   <span className="font-bold">- ₹{couponDiscount}</span>
+                </div>
+              )}
+
+              {storeCreditDiscount > 0 && (
+                <div className="flex justify-between text-[#006B50]">
+                  <span>Store Credit Applied</span>
+                  <span className="font-bold">- ₹{storeCreditDiscount}</span>
                 </div>
               )}
 
