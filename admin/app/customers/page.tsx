@@ -214,7 +214,7 @@ export default function CustomersPage() {
               ) : (
                 filtered.map((c) => (
                   <tr key={c.id} onClick={() => setSelected(c)} className="hover:bg-[#fafafa] cursor-pointer transition-colors">
-                    <td className="pl-4 sm:pl-5 pr-3 py-3">
+                    <td className="pl-4 sm:pl-5 pr-3 py-2">
                       <div className="flex items-center gap-3">
                         <Avatar name={c.displayName} />
                         <div className="min-w-0">
@@ -228,10 +228,10 @@ export default function CustomersPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-[#303030]">{c.phoneNumber || <span className="text-[#8a8a8a]">—</span>}</td>
-                    <td className="px-3 py-3 tabular-nums">{c.orderCount} {c.orderCount === 1 ? 'order' : 'orders'}</td>
-                    <td className="px-3 py-3 text-[#616161]">{fmtDate(c.lastOrderDate)}</td>
-                    <td className="pl-3 pr-4 sm:pr-5 py-3 text-right font-medium text-[#1a1a1a] tabular-nums">{formatCurrency(c.totalSpent)}</td>
+                    <td className="px-3 py-2 text-[#303030]">{c.phoneNumber || <span className="text-[#8a8a8a]">—</span>}</td>
+                    <td className="px-3 py-2 tabular-nums">{c.orderCount} {c.orderCount === 1 ? 'order' : 'orders'}</td>
+                    <td className="px-3 py-2 text-[#616161]">{fmtDate(c.lastOrderDate)}</td>
+                    <td className="pl-3 pr-4 sm:pr-5 py-2 text-right font-medium text-[#1a1a1a] tabular-nums">{formatCurrency(c.totalSpent)}</td>
                   </tr>
                 ))
               )}
@@ -363,7 +363,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 }
 
 function Pill({ children, tone }: { children: React.ReactNode; tone: string }) {
-  return <span className={`inline-flex items-center px-2 h-5 rounded-full text-[11px] font-medium ${tone}`}>{children}</span>;
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${tone}`}>{children}</span>;
 }
 
 function Avatar({ name, size = 'md' }: { name: string; size?: 'md' | 'lg' }) {
