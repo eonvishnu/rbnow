@@ -39,6 +39,12 @@ export default function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [segment, setSegment] = useState<SegmentId>('all');
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'spent', dir: 'desc' });
+  const [toast, setToast] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+  const flash = useCallback((type: 'error' | 'success', text: string) => {
+    setToast({ type, text });
+    window.setTimeout(() => setToast(null), 3500);
+  }, []);
 
   const [selected, setSelected] = useState<AdminCustomer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
@@ -122,6 +128,112 @@ export default function CustomersPage() {
     }
   };
 
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  const [editingAddress, setEditingAddress] = useState<any | null>(null);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [addressForm, setAddressForm] = useState({
+    name: '',
+    phone: '',
+    house_no: '',
+    address: '',
+    city: 'Hyderabad',
+    pincode: '',
+    address_type: 'home',
+    latitude: 17.3850,
+    longitude: 78.4867,
+  });
+  const [addressSubmitting, setAddressSubmitting] = useState(false);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    setSavingProfile(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          display_name: editName.trim(),
+          phone_number: editPhone.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selected.id);
+
+      if (error) throw error;
+
+      flash('success', 'Customer profile updated successfully.');
+      setIsEditingProfile(false);
+      setSelected({ ...selected, displayName: editName.trim(), phoneNumber: editPhone.trim() });
+      const res = await getAdminCustomersPaginated(page, PAGE_SIZE, searchQuery);
+      setCustomers(res.customers);
+    } catch (err: any) {
+      console.error(err);
+      flash('error', err.message || 'Failed to update profile.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleSaveAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    setAddressSubmitting(true);
+    try {
+      const payload = {
+        user_id: selected.id,
+        name: addressForm.name.trim(),
+        phone: addressForm.phone.trim(),
+        house_no: addressForm.house_no.trim(),
+        address: addressForm.address.trim(),
+        city: addressForm.city.trim(),
+        pincode: addressForm.pincode.trim(),
+        address_type: addressForm.address_type,
+        latitude: Number(addressForm.latitude) || 17.3850,
+        longitude: Number(addressForm.longitude) || 78.4867,
+      };
+
+      if (editingAddress?.id) {
+        const { error } = await supabase
+          .from('addresses')
+          .update(payload)
+          .eq('id', editingAddress.id);
+        if (error) throw error;
+        flash('success', 'Address updated successfully.');
+      } else {
+        const { error } = await supabase
+          .from('addresses')
+          .insert(payload);
+        if (error) throw error;
+        flash('success', 'New address added successfully.');
+      }
+
+      setShowAddressModal(false);
+      setEditingAddress(null);
+      await refreshCustomerDetails();
+    } catch (err: any) {
+      console.error(err);
+      flash('error', err.message || 'Failed to save address.');
+    } finally {
+      setAddressSubmitting(false);
+    }
+  };
+
+  const handleDeleteAddress = async (addrId: string) => {
+    if (!confirm('Delete this saved address?')) return;
+    try {
+      const { error } = await supabase.from('addresses').delete().eq('id', addrId);
+      if (error) throw error;
+      flash('success', 'Address deleted.');
+      await refreshCustomerDetails();
+    } catch (err: any) {
+      console.error(err);
+      flash('error', err.message || 'Failed to delete address.');
+    }
+  };
+
   useEffect(() => {
     if (!selected) {
       setCustomerOrders([]);
@@ -130,9 +242,13 @@ export default function CustomersPage() {
       setCustomerTransactions([]);
       setCustomerWalletRecord(null);
       setDrawerTab('overview');
+      setIsEditingProfile(false);
       return;
     }
     setDrawerTab('overview');
+    setIsEditingProfile(false);
+    setEditName(selected.displayName || '');
+    setEditPhone(selected.phoneNumber || '');
     refreshCustomerDetails();
   }, [selected]);
 
@@ -293,6 +409,18 @@ export default function CustomersPage() {
 
   return (
     <div className="space-y-5 text-xs font-sans text-[#303030]">
+      {/* TOAST */}
+      {toast && (
+        <div
+          role="status"
+          className={`rounded-lg px-3 py-2 text-[13px] font-medium ${
+            toast.type === 'error' ? 'bg-[#fed1d7] text-[#8e0b21]' : 'bg-[#cdfed4] text-[#014b40]'
+          }`}
+        >
+          {toast.text}
+        </div>
+      )}
+
       {/* HEADER */}
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-[#1a1a1a]">Customers</h1>
@@ -422,17 +550,61 @@ export default function CustomersPage() {
               {/* Left Column: Customer Details (always visible) */}
               <div className={`space-y-4 ${drawerTab !== 'overview' ? 'h-full overflow-y-auto pr-1' : ''}`}>
                 <Card className="p-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <h3 className="text-base font-semibold text-[#1a1a1a]">{selected.displayName}</h3>
-                      {selected.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
-                      {isStaff(selected.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(selected.role)}</Pill>}
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="text-base font-semibold text-[#1a1a1a]">{selected.displayName}</h3>
+                        {selected.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
+                        {isStaff(selected.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(selected.role)}</Pill>}
+                      </div>
+                      <p className="text-xs text-[#616161] mt-0.5">Customer since {fmtDate(selected.createdAt)}</p>
                     </div>
-                    <p className="text-xs text-[#616161] mt-0.5">Customer since {fmtDate(selected.createdAt)}</p>
+                    <button
+                      onClick={() => {
+                        setEditName(selected.displayName || '');
+                        setEditPhone(selected.phoneNumber || '');
+                        setIsEditingProfile(!isEditingProfile);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-[#303030] text-xs font-medium cursor-pointer"
+                    >
+                      {isEditingProfile ? 'Cancel' : 'Edit profile'}
+                    </button>
                   </div>
-                  <div className="mt-4 space-y-2 text-[#303030]">
-                    <p className="flex items-center gap-2"><Phone size={14} className="text-[#8a8a8a]" />{selected.phoneNumber || 'No phone on file'}</p>
-                  </div>
+
+                  {isEditingProfile ? (
+                    <form onSubmit={handleUpdateProfile} className="mt-4 space-y-3 pt-3 border-t border-gray-100">
+                      <div>
+                        <label className="text-[11px] font-bold uppercase text-gray-600 block mb-1">Customer Name</label>
+                        <input
+                          required
+                          type="text"
+                          value={editName}
+                          onChange={e => setEditName(e.target.value)}
+                          className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2 text-xs font-semibold text-gray-900 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold uppercase text-gray-600 block mb-1">Phone Number</label>
+                        <input
+                          type="tel"
+                          value={editPhone}
+                          onChange={e => setEditPhone(e.target.value)}
+                          className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2 text-xs font-semibold text-gray-900 outline-none"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={savingProfile}
+                        className="w-full bg-[#303030] hover:bg-[#1a1a1a] text-white py-2 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50"
+                      >
+                        {savingProfile ? 'Saving...' : 'Save Profile'}
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="mt-4 space-y-2 text-[#303030]">
+                      <p className="flex items-center gap-2"><Phone size={14} className="text-[#8a8a8a]" />{selected.phoneNumber || 'No phone on file'}</p>
+                    </div>
+                  )}
                 </Card>
 
                 <Card className="grid grid-cols-3 divide-x divide-gray-200/80">
@@ -653,24 +825,73 @@ export default function CustomersPage() {
 
                   {drawerTab === 'addresses' && (
                     <Card className="overflow-hidden">
-                      <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
-                        <MapPin size={15} className="text-[#616161]" />
-                        <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
+                      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <MapPin size={15} className="text-[#616161]" />
+                          <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setEditingAddress(null);
+                            setAddressForm({
+                              name: selected.displayName || '',
+                              phone: selected.phoneNumber || '',
+                              house_no: '',
+                              address: '',
+                              city: 'Hyderabad',
+                              pincode: '',
+                              address_type: 'home',
+                              latitude: 17.3850,
+                              longitude: 78.4867,
+                            });
+                            setShowAddressModal(true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          + Add address
+                        </button>
                       </div>
                       <div className="p-4 space-y-3">
                         {ordersLoading ? (
                           <div className="h-4 bg-gray-100 rounded animate-pulse" />
                         ) : customerAddresses.length === 0 ? (
-                          <p className="text-center text-[#616161]">No saved addresses found.</p>
+                          <p className="text-center text-[#616161] py-4">No saved addresses found.</p>
                         ) : (
                           customerAddresses.map((addr: any) => (
-                            <div key={addr.id} className="text-xs space-y-1 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
+                            <div key={addr.id} className="text-xs space-y-1 pb-3 last:pb-0 border-b last:border-b-0 border-gray-100">
                               <div className="flex items-center justify-between">
                                 <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
-                                <span className="text-[10px] text-gray-400">{addr.pincode}</span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setEditingAddress(addr);
+                                      setAddressForm({
+                                        name: addr.name || '',
+                                        phone: addr.phone || '',
+                                        house_no: addr.house_no || '',
+                                        address: addr.address || addr.area || '',
+                                        city: addr.city || 'Hyderabad',
+                                        pincode: addr.pincode || '',
+                                        address_type: addr.address_type || 'home',
+                                        latitude: addr.latitude || 17.3850,
+                                        longitude: addr.longitude || 78.4867,
+                                      });
+                                      setShowAddressModal(true);
+                                    }}
+                                    className="text-xs font-semibold text-[#005bd3] hover:underline cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteAddress(addr.id)}
+                                    className="text-xs font-semibold text-rose-600 hover:underline cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
                               {addr.name && <p className="font-semibold text-gray-900">Recipient: {addr.name}</p>}
-                              <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
+                              <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city} - {addr.pincode}</p>
                               {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
                               {addr.latitude && addr.longitude && (
                                 <a
@@ -740,6 +961,151 @@ export default function CustomersPage() {
             </div>
           </aside>
         </>
+      )}
+
+      {/* Modal for adding/editing saved address */}
+      {showAddressModal && selected && (
+        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white text-gray-900 w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border border-gray-200 space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-4">
+              <h3 className="text-base font-black uppercase tracking-tight text-gray-900 flex items-center gap-2">
+                <MapPin className="text-emerald-700" size={20} /> {editingAddress ? 'Edit Saved Address' : 'Add New Address'} — {selected.displayName}
+              </h3>
+              <button onClick={() => setShowAddressModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveAddress} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Recipient Name *</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. Rahul Sharma"
+                    value={addressForm.name}
+                    onChange={e => setAddressForm({ ...addressForm, name: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Phone Number *</label>
+                  <input
+                    required
+                    type="tel"
+                    placeholder="9876543210"
+                    value={addressForm.phone}
+                    onChange={e => setAddressForm({ ...addressForm, phone: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">House / Flat No. *</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. Flat 402, Block B"
+                    value={addressForm.house_no}
+                    onChange={e => setAddressForm({ ...addressForm, house_no: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Address Type</label>
+                  <select
+                    value={addressForm.address_type}
+                    onChange={e => setAddressForm({ ...addressForm, address_type: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white cursor-pointer uppercase"
+                  >
+                    <option value="home">Home</option>
+                    <option value="work">Work</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Street Address / Area *</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. Banjara Hills, Road No. 12"
+                  value={addressForm.address}
+                  onChange={e => setAddressForm({ ...addressForm, address: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">City *</label>
+                  <input
+                    required
+                    type="text"
+                    value={addressForm.city}
+                    onChange={e => setAddressForm({ ...addressForm, city: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">6-Digit Pincode *</label>
+                  <input
+                    required
+                    maxLength={6}
+                    type="text"
+                    placeholder="500034"
+                    value={addressForm.pincode}
+                    onChange={e => setAddressForm({ ...addressForm, pincode: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Latitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={addressForm.latitude}
+                    onChange={e => setAddressForm({ ...addressForm, latitude: Number(e.target.value) })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Longitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={addressForm.longitude}
+                    onChange={e => setAddressForm({ ...addressForm, longitude: Number(e.target.value) })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddressModal(false)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addressSubmitting}
+                  className="flex-1 bg-emerald-800 hover:bg-emerald-900 text-amber-300 font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {addressSubmitting ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
+                  <span>{editingAddress ? 'Update Address' : 'Save Address'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
