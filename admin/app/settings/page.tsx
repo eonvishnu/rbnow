@@ -818,7 +818,7 @@ export default function StoreSettingsPage() {
               <div>
                 <span className="text-[11px] font-medium text-[#616161] block">Connected Gateway</span>
                 <p className="text-sm font-semibold text-[#1a1a1a]">{activeConnectedGw.name} ({activeConnectedGw.keyId || 'Live Key'})</p>
-                <span className="text-[11px] text-[#014b40] font-medium">Keys synced to Supabase PostgreSQL & Vault</span>
+                <span className="text-[11px] text-[#014b40] font-medium">Secured with end-to-end encryption</span>
               </div>
 
               <button
@@ -1190,7 +1190,7 @@ export default function StoreSettingsPage() {
               className="bg-[#303030] hover:bg-[#1a1a1a] text-white px-5 h-9 rounded-lg text-xs font-medium inline-flex items-center gap-2 transition-colors shadow-xs"
             >
               {savingSettings ? <Loader2 size={14} className="animate-spin" /> : <Save size={15} />}
-              <span>Save store settings to Supabase</span>
+              <span>Save store settings</span>
             </button>
           </div>
 
@@ -1296,12 +1296,9 @@ export default function StoreSettingsPage() {
             <div className="bg-white p-6 rounded-xl shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] space-y-4">
               <div className="border-b border-gray-100 pb-3 flex justify-between items-center">
                 <div>
-                  <h2 className="text-sm font-semibold text-[#1a1a1a]">Standard 2-zone radius rules (Editable & Non-Overlapping)</h2>
-                  <p className="text-xs text-[#616161]">Edit radius and order subtotal thresholds below. Boundaries automatically adjust so no rules overlap.</p>
+                  <h2 className="text-sm font-semibold text-[#1a1a1a]">Standard 2-zone radius rules</h2>
+                  <p className="text-xs text-[#616161]">Edit radius and order subtotal thresholds below.</p>
                 </div>
-                <span className="bg-[#cdfed4] text-[#014b40] px-2.5 py-1 rounded-full text-[10px] font-semibold">
-                  Non-Overlapping
-                </span>
               </div>
 
               {/* RADIUS THRESHOLD INPUT */}
@@ -1383,8 +1380,8 @@ export default function StoreSettingsPage() {
             <div className="bg-white p-6 rounded-xl shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] space-y-4">
               <div className="border-b border-gray-100 pb-3 flex justify-between items-center">
                 <div>
-                  <h2 className="text-sm font-semibold text-[#1a1a1a]">Distance-based 4-tier rules (Editable & Non-Overlapping)</h2>
-                  <p className="text-xs text-[#616161]">Tier boundaries automatically adjust so adjacent distance ranges stay perfectly seamless.</p>
+                  <h2 className="text-sm font-semibold text-[#1a1a1a]">Distance-based 4-tier rules</h2>
+                  <p className="text-xs text-[#616161]">Configure distance ranges and delivery fees across tiers.</p>
                 </div>
                 <span className="bg-[#cdfed4] text-[#014b40] px-2.5 py-1 rounded-full text-[10px] font-semibold">
                   4 Distance Tiers (Up to 25km+)
@@ -1548,7 +1545,7 @@ export default function StoreSettingsPage() {
           {/* SAVE BUTTON CARD */}
           <div className="bg-white p-5 rounded-xl shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] flex justify-between items-center">
             <span className="text-xs text-[#616161]">
-              Saves pricing structure & non-overlapping rules directly to Supabase PostgreSQL.
+              Saves delivery pricing structure securely.
             </span>
 
             <button
