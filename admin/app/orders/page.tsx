@@ -2420,7 +2420,7 @@ export default function AdminOrders() {
               {/* 1. REGISTERED PROFILE (PROFILES TABLE) */}
               <Card className="p-4 space-y-2">
                 <h3 className="text-xs font-black uppercase text-[#64736c] tracking-wider flex items-center gap-1.5">
-                  <User size={14} className="text-[#006B50]" /> Registered Profile (Profiles Table)
+                  <User size={14} className="text-[#006B50]" /> Registered Profile
                 </h3>
                 <p className="text-sm font-black text-[#17211d]">
                   {selectedOrder.userName || 'Guest User'}
@@ -2434,7 +2434,7 @@ export default function AdminOrders() {
               {/* 2. ORDER RECIPIENT & DELIVERY DETAILS (ORDERS TABLE) */}
               <Card className="p-4 space-y-3">
                 <h3 className="text-xs font-black uppercase text-[#64736c] tracking-wider flex items-center gap-1.5">
-                  <MapPin size={14} className="text-[#006B50]" /> Order Recipient &amp; Delivery (Orders Table)
+                  <MapPin size={14} className="text-[#006B50]" /> Order Recipient &amp; Delivery
                 </h3>
 
                 <div>
