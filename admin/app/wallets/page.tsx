@@ -99,10 +99,8 @@ export default function AdminWalletsPage() {
       if (updateErr) throw updateErr;
 
       const { data: { user: adminUser } } = await supabase.auth.getUser();
-      const adminIdentity = adminUser?.email || adminUser?.id?.slice(0, 8) || 'Admin';
 
-      const baseDesc = creditReason.trim() || (txType === 'credit' ? 'Admin Credited Store Credit' : 'Admin Debited Store Credit');
-      const actionDesc = `${baseDesc} (Processed by: ${adminIdentity})`;
+      const description = creditReason.trim() || (txType === 'credit' ? 'Admin Credited Store Credit' : 'Admin Debited Store Credit');
 
       const { error: txErr } = await supabase
         .from('wallet_transactions')
@@ -111,7 +109,7 @@ export default function AdminWalletsPage() {
           user_id: selectedWallet.user_id,
           amount: amt,
           type: txType,
-          description: actionDesc,
+          description,
           performed_by: adminUser?.id || null,
         });
 
