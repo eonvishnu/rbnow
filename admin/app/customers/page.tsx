@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, X, MessageSquare, Download, ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, X, MessageSquare, Download, ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ShoppingBag, ChevronLeft, ChevronRight, Wallet, MapPin } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { getAdminCustomersPaginated, getCustomerOrderHistory } from '@/features/customers/services/customers.service';
 import type { AdminCustomer, CustomerOrder } from '@/features/customers/types/customer';
 
@@ -41,6 +42,8 @@ export default function CustomersPage() {
 
   const [selected, setSelected] = useState<AdminCustomer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
+  const [customerWallet, setCustomerWallet] = useState<number>(0);
+  const [customerAddresses, setCustomerAddresses] = useState<any[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   useEffect(() => {
@@ -60,11 +63,24 @@ export default function CustomersPage() {
   }, [page, searchQuery]);
 
   useEffect(() => {
-    if (!selected) { setCustomerOrders([]); return; }
+    if (!selected) {
+      setCustomerOrders([]);
+      setCustomerWallet(0);
+      setCustomerAddresses([]);
+      return;
+    }
     setOrdersLoading(true);
-    getCustomerOrderHistory(selected.id)
-      .then((orders) => setCustomerOrders(orders))
-      .catch((error: unknown) => console.error('Customer order history fetch error:', error))
+    Promise.all([
+      getCustomerOrderHistory(selected.id),
+      supabase.from('customer_wallets').select('balance').eq('user_id', selected.id).maybeSingle(),
+      supabase.from('addresses').select('*').eq('user_id', selected.id).order('created_at', { ascending: false }),
+    ])
+      .then(([orders, walletRes, addrRes]) => {
+        setCustomerOrders(orders);
+        if (walletRes.data) setCustomerWallet(Number(walletRes.data.balance || 0));
+        if (addrRes.data) setCustomerAddresses(addrRes.data);
+      })
+      .catch((error: unknown) => console.error('Customer detail data fetch error:', error))
       .finally(() => setOrdersLoading(false));
   }, [selected]);
 
@@ -288,6 +304,39 @@ export default function CustomersPage() {
                 <MiniStat label="Total spent" value={formatCurrency(selected.totalSpent)} />
                 <MiniStat label="Orders" value={String(selected.orderCount)} />
                 <MiniStat label="Avg. order" value={formatCurrency(selected.orderCount ? selected.totalSpent / selected.orderCount : 0)} />
+              </Card>
+
+              <Card className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wallet size={16} className="text-[#006B50]" />
+                  <span className="font-semibold text-[#1a1a1a]">Store Credit Balance</span>
+                </div>
+                <span className="font-bold text-emerald-900">{formatCurrency(customerWallet)}</span>
+              </Card>
+
+              <Card className="overflow-hidden">
+                <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
+                  <MapPin size={15} className="text-[#616161]" />
+                  <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
+                </div>
+                <div className="p-4 space-y-3">
+                  {ordersLoading ? (
+                    <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                  ) : customerAddresses.length === 0 ? (
+                    <p className="text-center text-[#616161]">No saved addresses found.</p>
+                  ) : (
+                    customerAddresses.map((addr: any) => (
+                      <div key={addr.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
+                          <span className="text-[10px] text-gray-400">{addr.pincode}</span>
+                        </div>
+                        <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
+                        {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
+                      </div>
+                    ))
+                  )}
+                </div>
               </Card>
 
               <Card className="overflow-hidden">
