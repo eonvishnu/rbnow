@@ -216,6 +216,17 @@ export default function CartPage() {
     });
   }, [groupedCart, totalAmount, grandTotal, location.lat, location.lng, location.address, appliedCoupon]);
 
+  const hasValidAddress = useMemo(() => {
+    return Boolean(
+      location.address &&
+      location.address.trim() !== '' &&
+      location.houseNumber &&
+      location.houseNumber.trim() !== '' &&
+      !location.address.toLowerCase().includes('hyderabad, india') &&
+      location.address.toLowerCase() !== 'hyderabad'
+    );
+  }, [location.address, location.houseNumber]);
+
   // Revalidate or clear coupon when cart total changes below minimum threshold
   useEffect(() => {
     if (appliedCoupon && totalAmount < Number(appliedCoupon.min_order_amount || 0)) {
@@ -512,8 +523,8 @@ export default function CartPage() {
       return;
     }
 
-    if (!location.houseNumber || location.houseNumber.trim() === '') {
-      setCheckoutError('Please add your House / Flat / Block No. to your delivery address before placing your order.');
+    if (!hasValidAddress) {
+      setCheckoutError('Please add or select a complete delivery address with your house number before placing your order.');
       setIsModalOpen(true);
       checkoutInProgressRef.current = false;
       setCheckoutState('cart_idle');
@@ -874,23 +885,29 @@ export default function CartPage() {
         )}
 
         {/* TOP ACTIVE DELIVERY ADDRESS CARD */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E3EAE6] text-[#17211D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+        <div className={`p-4 sm:p-5 rounded-2xl bg-white border ${hasValidAddress ? 'border-[#E3EAE6]' : 'border-amber-400 bg-amber-50/40'} text-[#17211D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs`}>
           <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-[#E5F5EF] text-[#006B50] flex items-center justify-center shrink-0">
+            <div className={`w-10 h-10 rounded-xl ${hasValidAddress ? 'bg-[#E5F5EF] text-[#006B50]' : 'bg-amber-100 text-amber-800'} flex items-center justify-center shrink-0`}>
               <MapPin size={20} />
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase text-[#75817B] tracking-wider">Delivering to</p>
+              <p className="text-[10px] font-black uppercase text-[#75817B] tracking-wider">
+                {hasValidAddress ? 'Delivering to' : 'Delivery Address Required'}
+              </p>
               <p className="text-xs font-bold text-[#17211D] mt-0.5">
-                {location.address ? `${location.area || ''}, ${location.city || 'Hyderabad'}` : 'Select delivery location'}
+                {hasValidAddress ? `${location.houseNumber}, ${location.area || ''}, ${location.city || 'Hyderabad'}` : 'Select delivery address'}
               </p>
             </div>
           </div>
           <button
             onClick={handleAddressChangeClick}
-            className="px-4 py-2 rounded-xl bg-[#F5F7F6] hover:bg-[#E3EAE6] text-[#004D3B] text-xs font-bold uppercase tracking-wider transition-all border border-[#E3EAE6] cursor-pointer"
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border cursor-pointer ${
+              hasValidAddress
+                ? 'bg-[#F5F7F6] hover:bg-[#E3EAE6] text-[#004D3B] border-[#E3EAE6]'
+                : 'bg-[#FFC400] hover:bg-[#F2AC00] text-[#004D3B] border-amber-300 shadow-sm font-black'
+            }`}
           >
-            Change Address
+            {hasValidAddress ? 'Change Address' : 'Add Address'}
           </button>
         </div>
 
@@ -909,7 +926,7 @@ export default function CartPage() {
                   ? stockData[item.id]
                   : (stockData[cleanId] !== undefined
                     ? stockData[cleanId]
-                    : (checkingStock ? 999 : 0));
+                    : (item.stock ?? 20));
                 const isOutOfStock = !checkingStock && stock === 0;
                 const isOverStock = !checkingStock && item.qty > stock;
                 const actualProductId = item.product_id || cleanId;
@@ -1007,7 +1024,7 @@ export default function CartPage() {
                   const itemQuantity = cart.filter((i: any) => i.id === variantId).length;
                   const stock = stockData[variantId] !== undefined
                     ? stockData[variantId]
-                    : (checkingStock ? 999 : (p.stock ?? 20));
+                    : (p.stock ?? 20);
                   const isSoldOut = !checkingStock && stock === 0;
 
                   return (
@@ -1138,7 +1155,7 @@ export default function CartPage() {
             </div>
 
             <button
-              disabled={isCartDisabled || cart.length === 0 || hasStockIssues}
+              disabled={isCartDisabled || cart.length === 0 || hasStockIssues || !hasValidAddress || checkingStock}
               onClick={handleExpressCheckout}
               className="w-full bg-[#FFC400] hover:bg-F2AC00 text-[#004D3B] font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all shadow-md active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer border border-[#E9A900]"
             >
@@ -1150,6 +1167,12 @@ export default function CartPage() {
                 <>
                   <Loader2 size={17} className="animate-spin" /> Complete Payment...
                 </>
+              ) : checkingStock ? (
+                <>
+                  <Loader2 size={17} className="animate-spin" /> Validating Cart...
+                </>
+              ) : !hasValidAddress ? (
+                'Add Delivery Address to Checkout'
               ) : hasStockIssues ? (
                 'Resolve Stock Issues to Checkout'
               ) : (
