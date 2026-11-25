@@ -48,8 +48,9 @@ export default function CustomersPage() {
   const [customerTransactions, setCustomerTransactions] = useState<any[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
-  // Wallet adjustment modal state inside customer drawer
-  const [showWalletModal, setShowWalletModal] = useState(false);
+  // Wallet expansion drawer state & actions
+  const [drawerTab, setDrawerTab] = useState<'overview' | 'wallet'>('overview');
+  const [copiedId, setCopiedId] = useState(false);
   const [txType, setTxType] = useState<'credit' | 'debit'>('credit');
   const [walletAmount, setWalletAmount] = useState('');
   const [walletReason, setWalletReason] = useState('');
@@ -162,7 +163,7 @@ export default function CustomersPage() {
       setWalletReason('');
       await refreshCustomerDetails();
       setTimeout(() => {
-        setShowWalletModal(false);
+        setDrawerTab('overview');
         setWalletMsg(null);
       }, 1500);
     } catch (err: any) {
@@ -375,131 +376,251 @@ export default function CustomersPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-4 text-[13px]">
-              <Card className="p-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <h3 className="text-base font-semibold text-[#1a1a1a]">{selected.displayName}</h3>
-                    {selected.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
-                    {isStaff(selected.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(selected.role)}</Pill>}
+              {drawerTab === 'overview' ? (
+                <>
+                  <Card className="p-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="text-base font-semibold text-[#1a1a1a]">{selected.displayName}</h3>
+                        {selected.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
+                        {isStaff(selected.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(selected.role)}</Pill>}
+                      </div>
+                      <p className="text-xs text-[#616161] mt-0.5">Customer since {fmtDate(selected.createdAt)}</p>
+                    </div>
+                    <div className="mt-4 space-y-2 text-[#303030]">
+                      <p className="flex items-center gap-2"><Phone size={14} className="text-[#8a8a8a]" />{selected.phoneNumber || 'No phone on file'}</p>
+                    </div>
+                  </Card>
+
+                  <Card className="grid grid-cols-3 divide-x divide-gray-200/80">
+                    <MiniStat label="Total spent" value={formatCurrency(selected.totalSpent)} />
+                    <MiniStat label="Orders" value={String(selected.orderCount)} />
+                    <MiniStat label="Avg. order" value={formatCurrency(selected.orderCount ? selected.totalSpent / selected.orderCount : 0)} />
+                  </Card>
+
+                  <Card className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Wallet size={16} className="text-[#006B50]" />
+                      <div>
+                        <span className="font-semibold text-[#1a1a1a] block">Store Credit</span>
+                        <span className="text-xs font-bold text-emerald-900">{formatCurrency(customerWallet)}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setWalletAmount('');
+                        setWalletReason('');
+                        setTxType('credit');
+                        setWalletMsg(null);
+                        setDrawerTab('wallet');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Manage wallet
+                    </button>
+                  </Card>
+
+                  <Card className="overflow-hidden">
+                    <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
+                      <MapPin size={15} className="text-[#616161]" />
+                      <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {ordersLoading ? (
+                        <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                      ) : customerAddresses.length === 0 ? (
+                        <p className="text-center text-[#616161]">No saved addresses found.</p>
+                      ) : (
+                        customerAddresses.map((addr: any) => (
+                          <div key={addr.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
+                              <span className="text-[10px] text-gray-400">{addr.pincode}</span>
+                            </div>
+                            <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
+                            {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </Card>
+
+                  <Card className="overflow-hidden">
+                    <div className="px-4 py-3 flex items-center gap-2">
+                      <ShoppingBag size={15} className="text-[#616161]" />
+                      <h3 className="text-sm font-semibold text-[#1a1a1a]">Order history</h3>
+                    </div>
+                    <div className="divide-y divide-gray-100 border-t border-gray-100">
+                      {ordersLoading ? (
+                        <div className="p-4"><div className="h-4 bg-gray-100 rounded animate-pulse" /></div>
+                      ) : customerOrders.length === 0 ? (
+                        <p className="p-6 text-center text-[#616161]">No orders placed yet.</p>
+                      ) : (
+                        customerOrders.map((o) => (
+                          <div key={o.id} className="p-4 space-y-1.5 text-xs">
+                            <div className="flex items-center justify-between font-bold">
+                              <span className="text-[#1a1a1a]">RB-{o.order_number || o.id.slice(0, 6).toUpperCase()}</span>
+                              <span className="text-emerald-900 font-black">{formatCurrency(Number(o.total || 0))}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-gray-500 text-[11px]">
+                              <span>{new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                              <span className="capitalize bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-bold">{o.status?.replace(/_/g, ' ')}</span>
+                            </div>
+                            {o.order_items && o.order_items.length > 0 && (
+                              <p className="text-[11px] text-gray-600 truncate">
+                                {o.order_items.map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')}
+                              </p>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </Card>
+                </>
+              ) : (
+                /* EXPANDED WALLET MANAGEMENT VIEW */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setDrawerTab('overview')}
+                      className="text-xs font-bold text-[#006B50] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      ← Back to customer details
+                    </button>
+                    <span className="text-xs font-semibold text-gray-500">Wallet Management</span>
                   </div>
-                  <p className="text-xs text-[#616161] mt-0.5">Customer since {fmtDate(selected.createdAt)}</p>
-                </div>
-                <div className="mt-4 space-y-2 text-[#303030]">
-                  <p className="flex items-center gap-2"><Phone size={14} className="text-[#8a8a8a]" />{selected.phoneNumber || 'No phone on file'}</p>
-                </div>
-              </Card>
 
-              <Card className="grid grid-cols-3 divide-x divide-gray-200/80">
-                <MiniStat label="Total spent" value={formatCurrency(selected.totalSpent)} />
-                <MiniStat label="Orders" value={String(selected.orderCount)} />
-                <MiniStat label="Avg. order" value={formatCurrency(selected.orderCount ? selected.totalSpent / selected.orderCount : 0)} />
-              </Card>
-
-              <Card className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Wallet size={16} className="text-[#006B50]" />
-                  <div>
-                    <span className="font-semibold text-[#1a1a1a] block">Store Credit</span>
-                    <span className="text-xs font-bold text-emerald-900">{formatCurrency(customerWallet)}</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setWalletAmount('');
-                    setWalletReason('');
-                    setTxType('credit');
-                    setWalletMsg(null);
-                    setShowWalletModal(true);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs font-medium transition-colors cursor-pointer"
-                >
-                  Manage wallet
-                </button>
-              </Card>
-
-              {/* Wallet Transactions History */}
-              <Card className="overflow-hidden">
-                <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
-                  <Wallet size={15} className="text-[#616161]" />
-                  <h3 className="text-sm font-semibold text-[#1a1a1a]">Wallet transaction logs ({customerTransactions.length})</h3>
-                </div>
-                <div className="p-4 space-y-2.5 max-h-48 overflow-y-auto">
-                  {ordersLoading ? (
-                    <div className="h-4 bg-gray-100 rounded animate-pulse" />
-                  ) : customerTransactions.length === 0 ? (
-                    <p className="text-center text-[#616161] py-2">No wallet transactions recorded.</p>
-                  ) : (
-                    customerTransactions.map((tx: any) => (
-                      <div key={tx.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100 flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-bold text-[#1a1a1a]">{tx.description}</p>
-                          <p className="text-[10px] text-gray-400">{new Date(tx.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
-                        </div>
-                        <span className={`font-black shrink-0 ${tx.type === 'credit' ? 'text-emerald-800' : 'text-rose-600'}`}>
-                          {tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount))}
-                        </span>
+                  {/* Balance & ID Card */}
+                  <Card className="p-5 space-y-4 bg-gradient-to-br from-emerald-900 to-emerald-950 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-emerald-300 tracking-wider">Wallet Balance</p>
+                        <p className="text-2xl font-black text-amber-300 mt-0.5">{formatCurrency(customerWallet)}</p>
                       </div>
-                    ))
-                  )}
-                </div>
-              </Card>
-
-              <Card className="overflow-hidden">
-                <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
-                  <MapPin size={15} className="text-[#616161]" />
-                  <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
-                </div>
-                <div className="p-4 space-y-3">
-                  {ordersLoading ? (
-                    <div className="h-4 bg-gray-100 rounded animate-pulse" />
-                  ) : customerAddresses.length === 0 ? (
-                    <p className="text-center text-[#616161]">No saved addresses found.</p>
-                  ) : (
-                    customerAddresses.map((addr: any) => (
-                      <div key={addr.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
-                          <span className="text-[10px] text-gray-400">{addr.pincode}</span>
-                        </div>
-                        <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
-                        {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
+                      <div className="w-10 h-10 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold">
+                        <Wallet size={20} />
                       </div>
-                    ))
-                  )}
-                </div>
-              </Card>
+                    </div>
 
-              <Card className="overflow-hidden">
-                <div className="px-4 py-3 flex items-center gap-2">
-                  <ShoppingBag size={15} className="text-[#616161]" />
-                  <h3 className="text-sm font-semibold text-[#1a1a1a]">Order history</h3>
-                </div>
-                <div className="divide-y divide-gray-100 border-t border-gray-100">
-                  {ordersLoading ? (
-                    <div className="p-4"><div className="h-4 bg-gray-100 rounded animate-pulse" /></div>
-                  ) : customerOrders.length === 0 ? (
-                    <p className="p-6 text-center text-[#616161]">No orders placed yet.</p>
-                  ) : (
-                    customerOrders.map((o) => (
-                      <div key={o.id} className="p-4 space-y-1.5 text-xs">
-                        <div className="flex items-center justify-between font-bold">
-                          <span className="text-[#1a1a1a]">RB-{o.order_number || o.id.slice(0, 6).toUpperCase()}</span>
-                          <span className="text-emerald-900 font-black">{formatCurrency(Number(o.total || 0))}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-gray-500 text-[11px]">
-                          <span>{new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                          <span className="capitalize bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-bold">{o.status?.replace(/_/g, ' ')}</span>
-                        </div>
-                        {o.order_items && o.order_items.length > 0 && (
-                          <p className="text-[11px] text-gray-600 truncate">
-                            {o.order_items.map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')}
-                          </p>
-                        )}
+                    <div className="pt-3 border-t border-emerald-800/80 flex items-center justify-between text-xs">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-emerald-300 uppercase">Wallet ID</p>
+                        <p className="font-mono text-emerald-100 truncate max-w-[240px]">{customerWalletRecord?.id || 'Generating...'}</p>
                       </div>
-                    ))
-                  )}
+                      {customerWalletRecord?.id && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(customerWalletRecord.id);
+                            setCopiedId(true);
+                            setTimeout(() => setCopiedId(false), 2000);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-amber-400 text-emerald-950 font-bold text-xs uppercase tracking-wider shrink-0 cursor-pointer"
+                        >
+                          {copiedId ? 'Copied!' : 'Copy ID'}
+                        </button>
+                      )}
+                    </div>
+                  </Card>
+
+                  {/* Credit / Debit Form */}
+                  <Card className="p-5 space-y-4">
+                    <h3 className="text-sm font-semibold text-[#1a1a1a]">Adjust store credit</h3>
+                    <form onSubmit={handleWalletAdjustment} className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-gray-600">Action Type</label>
+                        <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
+                          <button
+                            type="button"
+                            onClick={() => setTxType('credit')}
+                            className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                              txType === 'credit' ? 'bg-emerald-800 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            <ArrowDownLeft size={13} /> Add Credit (+)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTxType('debit')}
+                            className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                              txType === 'debit' ? 'bg-rose-700 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            <ArrowUpRight size={13} /> Deduct Credit (-)
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-gray-600">Amount (₹)</label>
+                        <input
+                          required
+                          type="number"
+                          placeholder="e.g. 500"
+                          value={walletAmount}
+                          onChange={e => setWalletAmount(e.target.value)}
+                          className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs font-semibold text-gray-900 outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase text-gray-600">Reason / Description</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Refund, Promotional cashback"
+                          value={walletReason}
+                          onChange={e => setWalletReason(e.target.value)}
+                          className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs font-semibold text-gray-900 outline-none"
+                        />
+                      </div>
+
+                      {walletMsg && (
+                        <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${walletMsg.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+                          {walletMsg.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
+                          <span>{walletMsg.text}</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={walletSubmitting || !walletAmount}
+                        className={`w-full font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
+                          txType === 'credit' ? 'bg-emerald-800 hover:bg-emerald-900 text-amber-300' : 'bg-rose-700 hover:bg-rose-800 text-white'
+                        }`}
+                      >
+                        {walletSubmitting ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
+                        <span>{txType === 'credit' ? 'Confirm Credit' : 'Confirm Debit'}</span>
+                      </button>
+                    </form>
+                  </Card>
+
+                  {/* Wallet Transactions Below */}
+                  <Card className="overflow-hidden">
+                    <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
+                      <Wallet size={15} className="text-[#616161]" />
+                      <h3 className="text-sm font-semibold text-[#1a1a1a]">Transaction history ({customerTransactions.length})</h3>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {ordersLoading ? (
+                        <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                      ) : customerTransactions.length === 0 ? (
+                        <p className="text-center text-[#616161] py-4">No wallet transactions recorded.</p>
+                      ) : (
+                        customerTransactions.map((tx: any) => (
+                          <div key={tx.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100 flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-bold text-[#1a1a1a]">{tx.description}</p>
+                              <p className="text-[10px] text-gray-400">{new Date(tx.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                            </div>
+                            <span className={`font-black shrink-0 ${tx.type === 'credit' ? 'text-emerald-800' : 'text-rose-600'}`}>
+                              {tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount))}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </Card>
                 </div>
-              </Card>
+              )}
             </div>
 
             <div className="p-4 bg-white border-t border-gray-200 shrink-0">
@@ -516,96 +637,6 @@ export default function CustomersPage() {
             </div>
           </aside>
         </>
-      )}
-
-      {/* Modal for managing store credit (credit / debit) inside customer drawer */}
-      {showWalletModal && selected && (
-        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white text-gray-900 w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-2xl border border-gray-200 space-y-5 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b pb-4">
-              <h3 className="text-base font-black uppercase tracking-tight text-gray-900 flex items-center gap-2">
-                <Wallet className="text-emerald-700" size={20} /> Manage Wallet — {selected.displayName}
-              </h3>
-              <button onClick={() => setShowWalletModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer">✕</button>
-            </div>
-
-            <form onSubmit={handleWalletAdjustment} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-gray-600">Action Type</label>
-                <div className="flex gap-2 p-1 bg-gray-100 rounded-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setTxType('credit')}
-                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                      txType === 'credit' ? 'bg-emerald-800 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    <ArrowDownLeft size={14} /> Add Credit (+)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTxType('debit')}
-                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                      txType === 'debit' ? 'bg-rose-700 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    <ArrowUpRight size={14} /> Deduct Credit (-)
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-gray-600">Amount (₹)</label>
-                <input
-                  required
-                  type="number"
-                  placeholder="e.g. 500"
-                  value={walletAmount}
-                  onChange={e => setWalletAmount(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white transition-all"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-gray-600">Reason / Description</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Refund, Promotional cashback"
-                  value={walletReason}
-                  onChange={e => setWalletReason(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white transition-all"
-                />
-              </div>
-
-              {walletMsg && (
-                <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${walletMsg.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
-                  {walletMsg.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
-                  <span>{walletMsg.text}</span>
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowWalletModal(false)}
-                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={walletSubmitting || !walletAmount}
-                  className={`flex-1 font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
-                    txType === 'credit' ? 'bg-emerald-800 hover:bg-emerald-900 text-amber-300' : 'bg-rose-700 hover:bg-rose-800 text-white'
-                  }`}
-                >
-                  {walletSubmitting ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
-                  <span>{txType === 'credit' ? 'Confirm Credit' : 'Confirm Debit'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
       )}
     </div>
   );
