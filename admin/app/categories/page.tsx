@@ -23,6 +23,7 @@ export default function CategoryManager() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
+  const [parentFilter, setParentFilter] = useState<string>('all');
 
   const [newCat, setNewCat] = useState('');
   const [parentId, setParentId] = useState<string>('');
@@ -137,8 +138,8 @@ export default function CategoryManager() {
   const handleToggle = async (cat: AdminCategory) => {
     const vocab = learnCategoryStatusValues(categories);
     const nextEnabled = !isCategoryEnabled(cat);
-    if (nextEnabled && !cat.image_url) {
-      flash('error', 'Add an image before enabling this category.');
+    if (nextEnabled && !cat.parent_id && !cat.image_url) {
+      flash('error', 'Add an image before enabling this root category.');
       return;
     }
     const prevValue = cat.status;
@@ -170,6 +171,12 @@ export default function CategoryManager() {
     }
   };
 
+  const parentMap = useMemo(() => {
+    const m = new Map<string, string>();
+    categories.forEach(c => m.set(c.id, c.name));
+    return m;
+  }, [categories]);
+
   const counts = useMemo(
     () => ({
       all: categories.length,
@@ -179,20 +186,120 @@ export default function CategoryManager() {
     [categories]
   );
 
-  const visible = useMemo(() => {
+  const hierarchicalVisible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return categories.filter((c) => {
+    const filtered = categories.filter((c) => {
       const matchesQ = !q || String(c.name || '').toLowerCase().includes(q);
       const matchesF = filter === 'all' ? true : filter === 'active' ? isCategoryEnabled(c) : !isCategoryEnabled(c);
-      return matchesQ && matchesF;
+      const matchesP = parentFilter === 'all'
+        ? true
+        : parentFilter === 'root_only'
+          ? !c.parent_id
+          : c.parent_id === parentFilter || c.id === parentFilter;
+      return matchesQ && matchesF && matchesP;
     });
-  }, [categories, filter, query]);
+
+    const roots = filtered.filter(c => !c.parent_id);
+    const childrenMap = new Map<string, AdminCategory[]>();
+    filtered.forEach(c => {
+      if (c.parent_id) {
+        const list = childrenMap.get(c.parent_id) || [];
+        list.push(c);
+        childrenMap.set(c.parent_id, list);
+      }
+    });
+
+    return { roots, childrenMap, totalFiltered: filtered.length };
+  }, [categories, filter, query, parentFilter]);
 
   const tabs: { id: Filter; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'active', label: 'Active' },
     { id: 'disabled', label: 'Disabled' },
   ];
+
+  const renderCategoryCard = (cat: AdminCategory, isSub = false) => {
+    const on = isCategoryEnabled(cat);
+    const isRoot = !cat.parent_id;
+    const parentName = cat.parent_id ? parentMap.get(cat.parent_id) : null;
+
+    return (
+      <Card key={cat.id} className={`p-4 flex items-center gap-4 ${isSub ? 'border-l-4 border-l-[#006B50] ml-6 sm:ml-8 bg-[#fcfdfe]' : ''}`}>
+        {isRoot && (
+          <div className={`h-14 w-14 rounded-lg bg-[#f7f7f7] flex-shrink-0 overflow-hidden shadow-[0_0_0_1px_rgba(0,0,0,0.06)] ${on ? '' : 'opacity-50 grayscale'}`}>
+            {cat.image_url ? (
+              <img src={cat.image_url} alt={cat.name} className="h-full w-full object-cover" />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center text-[#8a8a8a]">
+                <ImageIcon size={20} />
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            {isSub && <span className="text-xs text-[#006B50] font-black">↳</span>}
+            <h3 className={`text-sm font-semibold capitalize truncate ${on ? 'text-[#1a1a1a]' : 'text-[#8a8a8a]'}`}>{cat.name}</h3>
+          </div>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span
+              className={`inline-flex items-center px-2 h-5 rounded-full text-[11px] font-medium shrink-0 ${
+                on ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-[#e3e3e3] text-[#303030]'
+              }`}
+            >
+              {on ? 'Active' : 'Disabled'}
+            </span>
+            <span className={`inline-flex items-center px-2 h-5 rounded-full text-[11px] font-medium shrink-0 ${isRoot ? 'bg-[#e5f5ef] text-[#006b50]' : 'bg-gray-100 text-gray-600'}`}>
+              {isRoot ? 'Root category' : `Subcategory of ${parentName || 'Parent'}`}
+            </span>
+            {isRoot && !cat.image_url && (
+              <span className="inline-flex items-center px-2 h-5 rounded-full text-[11px] font-medium bg-[#ffd6a4] text-[#5e4200] shrink-0">
+                No image
+              </span>
+            )}
+            {isRoot && (
+              <button
+                onClick={() => {
+                  replaceTargetRef.current = cat;
+                  replaceInputRef.current?.click();
+                }}
+                disabled={uploadingId === cat.id}
+                className="text-[12px] font-medium text-[#005bd3] hover:underline disabled:opacity-50 py-0.5 whitespace-nowrap"
+              >
+                {uploadingId === cat.id ? 'Uploading…' : cat.image_url ? 'Change image' : 'Add image'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            role="switch"
+            aria-checked={on}
+            aria-label={`${on ? 'Disable' : 'Enable'} ${cat.name}`}
+            onClick={() => handleToggle(cat)}
+            disabled={togglingId === cat.id}
+            title={on ? 'Disable category' : 'Enable category'}
+            className={`relative w-10 h-6 rounded-full transition-colors disabled:opacity-60 ${on ? 'bg-[#303030]' : 'bg-[#c9c9c9]'}`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-4' : ''}`}
+            />
+          </button>
+
+          <button
+            onClick={() => handleDeleteCategory(cat)}
+            className="p-2 rounded-lg text-[#8a8a8a] hover:text-[#8e0b21] hover:bg-[#fed1d7]/50 transition-colors"
+            title="Delete category"
+            aria-label={`Delete ${cat.name}`}
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </Card>
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -304,99 +411,62 @@ export default function CategoryManager() {
           ))}
         </div>
 
-        <div className="relative sm:w-64">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search categories"
-            className="w-full min-h-11 sm:min-h-8 py-2 pl-9 pr-3 text-base sm:text-[13px] bg-white rounded-lg shadow-[0_0_0_1px_rgba(0,0,0,0.15)] outline-none focus:shadow-[0_0_0_2px_#005bd3]"
-          />
+        <div className="flex items-center gap-2">
+          <select
+            value={parentFilter}
+            onChange={(e) => setParentFilter(e.target.value)}
+            className="min-h-11 sm:min-h-8 py-2 px-3 text-base sm:text-[13px] bg-white border border-gray-200 rounded-lg text-[#303030] outline-none cursor-pointer shadow-[0_0_0_1px_rgba(0,0,0,0.08)]"
+          >
+            <option value="all">All parent categories</option>
+            <option value="root_only">Root categories only</option>
+            {categories.filter(c => !c.parent_id).map(c => (
+              <option key={c.id} value={c.id}>Parent: {c.name}</option>
+            ))}
+          </select>
+
+          <div className="relative sm:w-64">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search categories"
+              className="w-full min-h-11 sm:min-h-8 py-2 pl-9 pr-3 text-base sm:text-[13px] bg-white rounded-lg shadow-[0_0_0_1px_rgba(0,0,0,0.15)] outline-none focus:shadow-[0_0_0_2px_#005bd3]"
+            />
+          </div>
         </div>
       </div>
 
-      {/* GRID */}
+      {/* GRID / HIERARCHY */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="space-y-4">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-[88px] bg-white rounded-xl animate-pulse shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
           ))}
         </div>
-      ) : visible.length === 0 ? (
+      ) : hierarchicalVisible.totalFiltered === 0 ? (
         <Card className="py-14 text-center text-[13px] text-[#616161]">
           {categories.length === 0 ? 'No categories yet. Add your first one above.' : 'No categories match your filter.'}
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {visible.map((cat) => {
-            const on = isCategoryEnabled(cat);
+        <div className="space-y-4">
+          {hierarchicalVisible.roots.map((rootCat) => {
+            const subCategories = hierarchicalVisible.childrenMap.get(rootCat.id) || [];
             return (
-              <Card key={cat.id} className="p-4 flex items-center gap-4">
-                <div className={`h-14 w-14 rounded-lg bg-[#f7f7f7] flex-shrink-0 overflow-hidden shadow-[0_0_0_1px_rgba(0,0,0,0.06)] ${on ? '' : 'opacity-50 grayscale'}`}>
-                  {cat.image_url ? (
-                    <img src={cat.image_url} alt={cat.name} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center text-[#8a8a8a]">
-                      <ImageIcon size={20} />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <h3 className={`text-sm font-semibold capitalize truncate ${on ? 'text-[#1a1a1a]' : 'text-[#8a8a8a]'}`}>{cat.name}</h3>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    <span
-                      className={`inline-flex items-center px-2 h-5 rounded-full text-[11px] font-medium ${
-                        on ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-[#e3e3e3] text-[#303030]'
-                      }`}
-                    >
-                      {on ? 'Active' : 'Disabled'}
-                    </span>
-                    {!cat.image_url && (
-                      <span className="inline-flex items-center px-2 h-5 rounded-full text-[11px] font-medium bg-[#ffd6a4] text-[#5e4200]">
-                        No image
-                      </span>
-                    )}
-                    <button
-                      onClick={() => {
-                        replaceTargetRef.current = cat;
-                        replaceInputRef.current?.click();
-                      }}
-                      disabled={uploadingId === cat.id}
-                      className="text-[13px] font-medium text-[#005bd3] hover:underline disabled:opacity-50 py-0.5"
-                    >
-                      {uploadingId === cat.id ? 'Uploading…' : cat.image_url ? 'Change image' : 'Add image'}
-                    </button>
+              <div key={rootCat.id} className="space-y-3">
+                {renderCategoryCard(rootCat, false)}
+                {subCategories.length > 0 && (
+                  <div className="space-y-2.5">
+                    {subCategories.map((subCat) => renderCategoryCard(subCat, true))}
                   </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  {/* Enable / disable switch */}
-                  <button
-                    role="switch"
-                    aria-checked={on}
-                    aria-label={`${on ? 'Disable' : 'Enable'} ${cat.name}`}
-                    onClick={() => handleToggle(cat)}
-                    disabled={togglingId === cat.id}
-                    title={on ? 'Disable category' : 'Enable category'}
-                    className={`relative w-10 h-6 rounded-full transition-colors disabled:opacity-60 ${on ? 'bg-[#303030]' : 'bg-[#c9c9c9]'}`}
-                  >
-                    <span
-                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-4' : ''}`}
-                    />
-                  </button>
-
-                  <button
-                    onClick={() => handleDeleteCategory(cat)}
-                    className="p-2 rounded-lg text-[#8a8a8a] hover:text-[#8e0b21] hover:bg-[#fed1d7]/50 transition-colors"
-                    title="Delete category"
-                    aria-label={`Delete ${cat.name}`}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </Card>
+                )}
+              </div>
             );
+          })}
+
+          {/* Render any orphan subcategories whose root wasn't matched */}
+          {Array.from(hierarchicalVisible.childrenMap.entries()).map(([parentId, subs]) => {
+            if (hierarchicalVisible.roots.some(r => r.id === parentId)) return null;
+            return subs.map((subCat) => renderCategoryCard(subCat, true));
           })}
         </div>
       )}

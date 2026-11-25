@@ -214,6 +214,8 @@ export const LocationModal = () => {
         defaultName={userData?.display_name || user?.email || ''}
         defaultPhone={userData?.phone_number || ''}
         existingLabels={savedAddresses.map(a => a.label)}
+        initialLat={location.lat}
+        initialLng={location.lng}
       />
     );
   }
@@ -232,20 +234,20 @@ export const LocationModal = () => {
         {/* Top Drag Handle Bar for mobile */}
         <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto my-3 sm:hidden" />
 
-        {/* Modal Header Bar matching rbnow.in screenshot */}
-        <div className="px-6 py-4 border-b border-emerald-900 bg-[#022c22] text-white flex items-center justify-between">
+        {/* Modal Header Bar matching updated UX specs */}
+        <div className="px-6 py-4 bg-[#022c22] text-white flex items-center justify-between border-b border-amber-400/30">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-[#ffc400] text-[#004d3b] flex items-center justify-center font-black shrink-0 shadow-md">
               <MapPin size={22} className="fill-[#004d3b]" />
             </div>
             <div>
-              <h2 className="text-sm font-black tracking-wider text-[#ffc400] uppercase">DELIVERY LOCATION</h2>
+              <h2 className="text-sm font-black tracking-wide text-[#ffc400]">Delivery location</h2>
               <p className="text-[11px] text-emerald-200/90 font-medium">Select address for fresh scheduled delivery</p>
             </div>
           </div>
           <button
             onClick={() => setIsModalOpen(false)}
-            className="p-2 rounded-full hover:bg-emerald-900/80 text-emerald-200 hover:text-white transition-colors"
+            className="p-2 rounded-full hover:bg-emerald-900/80 text-emerald-200 hover:text-white transition-colors cursor-pointer"
           >
             <X size={20} />
           </button>
@@ -254,38 +256,12 @@ export const LocationModal = () => {
         {/* Modal Body */}
         <div className="p-5 sm:p-6 overflow-y-auto no-scrollbar space-y-4">
 
-          {/* Action 1: USE MY CURRENT LOCATION (Mint Card) */}
-          <button
-            onClick={handleGPSClick}
-            disabled={isDetectingGPS}
-            className="w-full bg-[#e5f5ef] hover:bg-[#d5efe5] border border-[#bce2d3] rounded-2xl p-3.5 flex items-center gap-3.5 transition-all active:scale-[0.98] text-left shadow-xs"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#004d3b] text-[#ffc400] flex items-center justify-center shrink-0 shadow-sm">
-              {isDetectingGPS ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18} className="fill-[#ffc400]" />}
-            </div>
-            <div>
-              <p className="text-xs font-black text-[#004d3b] uppercase tracking-wider">USE MY CURRENT LOCATION</p>
-              <p className="text-[10px] text-[#006b50] font-bold">GPS location</p>
-            </div>
-          </button>
-
-          {/* Action 2: + ADD NEW ADDRESS (Bright Gold Button) */}
-          <button
-            onClick={() => setShowMapPicker(true)}
-            className="w-full bg-[#ffc400] hover:bg-[#f5b800] text-[#004d3b] rounded-2xl p-3.5 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] shadow-md border border-amber-300"
-          >
-            <div className="w-7 h-7 rounded-full bg-[#004d3b] text-[#ffc400] flex items-center justify-center shrink-0 shadow-xs font-black">
-              <Plus size={16} />
-            </div>
-            <span className="text-xs font-black uppercase tracking-widest">+ ADD NEW ADDRESS</span>
-          </button>
-
-          {/* Search Location Bar */}
-          <div className="relative pt-1">
-            <Search size={16} className="absolute left-4 top-4.5 text-gray-400" />
+          {/* Search Location Bar (Placed at the very top) */}
+          <div className="relative">
+            <Search size={16} className="absolute left-4 top-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search apartment, colony, landmark (e.g. Mithila nivasti)..."
+              placeholder="Search apartment, colony, landmark (e.g. Banjara Hills, Gachibowli)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 focus:border-[#ffc400] focus:bg-white rounded-2xl py-3 pl-10 pr-10 text-xs font-bold outline-none transition-all placeholder:font-medium placeholder:text-gray-400"
@@ -298,6 +274,21 @@ export const LocationModal = () => {
               </button>
             ) : null}
           </div>
+
+          {/* Action: Use Current Location (Clean row/card beneath search) */}
+          <button
+            onClick={handleGPSClick}
+            disabled={isDetectingGPS}
+            className="w-full bg-[#e5f5ef] hover:bg-[#d5efe5] border border-[#bce2d3] rounded-2xl p-3.5 flex items-center gap-3.5 transition-all active:scale-[0.98] text-left shadow-xs cursor-pointer"
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#004d3b] text-[#ffc400] flex items-center justify-center shrink-0 shadow-sm">
+              {isDetectingGPS ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18} className="fill-[#ffc400]" />}
+            </div>
+            <div>
+              <p className="text-xs font-black text-[#004d3b]">Use current location</p>
+              <p className="text-[10px] text-[#006b50] font-bold">Detect using device location</p>
+            </div>
+          </button>
 
           {/* Search Results matching Zepto reference screenshot */}
           {searchResults.length > 0 && (
@@ -326,11 +317,19 @@ export const LocationModal = () => {
             </div>
           )}
 
-          {/* Saved Customer Addresses */}
-          {savedAddresses.length > 0 && !searchQuery && (
-            <div className="space-y-2.5 pt-1">
+          {/* Saved Customer Addresses & Add New Address */}
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between">
               <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Saved Addresses</h3>
+              <button
+                onClick={() => setShowMapPicker(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-black text-[#004d3b] hover:underline cursor-pointer"
+              >
+                <Plus size={14} /> Add new address
+              </button>
+            </div>
 
+            {savedAddresses.length > 0 && !searchQuery ? (
               <div className="space-y-2">
                 {savedAddresses.map((addr, i) => {
                   const isSelected = location.address === addr.address;
@@ -361,14 +360,23 @@ export const LocationModal = () => {
                   );
                 })}
               </div>
-            </div>
-          )}
+            ) : (
+              !searchQuery && (
+                <button
+                  onClick={() => setShowMapPicker(true)}
+                  className="w-full bg-[#ffc400] hover:bg-[#f5b800] text-[#004d3b] rounded-2xl p-3.5 flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm border border-amber-300 font-black text-xs cursor-pointer"
+                >
+                  <Plus size={16} /> Add new address
+                </button>
+              )
+            )}
+          </div>
 
-          {/* Delivery Assurance Banner matching rbnow.in screenshot */}
+          {/* Delivery Assurance Banner */}
           <div className="p-3.5 rounded-2xl bg-[#fefce8] border border-[#fef08a] flex items-center gap-3">
             <ShieldCheck size={20} className="text-[#854d0e] shrink-0" />
             <p className="text-[11px] font-bold text-[#854d0e] leading-tight">
-              Fresh items are temperature-packed & delivered in insulated bags directly to your selected location.
+              Fresh items are temperature-packed and delivered in insulated bags.
             </p>
           </div>
 

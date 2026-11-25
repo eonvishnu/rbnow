@@ -89,7 +89,7 @@ export function useCatalog(activeCategory: string, activeSubCategory: string) {
           reserved_quantity: preorderProds[0].product_variants?.[0]?.preorder_reserved_qty || 0,
         } : null;
 
-        let query = supabase.from("products").select("*, product_variants(*)");
+        let query = supabase.from("products").select("*, product_variants(*)").eq("is_available", true);
         const catLower = activeCategory.toLowerCase();
 
         if (catLower !== "all" && catLower !== "featured") {

@@ -1001,7 +1001,7 @@ export default function CartPage() {
                   </button>
                 </div>
               </div>
-              <div ref={upsellScrollRef} className="w-full overflow-x-auto overflow-y-hidden no-scrollbar flex gap-3 pb-2 px-1 touch-pan-x">
+              <div ref={upsellScrollRef} className="w-full overflow-x-auto overflow-y-hidden no-scrollbar flex gap-3 pb-2 px-1 touch-auto">
                 {recommended.map((p, idx) => {
                   const variantId = p.variantId || p.id;
                   const itemQuantity = cart.filter((i: any) => i.id === variantId).length;

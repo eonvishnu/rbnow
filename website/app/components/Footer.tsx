@@ -122,8 +122,8 @@ export const Footer = () => {
             <h4 className="text-amber-400 font-bold uppercase tracking-wider mb-4 text-xs">Policy & Help</h4>
             <ul className="space-y-2.5 text-xs text-[#EFE8DC]/70">
               <li><Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
-              <li><Link href="/privacy" className="hover:text-white transition-colors">Terms of Service</Link></li>
-              <li><Link href="/privacy" className="hover:text-white transition-colors">Shipping & Delivery</Link></li>
+              <li><Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link></li>
+              <li><Link href="/shipping" className="hover:text-white transition-colors">Shipping & Delivery</Link></li>
               <li><Link href="/refund" className="hover:text-white transition-colors">Refund & Cancellation</Link></li>
             </ul>
           </div>

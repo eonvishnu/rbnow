@@ -34,6 +34,8 @@ interface AddressMapPickerProps {
   defaultPhone?: string;
   defaultName?: string;
   existingLabels?: string[];
+  initialLat?: number;
+  initialLng?: number;
 }
 
 // Default map center only (Hyderabad center) — never saved as address text
@@ -45,11 +47,13 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   defaultPhone = '',
   defaultName = '',
   existingLabels = [],
+  initialLat,
+  initialLng,
 }) => {
   const [pickerStep, setPickerStep] = useState<'map' | 'details'>('map');
 
-  const [lat, setLat] = useState(DEFAULT_CENTER.lat);
-  const [lng, setLng] = useState(DEFAULT_CENTER.lng);
+  const [lat, setLat] = useState(initialLat || DEFAULT_CENTER.lat);
+  const [lng, setLng] = useState(initialLng || DEFAULT_CENTER.lng);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -60,6 +64,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   const [locationError, setLocationError] = useState('');
   const [labelError, setLabelError] = useState('');
   const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
+  const [liveLocality, setLiveLocality] = useState('Detecting address...');
 
   // Start empty—never pre-populate fake neighborhood or pincode strings
   const [detectedAddress, setDetectedAddress] = useState<{
@@ -102,7 +107,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<any>(null);
 
-  // Load Google Maps API Script dynamically (No hardcoded API key fallback)
+  // Load Google Maps API Script dynamically
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
@@ -123,7 +128,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
     if (!document.getElementById(scriptId)) {
       const script = document.createElement('script');
       script.id = scriptId;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=gmapsCallback`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async&callback=gmapsCallback`;
       script.async = true;
       script.defer = true;
       document.head.appendChild(script);
@@ -145,6 +150,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           disableDefaultUI: true,
           zoomControl: false,
           gestureHandling: 'greedy',
+          keyboardShortcuts: false,
         });
 
         map.addListener('idle', () => {
@@ -152,7 +158,6 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           if (center) {
             setLat(center.lat());
             setLng(center.lng());
-            // Invalidate previously resolved address whenever pin moves
             setDetectedAddress(prev => ({ ...prev, isVerified: false }));
             setLocationError('');
           }
@@ -166,6 +171,48 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
       console.error('Google Map init error:', err);
     }
   }, [googleMapsLoaded, pickerStep]);
+
+  // Auto-detect precise GPS on mount if no initial coordinates are passed or if using default center
+  useEffect(() => {
+    if ((!initialLat || initialLat === DEFAULT_CENTER.lat) && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const curLat = position.coords.latitude;
+          const curLng = position.coords.longitude;
+          setLat(curLat);
+          setLng(curLng);
+          if (googleMapRef.current) {
+            googleMapRef.current.setCenter({ lat: curLat, lng: curLng });
+            googleMapRef.current.setZoom(18);
+          }
+        },
+        (err) => {
+          console.warn('Auto GPS detection on map picker mount skipped:', err);
+        },
+        { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
+      );
+    }
+  }, [initialLat]);
+
+  // Live reverse geocoding on map idle for address preview card
+  useEffect(() => {
+    if (!googleMapsLoaded || pickerStep !== 'map') return;
+    const google = (window as any).google;
+    if (!google?.maps?.Geocoder) return;
+
+    const timer = setTimeout(() => {
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (res: any, status: string) => {
+        if (status === 'OK' && res && res[0]) {
+          setLiveLocality(res[0].formatted_address || 'Selected location');
+        } else {
+          setLiveLocality('Selected location');
+        }
+      });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [lat, lng, googleMapsLoaded, pickerStep]);
 
   // 1. Google Places Autocomplete Search (Strictly Telangana)
   useEffect(() => {
@@ -211,7 +258,6 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
             setIsSearching(false);
 
             if (status === 'OK' && predictions) {
-              // Strictly keep only Telangana results (never fall back to other states)
               const telanganaOnly = predictions.filter((item) => {
                 const desc = (item.description || '').toLowerCase();
                 return (
@@ -322,7 +368,6 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
 
       const geocoder = new GeocoderClass();
 
-      // Wrap callback in Promise so we wait for real coordinates -> address resolution
       const results: any[] = await new Promise((resolve, reject) => {
         geocoder.geocode({ location: { lat, lng } }, (res: any, status: string) => {
           if (status === 'OK' && res && res.length > 0) {
@@ -341,7 +386,6 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
       let pincode = '';
       let state = '';
 
-      // Extract components accurately across all returned results if needed
       for (const result of results) {
         for (const comp of result.address_components || []) {
           if (!area && (comp.types.includes('sublocality_level_1') || comp.types.includes('sublocality') || comp.types.includes('neighborhood'))) {
@@ -360,7 +404,6 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
         if (area && city && pincode && state) break;
       }
 
-      // Enforce Telangana boundary check before proceeding
       if (state && state.toLowerCase() !== 'telangana') {
         setLocationError(`Delivery is currently available only in Telangana (Selected: ${state}).`);
         return;
@@ -470,14 +513,14 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
       {pickerStep === 'map' ? (
         <div className="relative flex-1 flex flex-col w-full h-full overflow-hidden">
           {/* Top Header Bar */}
-          <div className="px-4 py-3 bg-emerald-950 text-white flex items-center justify-between z-20 border-b border-amber-400/30">
+          <div className="px-4 py-3 bg-[#022c22] text-white flex items-center justify-between z-20 border-b border-amber-400/30">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-black">
+              <div className="w-8 h-8 rounded-xl bg-amber-400 text-[#022c22] flex items-center justify-center font-black">
                 <MapIcon size={18} />
               </div>
               <div>
-                <h2 className="text-sm font-black uppercase text-amber-300 tracking-tight">Step 1: Search & Pin Location</h2>
-                <p className="text-[10px] text-emerald-200">Telangana Delivery Area</p>
+                <h2 className="text-sm font-black text-amber-300 tracking-tight">Select delivery location</h2>
+                <p className="text-[10px] text-emerald-200">Delivering across Hyderabad</p>
               </div>
             </div>
 
@@ -541,9 +584,21 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           <div className="relative flex-1 w-full bg-gray-100 overflow-hidden min-h-[350px]">
             <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" style={{ minHeight: '350px', height: '100%' }} />
 
+            {/* Floating GPS Target Button (Bottom Right) */}
+            <button
+              type="button"
+              onClick={handleDetectGPS}
+              disabled={isDetectingGPS}
+              aria-label="Use current location"
+              className="absolute bottom-5 right-4 z-20 w-12 h-12 bg-white rounded-full shadow-2xl border border-gray-200 flex items-center justify-center text-[#022c22] hover:bg-gray-50 active:scale-95 transition-all cursor-pointer"
+            >
+              {isDetectingGPS ? <Loader2 size={20} className="animate-spin text-[#022c22]" /> : <Navigation size={20} className="fill-[#022c22]" />}
+            </button>
+
+            {/* Pin Instruction Tooltip & Marker */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 -translate-y-8">
-              <div className="bg-[#022c22] text-amber-300 font-bold text-[10px] px-3 py-1 rounded-full border border-amber-400/80 shadow-lg mb-1">
-                Pin Location
+              <div className="bg-[#022c22] text-amber-300 font-bold text-xs px-3.5 py-1.5 rounded-xl border border-amber-400/80 shadow-xl mb-1">
+                Your order will be delivered here
               </div>
               <div className="relative flex flex-col items-center">
                 <svg width="38" height="48" viewBox="0 0 38 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-lg">
@@ -555,8 +610,8 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
             </div>
           </div>
 
-          {/* Bottom Floating Card */}
-          <div className="p-4 bg-white border-t border-gray-200 z-20 space-y-3">
+          {/* Bottom Floating Card & Live Address Preview */}
+          <div className="p-4 bg-white border-t border-gray-200 z-20 space-y-3 shadow-2xl">
             {locationError && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
                 <AlertCircle size={16} className="shrink-0" />
@@ -564,43 +619,44 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={handleDetectGPS}
-              disabled={isDetectingGPS}
-              className="w-full bg-[#e5f5ef] hover:bg-[#d5efe5] text-[#004d3b] border border-[#bce2d3] font-black text-xs py-3 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-xs transition-all active:scale-[0.98]"
-            >
-              {isDetectingGPS ? <Loader2 size={16} className="animate-spin" /> : <Navigation size={16} className="fill-[#004d3b]" />}
-              USE MY CURRENT LOCATION (GPS)
-            </button>
+            {/* Live Address Preview Card */}
+            <div className="p-3.5 bg-emerald-50/90 border border-emerald-200/90 rounded-2xl flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-[#022c22] text-amber-300 flex items-center justify-center shrink-0">
+                <MapPin size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">Live Pin Location</p>
+                <p className="text-xs font-extrabold text-gray-900 truncate mt-0.5">{liveLocality}</p>
+              </div>
+            </div>
 
             <button
               type="button"
               onClick={handleProceedToDetails}
               disabled={isGeocoding}
-              className="w-full bg-[#022c22] hover:bg-[#033c30] text-[#ffc400] font-black text-sm py-4 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] border border-amber-400/40 uppercase tracking-widest disabled:opacity-50"
+              className="w-full bg-[#022c22] hover:bg-[#033c30] text-amber-300 font-black text-sm py-4 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] border border-amber-400/40 disabled:opacity-50 cursor-pointer"
             >
-              {isGeocoding ? <Loader2 size={18} className="animate-spin" /> : <>Confirm Location & Proceed <ChevronRight size={16} /></>}
+              {isGeocoding ? <Loader2 size={18} className="animate-spin" /> : <>Confirm location <ChevronRight size={16} /></>}
             </button>
           </div>
         </div>
       ) : (
         /* STEP 2: ADDRESS DETAILS FORM */
         <div className="flex-1 flex flex-col w-full h-full bg-[#f8fafc] overflow-y-auto">
-          <div className="px-4 py-3 bg-emerald-950 text-white flex items-center justify-between z-20 border-b border-amber-400/30 sticky top-0">
+          <div className="px-4 py-3 bg-[#022c22] text-white flex items-center justify-between z-20 border-b border-amber-400/30 sticky top-0">
             <div className="flex items-center gap-2">
-              <button onClick={() => setPickerStep('map')} className="p-1 text-emerald-200 hover:text-white mr-1">
+              <button onClick={() => setPickerStep('map')} className="p-1 text-emerald-200 hover:text-white mr-1 cursor-pointer">
                 <ArrowLeft size={20} />
               </button>
               <div>
-                <h2 className="text-sm font-black uppercase text-amber-300 tracking-tight">Step 2: Enter Address Details</h2>
+                <h2 className="text-sm font-black text-amber-300 tracking-tight">Enter address details</h2>
                 <p className="text-[10px] text-emerald-200 truncate max-w-[240px]">
                   {detectedAddress.area}, {detectedAddress.city} - {detectedAddress.pincode}
                 </p>
               </div>
             </div>
 
-            <button onClick={onCancel} className="p-2 text-emerald-200 hover:text-white rounded-full">
+            <button onClick={onCancel} className="p-2 text-emerald-200 hover:text-white rounded-full cursor-pointer">
               <X size={20} />
             </button>
           </div>
@@ -608,160 +664,163 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           <form onSubmit={handleSaveAddressFinal} className="p-5 sm:p-6 max-w-lg mx-auto w-full space-y-5">
             <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex items-start justify-between gap-3 shadow-2xs">
               <div className="flex items-start gap-3">
-                <MapPin size={20} className="text-[#004d3b] shrink-0 mt-0.5" />
+                <MapPin size={20} className="text-[#022c22] shrink-0 mt-0.5" />
                 <div>
                   <p className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">
                     {detectedAddress.area} ({detectedAddress.pincode})
                   </p>
-                  <p className="text-xs font-bold text-gray-900 mt-0.5">{detectedAddress.fullAddress}</p>
+                  <p className="text-xs text-gray-700 font-medium mt-0.5 line-clamp-2">
+                    {detectedAddress.fullAddress}
+                  </p>
                 </div>
               </div>
+
               <button
                 type="button"
                 onClick={() => setPickerStep('map')}
-                className="text-[10px] font-black uppercase text-emerald-800 hover:underline bg-white px-2.5 py-1.5 rounded-xl border border-emerald-200 shrink-0"
+                className="text-xs font-black text-[#004d3b] hover:underline whitespace-nowrap shrink-0 pt-0.5"
               >
-                Change
+                Change pin
               </button>
             </div>
 
-            {labelError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
-                <AlertCircle size={16} className="shrink-0" />
-                <span>{labelError}</span>
-              </div>
-            )}
+            <div className="space-y-4 bg-white p-5 sm:p-6 rounded-3xl border border-gray-200 shadow-sm">
+              <h3 className="text-xs font-black uppercase tracking-wider text-gray-500">Contact &amp; Address Information</h3>
 
-            <div className="space-y-4 bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
-              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-900">Contact & Address Info</h3>
-
-              <div>
-                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Full Name *</label>
-                <input
-                  type="text"
-                  placeholder="Recipient Full Name"
-                  required
-                  value={form.fullName}
-                  onChange={e => setForm({ ...form, fullName: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Mobile Number (+91) *</label>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  maxLength={10}
-                  placeholder="10-digit mobile number"
-                  required
-                  value={form.mobile}
-                  onChange={e => setForm({ ...form, mobile: e.target.value.replace(/\D/g, '') })}
-                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">House / Flat / Block No. *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Flat 402, Block B"
-                  required
-                  value={form.floorHouseNo}
-                  onChange={e => setForm({ ...form, floorHouseNo: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Apartment / Building Name (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="Building or society name"
-                  value={form.buildingName}
-                  onChange={e => setForm({ ...form, buildingName: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Nearby Landmark (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="Nearby landmark"
-                  value={form.landmark}
-                  onChange={e => setForm({ ...form, landmark: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
-                />
-              </div>
-
-              {/* Address Type Selector with duplicate protection */}
-              <div>
-                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-2">Save As</label>
-                <div className="grid grid-cols-3 gap-2.5">
-                  <button
-                    type="button"
-                    disabled={isHomeUsed}
-                    onClick={() => { setForm({ ...form, addressType: 'home' }); setLabelError(''); }}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold uppercase flex items-center justify-center gap-2 transition-all ${
-                      form.addressType === 'home'
-                        ? 'bg-emerald-900 text-amber-300 border-amber-400 shadow-sm'
-                        : isHomeUsed
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50 line-through'
-                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Home size={14} /> Home
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isWorkUsed}
-                    onClick={() => { setForm({ ...form, addressType: 'work' }); setLabelError(''); }}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold uppercase flex items-center justify-center gap-2 transition-all ${
-                      form.addressType === 'work'
-                        ? 'bg-emerald-900 text-amber-300 border-amber-400 shadow-sm'
-                        : isWorkUsed
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50 line-through'
-                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Briefcase size={14} /> Work
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setForm({ ...form, addressType: 'other' }); setLabelError(''); }}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold uppercase flex items-center justify-center gap-2 transition-all ${
-                      form.addressType === 'other'
-                        ? 'bg-emerald-900 text-amber-300 border-amber-400 shadow-sm'
-                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Building size={14} /> Other
-                  </button>
-                </div>
-              </div>
-
-              {form.addressType === 'other' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Custom Label Name *</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Recipient Full Name *</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. PARENTS, OFFICE"
-                    value={form.customLabel}
-                    onChange={e => handleCustomLabelChange(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold uppercase outline-none"
+                    placeholder="e.g. Rahul Sharma"
+                    value={form.fullName}
+                    onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-2.5 px-3.5 text-xs font-bold outline-none transition-all"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">10-Digit Mobile Number *</label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-2.5 text-xs font-bold text-gray-500">+91</span>
+                    <input
+                      type="tel"
+                      required
+                      maxLength={10}
+                      inputMode="numeric"
+                      placeholder="9876543210"
+                      value={form.mobile}
+                      onChange={(e) => setForm({ ...form, mobile: e.target.value.replace(/\D/g, '') })}
+                      className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-2.5 pl-12 pr-3.5 text-xs font-bold outline-none transition-all tracking-wider"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">House / Flat / Block No. *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Flat 402, Block B"
+                    value={form.floorHouseNo}
+                    onChange={(e) => setForm({ ...form, floorHouseNo: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-2.5 px-3.5 text-xs font-bold outline-none transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Apartment / Society Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. My Home Bhooja"
+                    value={form.buildingName}
+                    onChange={(e) => setForm({ ...form, buildingName: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-2.5 px-3.5 text-xs font-bold outline-none transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Nearby Landmark (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Behind Dmart, near Metro Station"
+                  value={form.landmark}
+                  onChange={(e) => setForm({ ...form, landmark: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-2.5 px-3.5 text-xs font-bold outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3 bg-white p-5 sm:p-6 rounded-3xl border border-gray-200 shadow-sm">
+              <h3 className="text-xs font-black uppercase tracking-wider text-gray-500">Save As</h3>
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, addressType: 'home' })}
+                  className={`py-3 px-3 rounded-2xl border text-xs font-bold flex flex-col items-center justify-center gap-1.5 transition-all ${
+                    form.addressType === 'home'
+                      ? 'border-[#022c22] bg-emerald-50/70 text-[#022c22] shadow-xs'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <Home size={18} />
+                  <span>Home</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, addressType: 'work' })}
+                  className={`py-3 px-3 rounded-2xl border text-xs font-bold flex flex-col items-center justify-center gap-1.5 transition-all ${
+                    form.addressType === 'work'
+                      ? 'border-[#022c22] bg-emerald-50/70 text-[#022c22] shadow-xs'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <Briefcase size={18} />
+                  <span>Work</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, addressType: 'other' })}
+                  className={`py-3 px-3 rounded-2xl border text-xs font-bold flex flex-col items-center justify-center gap-1.5 transition-all ${
+                    form.addressType === 'other'
+                      ? 'border-[#022c22] bg-emerald-50/70 text-[#022c22] shadow-xs'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <Building size={18} />
+                  <span>Other</span>
+                </button>
+              </div>
+
+              {form.addressType === 'other' && (
+                <div className="pt-2">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Custom Label Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. PARENTS, FRIENDS"
+                    value={form.customLabel}
+                    onChange={(e) => handleCustomLabelChange(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-2xl py-2.5 px-3.5 text-xs font-bold outline-none transition-all uppercase"
+                  />
+                  {labelError && <p className="text-[11px] text-rose-600 font-bold mt-1">{labelError}</p>}
                 </div>
               )}
             </div>
 
             <button
               type="submit"
-              disabled={isSubmitting || !!labelError}
-              className="w-full bg-[#ffc400] hover:bg-[#f5b800] text-emerald-950 font-black text-sm py-4 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] border border-amber-300 uppercase tracking-widest disabled:opacity-50"
+              disabled={isSubmitting}
+              className="w-full bg-[#022c22] hover:bg-[#033c30] text-amber-300 font-black text-sm py-4 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] border border-amber-400/40 disabled:opacity-50 cursor-pointer uppercase tracking-widest"
             >
-              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : 'Save Address & Proceed'}
+              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : 'Save Address'}
             </button>
           </form>
         </div>
