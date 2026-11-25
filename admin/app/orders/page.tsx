@@ -2020,9 +2020,14 @@ export default function AdminOrders() {
                         />
                       </td>
 
-                      <td className="px-3 py-1.5 text-[#64736c] tabular-nums">
-                        {o.items.length}{' '}
-                        {o.items.length === 1 ? 'item' : 'items'}
+                      <td className="px-3 py-1.5 text-[#303030]">
+                        <div className="space-y-0.5 max-w-[220px]">
+                          {o.items.map((item: any, idx: number) => (
+                            <div key={idx} className="text-xs truncate" title={`${item.qty}x ${item.name}`}>
+                              <span className="font-bold text-[#004D3B]">{item.qty}x</span> {item.name}
+                            </div>
+                          ))}
+                        </div>
                       </td>
 
                       {fulfillmentReady && (
