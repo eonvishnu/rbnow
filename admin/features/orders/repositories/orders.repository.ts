@@ -42,7 +42,7 @@ export async function listAdminOrders() {
       discount: order.discount || 0,
       shipping: order.delivery_address,
       userPhone: order.customer_phone || order.user_phone || (order.delivery_address as any)?.phone || '',
-      userName: shippingName || order.customer_name || order.user_name || profileName || 'Customer',
+      userName: profileName || order.customer_name || order.user_name || shippingName || 'Customer',
       paymentStatus: latestPayment?.status || order.payment_status || 'captured',
       paymentMethod: 'Razorpay',
       razorpayOrderId: latestPayment?.razorpay_order_id || order.razorpay_order_id || 'N/A',
