@@ -107,8 +107,10 @@ export default function CustomersPage() {
       setCustomerAddresses([]);
       setCustomerTransactions([]);
       setCustomerWalletRecord(null);
+      setDrawerTab('overview');
       return;
     }
+    setDrawerTab('overview');
     refreshCustomerDetails();
   }, [selected]);
 
@@ -180,85 +182,102 @@ export default function CustomersPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const openWhatsApp = (c: AdminCustomer) => {
-    const phone = toIndianPhone(c.phoneNumber);
-    if (!phone) return;
-    const msg = `Hi ${c.displayName || 'there'}, we miss you at Royal Bengal! Use promo code "ROYAL10" for 10% OFF your next order of fresh Padma Hilsa & delicacies. Order here: https://rbnowin.web.app`;
-    window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  const stats = useMemo(() => {
+    const totalCountVal = customers.length;
+    const totalSpentAll = customers.reduce((s, c) => s + c.totalSpent, 0);
+    const avgLtv = totalCountVal ? totalSpentAll / totalCountVal : 0;
+    const repeat = customers.filter((c) => c.isRepeat).length;
+    const repeatRate = totalCountVal ? Math.round((repeat / totalCountVal) * 100) : 0;
+    const vip = customers.filter((c) => c.isVip).length;
+    const risk = customers.filter((c) => c.isAtRisk).length;
+    const newCount = customers.filter((c) => c.isNew).length;
+    return { avgLtv, repeatRate, vip, risk, newCount };
+  }, [customers]);
+
+  const filtered = useMemo(() => {
+    let list = [...customers];
+    if (segment === 'vip') list = list.filter((c) => c.isVip);
+    if (segment === 'repeat') list = list.filter((c) => c.isRepeat);
+    if (segment === 'new') list = list.filter((c) => c.isNew);
+    if (segment === 'risk') list = list.filter((c) => c.isAtRisk);
+
+    list.sort((a, b) => {
+      let comp = 0;
+      if (sort.key === 'name') comp = a.displayName.localeCompare(b.displayName);
+      if (sort.key === 'orders') comp = a.orderCount - b.orderCount;
+      if (sort.key === 'spent') comp = a.totalSpent - b.totalSpent;
+      if (sort.key === 'last') {
+        const at = a.lastOrderDate ? new Date(a.lastOrderDate).getTime() : 0;
+        const bt = b.lastOrderDate ? new Date(b.lastOrderDate).getTime() : 0;
+        comp = at - bt;
+      }
+      return sort.dir === 'asc' ? comp : -comp;
+    });
+
+    return list;
+  }, [customers, segment, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  const toggleSort = (k: SortKey) => {
+    if (sort.key === k) {
+      setSort({ key: k, dir: sort.dir === 'asc' ? 'desc' : 'asc' });
+    } else {
+      setSort({ key: k, dir: 'desc' });
+    }
   };
 
-  const stats = useMemo(() => {
-    const n = customers.length;
-    const ltv = customers.reduce((s, c) => s + c.totalSpent, 0);
-    return {
-      total: totalCount,
-      avgLtv: n ? Math.round(ltv / n) : 0,
-      repeatRate: n ? Math.round((customers.filter((c) => c.isRepeat).length / n) * 100) : 0,
-      vip: customers.filter((c) => c.isVip).length,
-    };
-  }, [customers, totalCount]);
+  const fmtDate = (d: Date | null) => {
+    if (!d) return 'Never';
+    const now = new Date();
+    const diff = now.getTime() - new Date(d).getTime();
+    if (diff < DAY) return 'Today';
+    if (diff < DAY * 2) return 'Yesterday';
+    return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const openWhatsApp = (c: AdminCustomer) => {
+    const ten = toIndianPhone(c.phoneNumber);
+    if (!ten) return;
+    const text = encodeURIComponent(`Hi ${c.displayName}, thank you for ordering with Royal Bengal! We have a special offer waiting for you.`);
+    window.open(`https://wa.me/91${ten}?text=${text}`, '_blank');
+  };
+
+  const exportCsv = () => {
+    const rows = [
+      ['Customer Name', 'Phone', 'Orders Count', 'Total Spent', 'VIP', 'Last Order'],
+      ...customers.map((c) => [c.displayName, c.phoneNumber || '', c.orderCount, c.totalSpent, c.isVip ? 'Yes' : 'No', c.lastOrderDate ? new Date(c.lastOrderDate).toISOString() : '']),
+    ];
+    const blob = new Blob(['\uFEFF' + rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `customers-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const isStaff = (role: string) => role && role !== 'customer';
 
   const segments: { id: SegmentId; label: string; count: number }[] = [
     { id: 'all', label: 'All', count: totalCount },
-    { id: 'vip', label: 'VIP', count: customers.filter((c) => c.isVip).length },
-    { id: 'repeat', label: 'Repeat', count: customers.filter((c) => c.isRepeat).length },
-    { id: 'new', label: 'New', count: customers.filter((c) => c.isNew).length },
-    { id: 'risk', label: 'At risk', count: customers.filter((c) => c.isAtRisk).length },
+    { id: 'vip', label: 'VIP', count: stats.vip },
+    { id: 'repeat', label: 'Repeat', count: customers.filter(c => c.isRepeat).length },
+    { id: 'new', label: 'New', count: stats.newCount },
+    { id: 'risk', label: 'At risk', count: stats.risk },
   ];
 
-  const filtered = useMemo(() => {
-    const list = customers.filter((c) => {
-      const seg =
-        segment === 'all' ? true : segment === 'vip' ? c.isVip : segment === 'repeat' ? c.isRepeat : segment === 'new' ? c.isNew : c.isAtRisk;
-      return seg;
-    });
-    const dir = sort.dir === 'asc' ? 1 : -1;
-    return [...list].sort((a, b) => {
-      switch (sort.key) {
-        case 'name': return a.displayName.localeCompare(b.displayName) * dir;
-        case 'orders': return (a.orderCount - b.orderCount) * dir;
-        case 'last': return ((a.lastOrderDate?.getTime() || 0) - (b.lastOrderDate?.getTime() || 0)) * dir;
-        default: return (a.totalSpent - b.totalSpent) * dir;
-      }
-    });
-  }, [customers, segment, sort]);
-
-  useEffect(() => setPage(1), [searchQuery, segment]);
-
-  const toggleSort = (key: SortKey) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'name' ? 'asc' : 'desc' }));
-
-  const exportCsv = () => {
-    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
-    const rows = [
-      ['Name', 'Email', 'Phone', 'Orders', 'Total spent', 'Last order', 'Customer since'],
-      ...filtered.map((c) => [
-        c.displayName, c.email, c.phoneNumber, c.orderCount, c.totalSpent,
-        c.lastOrderDate ? c.lastOrderDate.toISOString().slice(0, 10) : '', c.createdAt.toISOString().slice(0, 10),
-      ]),
-    ];
-    const blob = new Blob([rows.map((r) => r.map(esc).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `customers-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
-  const isStaff = (r: string) => r && r !== 'customer';
-
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 text-xs font-sans text-[#303030]">
       {/* HEADER */}
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-[#1a1a1a]">Customers</h1>
         <button
           onClick={exportCsv}
           disabled={!filtered.length}
-          className="h-8 px-3 rounded-lg bg-white text-[13px] font-medium inline-flex items-center gap-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-50"
+          className="h-8 px-3 rounded-lg bg-white text-[13px] font-medium inline-flex items-center gap-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
         >
           <Download size={14} /> Export
         </button>
@@ -280,7 +299,7 @@ export default function CustomersPage() {
               <button
                 key={s.id}
                 onClick={() => setSegment(s.id)}
-                className={`h-8 px-3 rounded-lg text-[13px] whitespace-nowrap transition-colors ${
+                className={`h-8 px-3 rounded-lg text-[13px] whitespace-nowrap transition-colors cursor-pointer ${
                   segment === s.id ? 'bg-[#303030] text-white font-medium' : 'text-[#303030] hover:bg-gray-100'
                 }`}
               >
@@ -291,7 +310,7 @@ export default function CustomersPage() {
           <div className="relative lg:w-72">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
             <input
-              placeholder="Search name, email or phone"
+              placeholder="Search name or phone"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full h-8 pl-9 pr-3 rounded-lg text-[13px] shadow-[0_0_0_1px_rgba(0,0,0,0.15)] outline-none focus:shadow-[0_0_0_2px_#005bd3]"
@@ -349,14 +368,14 @@ export default function CustomersPage() {
               <button
                 disabled={page <= 1}
                 onClick={() => setPage(p => Math.max(1, p - 1))}
-                className="h-8 px-3 rounded-lg bg-white font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                className="h-8 px-3 rounded-lg bg-white font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1 cursor-pointer"
               >
                 <ChevronLeft size={14} /> Prev
               </button>
               <button
                 disabled={page >= totalPages}
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                className="h-8 px-3 rounded-lg bg-white font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                className="h-8 px-3 rounded-lg bg-white font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1 cursor-pointer"
               >
                 Next <ChevronRight size={14} />
               </button>
@@ -365,129 +384,132 @@ export default function CustomersPage() {
         )}
       </Card>
 
-      {/* DETAIL DRAWER (read-only) */}
+      {/* DETAIL DRAWER (Expandable Side-by-Side Panel for Wallet Management) */}
       {selected && (
         <>
           <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => setSelected(null)} />
-          <aside className="fixed inset-y-0 right-0 w-full max-w-lg bg-[#f1f1f1] shadow-2xl z-[70] flex flex-col animate-in slide-in-from-right duration-200">
+          <aside className={`fixed inset-y-0 right-0 w-full ${drawerTab === 'wallet' ? 'max-w-4xl' : 'max-w-lg'} bg-[#f1f1f1] shadow-2xl z-[70] flex flex-col transition-all duration-300 ease-in-out`}>
             <div className="h-14 px-5 bg-white border-b border-gray-200 flex items-center justify-between shrink-0">
-              <h2 className="text-sm font-semibold text-[#1a1a1a]">Customer details</h2>
-              <button onClick={() => setSelected(null)} className="p-2 -mr-2 rounded-lg hover:bg-gray-100" aria-label="Close"><X size={18} /></button>
+              <h2 className="text-sm font-semibold text-[#1a1a1a]">
+                Customer details {drawerTab === 'wallet' && <span className="text-[#006B50] font-bold">— Wallet Management Active</span>}
+              </h2>
+              <button onClick={() => setSelected(null)} className="p-2 -mr-2 rounded-lg hover:bg-gray-100 cursor-pointer" aria-label="Close"><X size={18} /></button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-[13px]">
-              {drawerTab === 'overview' ? (
-                <>
-                  <Card className="p-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="text-base font-semibold text-[#1a1a1a]">{selected.displayName}</h3>
-                        {selected.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
-                        {isStaff(selected.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(selected.role)}</Pill>}
-                      </div>
-                      <p className="text-xs text-[#616161] mt-0.5">Customer since {fmtDate(selected.createdAt)}</p>
+            <div className={`flex-1 overflow-y-auto p-5 ${drawerTab === 'wallet' ? 'grid grid-cols-1 md:grid-cols-2 gap-4 items-start' : 'space-y-4'} text-[13px] transition-all`}>
+              {/* Left Column: Customer Details (always visible) */}
+              <div className="space-y-4">
+                <Card className="p-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h3 className="text-base font-semibold text-[#1a1a1a]">{selected.displayName}</h3>
+                      {selected.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
+                      {isStaff(selected.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(selected.role)}</Pill>}
                     </div>
-                    <div className="mt-4 space-y-2 text-[#303030]">
-                      <p className="flex items-center gap-2"><Phone size={14} className="text-[#8a8a8a]" />{selected.phoneNumber || 'No phone on file'}</p>
-                    </div>
-                  </Card>
+                    <p className="text-xs text-[#616161] mt-0.5">Customer since {fmtDate(selected.createdAt)}</p>
+                  </div>
+                  <div className="mt-4 space-y-2 text-[#303030]">
+                    <p className="flex items-center gap-2"><Phone size={14} className="text-[#8a8a8a]" />{selected.phoneNumber || 'No phone on file'}</p>
+                  </div>
+                </Card>
 
-                  <Card className="grid grid-cols-3 divide-x divide-gray-200/80">
-                    <MiniStat label="Total spent" value={formatCurrency(selected.totalSpent)} />
-                    <MiniStat label="Orders" value={String(selected.orderCount)} />
-                    <MiniStat label="Avg. order" value={formatCurrency(selected.orderCount ? selected.totalSpent / selected.orderCount : 0)} />
-                  </Card>
+                <Card className="grid grid-cols-3 divide-x divide-gray-200/80">
+                  <MiniStat label="Total spent" value={formatCurrency(selected.totalSpent)} />
+                  <MiniStat label="Orders" value={String(selected.orderCount)} />
+                  <MiniStat label="Avg. order" value={formatCurrency(selected.orderCount ? selected.totalSpent / selected.orderCount : 0)} />
+                </Card>
 
-                  <Card className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Wallet size={16} className="text-[#006B50]" />
-                      <div>
-                        <span className="font-semibold text-[#1a1a1a] block">Store Credit</span>
-                        <span className="text-xs font-bold text-emerald-900">{formatCurrency(customerWallet)}</span>
-                      </div>
+                <Card className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wallet size={16} className="text-[#006B50]" />
+                    <div>
+                      <span className="font-semibold text-[#1a1a1a] block">Store Credit</span>
+                      <span className="text-xs font-bold text-emerald-900">{formatCurrency(customerWallet)}</span>
                     </div>
-                    <button
-                      onClick={() => {
-                        setWalletAmount('');
-                        setWalletReason('');
-                        setTxType('credit');
-                        setWalletMsg(null);
-                        setDrawerTab('wallet');
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs font-medium transition-colors cursor-pointer"
-                    >
-                      Manage wallet
-                    </button>
-                  </Card>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setWalletAmount('');
+                      setWalletReason('');
+                      setTxType('credit');
+                      setWalletMsg(null);
+                      setDrawerTab('wallet');
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    Manage wallet
+                  </button>
+                </Card>
 
-                  <Card className="overflow-hidden">
-                    <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
-                      <MapPin size={15} className="text-[#616161]" />
-                      <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      {ordersLoading ? (
-                        <div className="h-4 bg-gray-100 rounded animate-pulse" />
-                      ) : customerAddresses.length === 0 ? (
-                        <p className="text-center text-[#616161]">No saved addresses found.</p>
-                      ) : (
-                        customerAddresses.map((addr: any) => (
-                          <div key={addr.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
-                              <span className="text-[10px] text-gray-400">{addr.pincode}</span>
-                            </div>
-                            <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
-                            {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
+                <Card className="overflow-hidden">
+                  <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
+                    <MapPin size={15} className="text-[#616161]" />
+                    <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {ordersLoading ? (
+                      <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                    ) : customerAddresses.length === 0 ? (
+                      <p className="text-center text-[#616161]">No saved addresses found.</p>
+                    ) : (
+                      customerAddresses.map((addr: any) => (
+                        <div key={addr.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
+                            <span className="text-[10px] text-gray-400">{addr.pincode}</span>
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </Card>
+                          <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
+                          {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </Card>
 
-                  <Card className="overflow-hidden">
-                    <div className="px-4 py-3 flex items-center gap-2">
-                      <ShoppingBag size={15} className="text-[#616161]" />
-                      <h3 className="text-sm font-semibold text-[#1a1a1a]">Order history</h3>
-                    </div>
-                    <div className="divide-y divide-gray-100 border-t border-gray-100">
-                      {ordersLoading ? (
-                        <div className="p-4"><div className="h-4 bg-gray-100 rounded animate-pulse" /></div>
-                      ) : customerOrders.length === 0 ? (
-                        <p className="p-6 text-center text-[#616161]">No orders placed yet.</p>
-                      ) : (
-                        customerOrders.map((o) => (
-                          <div key={o.id} className="p-4 space-y-1.5 text-xs">
-                            <div className="flex items-center justify-between font-bold">
-                              <span className="text-[#1a1a1a]">RB-{o.order_number || o.id.slice(0, 6).toUpperCase()}</span>
-                              <span className="text-emerald-900 font-black">{formatCurrency(Number(o.total || 0))}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-gray-500 text-[11px]">
-                              <span>{new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                              <span className="capitalize bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-bold">{o.status?.replace(/_/g, ' ')}</span>
-                            </div>
-                            {o.order_items && o.order_items.length > 0 && (
-                              <p className="text-[11px] text-gray-600 truncate">
-                                {o.order_items.map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')}
-                              </p>
-                            )}
+                <Card className="overflow-hidden">
+                  <div className="px-4 py-3 flex items-center gap-2">
+                    <ShoppingBag size={15} className="text-[#616161]" />
+                    <h3 className="text-sm font-semibold text-[#1a1a1a]">Order history</h3>
+                  </div>
+                  <div className="divide-y divide-gray-100 border-t border-gray-100">
+                    {ordersLoading ? (
+                      <div className="p-4"><div className="h-4 bg-gray-100 rounded animate-pulse" /></div>
+                    ) : customerOrders.length === 0 ? (
+                      <p className="p-6 text-center text-[#616161]">No orders placed yet.</p>
+                    ) : (
+                      customerOrders.map((o) => (
+                        <div key={o.id} className="p-4 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between font-bold">
+                            <span className="text-[#1a1a1a]">RB-{o.order_number || o.id.slice(0, 6).toUpperCase()}</span>
+                            <span className="text-emerald-900 font-black">{formatCurrency(Number(o.total || 0))}</span>
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </Card>
-                </>
-              ) : (
-                /* EXPANDED WALLET MANAGEMENT VIEW */
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between text-gray-500 text-[11px]">
+                            <span>{new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                            <span className="capitalize bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-bold">{o.status?.replace(/_/g, ' ')}</span>
+                          </div>
+                          {o.order_items && o.order_items.length > 0 && (
+                            <p className="text-[11px] text-gray-600 truncate">
+                              {o.order_items.map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </Card>
+              </div>
+
+              {/* Right Column: Wallet Management & Transactions (extends side-by-side when drawerTab === 'wallet') */}
+              {drawerTab === 'wallet' && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between bg-white p-3 rounded-xl shadow-2xs">
+                    <span className="font-semibold text-[#1a1a1a]">Wallet Management</span>
                     <button
                       onClick={() => setDrawerTab('overview')}
-                      className="text-xs font-bold text-[#006B50] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-bold text-[#006B50] hover:underline cursor-pointer"
                     >
-                      ← Back to customer details
+                      Close panel ✕
                     </button>
-                    <span className="text-xs font-semibold text-gray-500">Wallet Management</span>
                   </div>
 
                   {/* Balance & ID Card */}
@@ -505,7 +527,7 @@ export default function CustomersPage() {
                     <div className="pt-3 border-t border-emerald-800/80 flex items-center justify-between text-xs">
                       <div className="min-w-0">
                         <p className="text-[10px] font-bold text-emerald-300 uppercase">Wallet ID</p>
-                        <p className="font-mono text-emerald-100 truncate max-w-[240px]">{customerWalletRecord?.id || 'Generating...'}</p>
+                        <p className="font-mono text-emerald-100 truncate max-w-[220px]">{customerWalletRecord?.id || 'Generating...'}</p>
                       </div>
                       {customerWalletRecord?.id && (
                         <button
@@ -627,7 +649,7 @@ export default function CustomersPage() {
               <button
                 onClick={() => openWhatsApp(selected)}
                 disabled={!toIndianPhone(selected.phoneNumber)}
-                className="w-full h-10 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-[13px] font-medium inline-flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full h-10 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-[13px] font-medium inline-flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <MessageSquare size={15} /> Send WhatsApp offer
               </button>
@@ -668,11 +690,6 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 
 function Pill({ children, tone }: { children: React.ReactNode; tone: string }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${tone}`}>{children}</span>;
-}
-
-function Avatar({ name, size = 'md' }: { name: string; size?: 'md' | 'lg' }) {
-  const dim = size === 'lg' ? 'w-12 h-12 text-base' : 'w-9 h-9 text-[13px]';
-  return <div className={`${dim} rounded-full bg-[#e3e3e3] text-[#303030] font-semibold flex items-center justify-center shrink-0`}>{name.charAt(0).toUpperCase()}</div>;
 }
 
 function SortTh({ label, k, sort, onSort, right, className = '' }: { label: string; k: SortKey; sort: { key: SortKey; dir: 'asc' | 'desc' }; onSort: (k: SortKey) => void; right?: boolean; className?: string }) {

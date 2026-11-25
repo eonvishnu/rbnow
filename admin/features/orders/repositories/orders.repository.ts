@@ -10,26 +10,33 @@ export async function listAdminOrders() {
   if (error) throw error;
 
   const userIds = [...new Set((data || []).map((o: any) => o.user_id).filter(Boolean))];
-  const profileMap = new Map<string, { name: string; phone: string }>();
-  if (userIds.length > 0) {
-    const { data: profilesData } = await supabase
-      .from('profiles')
-      .select('id, display_name, email, phone_number')
-      .in('id', userIds);
-    if (profilesData) {
-      profilesData.forEach((p: any) => {
-        const name = p.display_name || p.email || 'Customer';
-        const phone = p.phone_number || '';
-        profileMap.set(p.id, { name, phone });
-      });
-    }
+  const profileMapByUserId = new Map<string, { name: string; phone: string }>();
+  const profileMapByPhone = new Map<string, { name: string; phone: string }>();
+
+  const { data: profilesData } = await supabase
+    .from('profiles')
+    .select('id, display_name, email, phone_number');
+
+  if (profilesData) {
+    profilesData.forEach((p: any) => {
+      const name = p.display_name || p.email || 'Customer';
+      const phone = p.phone_number || '';
+      if (p.id) profileMapByUserId.set(p.id, { name, phone });
+      if (phone) {
+        const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+        if (cleanPhone) profileMapByPhone.set(cleanPhone, { name, phone });
+      }
+    });
   }
 
   return adminOrderRowSchema.array().parse(data).map((order) => {
     const latestPayment = Array.isArray(order.payments) && order.payments.length > 0 ? order.payments[0] : null;
-    const prof = order.user_id ? profileMap.get(order.user_id) : null;
+    const orderPhone = order.customer_phone || order.user_phone || (order.delivery_address as any)?.phone || '';
+    const cleanOrderPhone = orderPhone.replace(/\D/g, '').slice(-10);
+
+    const prof = (order.user_id ? profileMapByUserId.get(order.user_id) : null) || (cleanOrderPhone ? profileMapByPhone.get(cleanOrderPhone) : null);
     const profileName = prof?.name || order.customer_name || order.user_name || 'Customer';
-    const profilePhone = prof?.phone || order.customer_phone || order.user_phone || '';
+    const profilePhone = prof?.phone || orderPhone;
 
     return {
       id: order.id,
