@@ -204,7 +204,7 @@ export default function AccountPage() {
               <span className="font-black text-amber-300 text-sm">₹{storeCredit}</span>
             </div>
 
-            <button onClick={() => alert("Store credit balance is updated automatically on order returns and cashbacks.")} className="text-[10px] font-black uppercase text-amber-300 bg-emerald-800/80 hover:bg-emerald-800 px-3 py-1.5 rounded-xl border border-amber-400/30">
+            <button onClick={() => router.push('/wallet')} className="text-[10px] font-black uppercase text-amber-300 bg-emerald-800/80 hover:bg-emerald-800 px-3 py-1.5 rounded-xl border border-amber-400/30 cursor-pointer">
               Wallet Details
             </button>
           </div>
