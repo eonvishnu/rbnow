@@ -816,6 +816,22 @@ export default function CartPage() {
       )}
 
       <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+        {cart.length === 0 ? (
+          <div className="bg-white rounded-3xl p-12 text-center space-y-4 shadow-sm border border-[#E3EAE6]">
+            <div className="w-16 h-16 bg-[#E5F5EF] text-[#006B50] rounded-2xl flex items-center justify-center mx-auto text-2xl">
+              🛍️
+            </div>
+            <h2 className="text-lg font-serif font-black text-[#17211D]">Your Cart is Empty</h2>
+            <p className="text-xs text-[#75817B] font-medium max-w-sm mx-auto">Explore our boutique collection of fresh catches and premium meat cuts to fill your cart.</p>
+            <Link
+              href="/"
+              className="inline-block bg-[#004D3B] hover:bg-[#00382B] text-[#FFC400] font-black text-xs uppercase py-3.5 px-6 rounded-2xl tracking-widest transition-all shadow-sm"
+            >
+              Browse Store
+            </Link>
+          </div>
+        ) : (
+          <>
 
         {/* Dedicated Payment Result Section (Modal Dismissal / Failure) */}
         {(checkoutState === 'payment_abandoned' || checkoutState === 'payment_failed') && (
@@ -1183,6 +1199,8 @@ export default function CartPage() {
 
         </div>
 
+          </>
+        )}
       </div>
 
     </main>
