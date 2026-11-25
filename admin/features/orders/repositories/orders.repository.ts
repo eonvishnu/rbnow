@@ -9,8 +9,26 @@ export async function listAdminOrders() {
     .order('created_at', { ascending: false });
   if (error) throw error;
 
+  const userIds = [...new Set((data || []).map((o: any) => o.user_id).filter(Boolean))];
+  const profileMap = new Map<string, string>();
+  if (userIds.length > 0) {
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('id, display_name, email')
+      .in('id', userIds);
+    if (profilesData) {
+      profilesData.forEach((p: any) => {
+        if (p.display_name) profileMap.set(p.id, p.display_name);
+        else if (p.email) profileMap.set(p.id, p.email);
+      });
+    }
+  }
+
   return adminOrderRowSchema.array().parse(data).map((order) => {
     const latestPayment = Array.isArray(order.payments) && order.payments.length > 0 ? order.payments[0] : null;
+    const profileName = order.user_id ? profileMap.get(order.user_id) : null;
+    const shippingName = (order.delivery_address as any)?.name;
+
     return {
       id: order.id,
       orderId: `RB-${order.order_number || order.id.slice(0, 6).toUpperCase()}`,
@@ -23,8 +41,8 @@ export async function listAdminOrders() {
       deliveryFee: order.delivery_fee || 0,
       discount: order.discount || 0,
       shipping: order.delivery_address,
-      userPhone: order.customer_phone || order.user_phone || '',
-      userName: order.customer_name || order.user_name || 'Customer',
+      userPhone: order.customer_phone || order.user_phone || (order.delivery_address as any)?.phone || '',
+      userName: shippingName || order.customer_name || order.user_name || profileName || 'Customer',
       paymentStatus: latestPayment?.status || order.payment_status || 'captured',
       paymentMethod: 'Razorpay',
       razorpayOrderId: latestPayment?.razorpay_order_id || order.razorpay_order_id || 'N/A',

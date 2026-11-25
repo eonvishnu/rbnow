@@ -13,6 +13,7 @@ export const manualOrderProductSchema = z.object({
 
 export const adminOrderRowSchema = z.object({
   id: z.string(),
+  user_id: z.string().nullable().optional(),
   order_number: z.union([z.number(), z.string()]).nullable(),
   created_at: z.string().nullable(),
   status: z.string().nullable(),
