@@ -1874,11 +1874,10 @@ DECLARE
   v_new_balance NUMERIC(12,2);
 BEGIN
   -- Verify that the caller is authenticated and has super_admin role
-  IF NOT EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id = auth.uid()
-      AND role = 'super_admin'
-  ) THEN
+  PERFORM 1 FROM public.profiles
+  WHERE id = auth.uid() AND role = 'super_admin';
+
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'Unauthorized: Only super admins can adjust customer wallets';
   END IF;
 
