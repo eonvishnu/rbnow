@@ -257,25 +257,28 @@ export const LocationModal = () => {
         <div className="p-5 sm:p-6 overflow-y-auto no-scrollbar space-y-4">
 
           {/* Search Location Bar (Placed at the very top) */}
-          <div className="relative">
-            <Search size={16} className="absolute left-4 top-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search apartment, colony, landmark (e.g. Banjara Hills, Gachibowli)..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 focus:border-[#ffc400] focus:bg-white rounded-2xl py-3 pl-10 pr-10 text-xs font-bold outline-none transition-all placeholder:font-medium placeholder:text-gray-400"
-            />
-            {isSearching ? (
-              <Loader2 size={16} className="absolute right-3.5 top-4 text-[#004d3b] animate-spin" />
-            ) : searchQuery ? (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3.5 top-4 text-gray-400">
-                <X size={16} />
-              </button>
-            ) : null}
-          </div>
+          {/* Search Location Bar (Hidden for now) */}
+          {false && (
+            <div className="relative">
+              <Search size={16} className="absolute left-4 top-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search apartment, colony, landmark (e.g. Banjara Hills, Gachibowli)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 focus:border-[#ffc400] focus:bg-white rounded-2xl py-3 pl-10 pr-10 text-xs font-bold outline-none transition-all placeholder:font-medium placeholder:text-gray-400"
+              />
+              {isSearching ? (
+                <Loader2 size={16} className="absolute right-3.5 top-4 text-[#004d3b] animate-spin" />
+              ) : searchQuery ? (
+                <button onClick={() => setSearchQuery('')} className="absolute right-3.5 top-4 text-gray-400">
+                  <X size={16} />
+                </button>
+              ) : null}
+            </div>
+          )}
 
-          {/* Action: Use Current Location (Clean row/card beneath search) */}
+          {/* Action: Use Current Location (Clean row/card) */}
           <button
             onClick={handleGPSClick}
             disabled={isDetectingGPS}
@@ -290,8 +293,8 @@ export const LocationModal = () => {
             </div>
           </button>
 
-          {/* Search Results matching Zepto reference screenshot */}
-          {searchResults.length > 0 && (
+          {/* Search Results (Hidden for now) */}
+          {false && searchResults.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Search Results</h3>
               <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm divide-y divide-dashed divide-gray-200">
