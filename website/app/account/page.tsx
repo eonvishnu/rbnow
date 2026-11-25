@@ -76,6 +76,17 @@ export default function AccountPage() {
             .eq('user_id', user.id);
 
           if (aCount !== null) setAddressesCount(aCount);
+
+          // 3. Fetch Store Credit Balance
+          const { data: walletData } = await supabase
+            .from('customer_wallets')
+            .select('balance')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (walletData) {
+            setStoreCredit(Number(walletData.balance || 0));
+          }
         } catch (err) {
           console.error('Error fetching account details:', err);
         }
