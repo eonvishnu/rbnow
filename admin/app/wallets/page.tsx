@@ -25,7 +25,7 @@ export default function AdminWalletsPage() {
     try {
       const [walletsRes, profilesRes] = await Promise.all([
         supabase.from('customer_wallets').select('*').order('balance', { ascending: false }),
-        supabase.from('profiles').select('id, display_name, email, phone_number'),
+        supabase.from('profiles').select('id, display_name, email, phone_number, role').eq('role', 'customer'),
       ]);
 
       if (walletsRes.error) throw walletsRes.error;
@@ -35,10 +35,12 @@ export default function AdminWalletsPage() {
         profilesRes.data.forEach((p: any) => profilesMap.set(p.id, p));
       }
 
-      const combined = (walletsRes.data || []).map((w: any) => ({
-        ...w,
-        profiles: profilesMap.get(w.user_id) || { display_name: 'Customer', email: '', phone_number: '' },
-      }));
+      const combined = (walletsRes.data || [])
+        .filter((w: any) => profilesMap.has(w.user_id))
+        .map((w: any) => ({
+          ...w,
+          profiles: profilesMap.get(w.user_id),
+        }));
 
       setWallets(combined);
     } catch (err) {
