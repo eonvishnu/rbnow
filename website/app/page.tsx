@@ -11,6 +11,7 @@ import { CartBar } from "./components/CartBar";
 import { ProductModal } from "./components/ProductModal";
 import { useCatalog } from "@/features/catalog/hooks/useCatalog";
 import { SubCategory } from "@/features/catalog/types/catalog.types";
+import { fetchSubCategoriesFromDb } from "@/features/catalog/repositories/catalog.repository";
 
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState("all");
@@ -25,6 +26,7 @@ export default function Home() {
   const activeSubBtnRef = useRef<HTMLButtonElement>(null);
 
   const { products, categories, loading } = useCatalog(activeCategory, activeSubCategory);
+  const [currentSubCategories, setCurrentSubCategories] = useState<string[]>([]);
 
   useEffect(() => {
     if (activeSubBtnRef.current) {
@@ -36,12 +38,26 @@ export default function Home() {
     setActiveSubSubCategory("all");
   }, [activeCategory]);
 
-  const currentSubCategories = useMemo(() => {
-    const catLower = activeCategory.toLowerCase();
-    if (catLower === "all" || catLower === "featured") return [];
-    
-    const cat = categories.find(c => c.name.toLowerCase() === catLower);
-    return cat?.subCategories || [];
+  useEffect(() => {
+    const loadSubCats = async () => {
+      const catLower = activeCategory.toLowerCase();
+      if (catLower === "all" || catLower === "featured") {
+        setCurrentSubCategories([]);
+        return;
+      }
+
+      const parentCat = categories.find(c => c.name.toLowerCase() === catLower);
+      if (parentCat) {
+        const { data } = await fetchSubCategoriesFromDb(parentCat.id);
+        if (data) {
+          setCurrentSubCategories(data.map((s: any) => s.name));
+          return;
+        }
+      }
+      setCurrentSubCategories([]);
+    };
+
+    loadSubCats();
   }, [activeCategory, categories]);
 
   const handleCategoryChange = (id: string, name: string) => {
