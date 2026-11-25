@@ -10,24 +10,26 @@ export async function listAdminOrders() {
   if (error) throw error;
 
   const userIds = [...new Set((data || []).map((o: any) => o.user_id).filter(Boolean))];
-  const profileMap = new Map<string, string>();
+  const profileMap = new Map<string, { name: string; phone: string }>();
   if (userIds.length > 0) {
     const { data: profilesData } = await supabase
       .from('profiles')
-      .select('id, display_name, email')
+      .select('id, display_name, email, phone_number')
       .in('id', userIds);
     if (profilesData) {
       profilesData.forEach((p: any) => {
-        if (p.display_name) profileMap.set(p.id, p.display_name);
-        else if (p.email) profileMap.set(p.id, p.email);
+        const name = p.display_name || p.email || 'Customer';
+        const phone = p.phone_number || '';
+        profileMap.set(p.id, { name, phone });
       });
     }
   }
 
   return adminOrderRowSchema.array().parse(data).map((order) => {
     const latestPayment = Array.isArray(order.payments) && order.payments.length > 0 ? order.payments[0] : null;
-    const profileName = order.user_id ? profileMap.get(order.user_id) : null;
-    const shippingName = (order.delivery_address as any)?.name;
+    const prof = order.user_id ? profileMap.get(order.user_id) : null;
+    const profileName = prof?.name || order.customer_name || order.user_name || 'Customer';
+    const profilePhone = prof?.phone || order.customer_phone || order.user_phone || '';
 
     return {
       id: order.id,
@@ -41,8 +43,8 @@ export async function listAdminOrders() {
       deliveryFee: order.delivery_fee || 0,
       discount: order.discount || 0,
       shipping: order.delivery_address,
-      userPhone: order.customer_phone || order.user_phone || (order.delivery_address as any)?.phone || '',
-      userName: profileName || order.customer_name || order.user_name || shippingName || 'Customer',
+      userPhone: profilePhone,
+      userName: profileName,
       paymentStatus: latestPayment?.status || order.payment_status || 'captured',
       paymentMethod: 'Razorpay',
       razorpayOrderId: latestPayment?.razorpay_order_id || order.razorpay_order_id || 'N/A',

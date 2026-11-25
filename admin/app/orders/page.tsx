@@ -2417,25 +2417,33 @@ export default function AdminOrders() {
 
             {/* DRAWER BODY */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-[13px]">
-              {/* CUSTOMER */}
+              {/* 1. REGISTERED PROFILE (PROFILES TABLE) */}
+              <Card className="p-4 space-y-2">
+                <h3 className="text-xs font-black uppercase text-[#64736c] tracking-wider flex items-center gap-1.5">
+                  <User size={14} className="text-[#006B50]" /> Registered Profile (Profiles Table)
+                </h3>
+                <p className="text-sm font-black text-[#17211d]">
+                  {selectedOrder.userName || 'Guest User'}
+                </p>
+                <p className="text-xs text-[#64736c] flex items-center gap-1.5">
+                  <Phone size={12} />
+                  {selectedOrder.userPhone ? `+91 ${selectedOrder.userPhone}` : 'No phone on profile'}
+                </p>
+              </Card>
+
+              {/* 2. ORDER RECIPIENT & DELIVERY DETAILS (ORDERS TABLE) */}
               <Card className="p-4 space-y-3">
-                <h3 className="text-sm font-bold text-[#17211d] flex items-center gap-2 truncate">
-                  <User size={15} className="text-[#006B50] shrink-0" />
-                  <span className="truncate">{selectedOrder.userName || 'Customer'}</span>
+                <h3 className="text-xs font-black uppercase text-[#64736c] tracking-wider flex items-center gap-1.5">
+                  <MapPin size={14} className="text-[#006B50]" /> Order Recipient &amp; Delivery (Orders Table)
                 </h3>
 
                 <div>
-                  {selectedOrder.shipping?.name && selectedOrder.shipping.name !== selectedOrder.userName && (
-                    <p className="text-xs text-[#64736c] font-medium mb-1">
-                      Recipient: <strong className="text-[#17211d]">{selectedOrder.shipping.name}</strong>
-                    </p>
-                  )}
-
-                  <p className="text-[#64736c] flex items-center gap-1.5 mt-1">
-                    <Phone size={13} />
-                    {selectedOrder.shipping?.phone ||
-                      selectedOrder.userPhone ||
-                      '—'}
+                  <p className="text-xs font-bold text-[#17211d]">
+                    {selectedOrder.shipping?.name || selectedOrder.userName || '—'}
+                  </p>
+                  <p className="text-xs text-[#64736c] flex items-center gap-1.5 mt-0.5">
+                    <Phone size={12} />
+                    {selectedOrder.shipping?.phone || selectedOrder.userPhone || '—'}
                   </p>
                 </div>
 
@@ -2476,7 +2484,7 @@ export default function AdminOrders() {
                     className="text-[#006B50] shrink-0 mt-0.5"
                   />
 
-                  <p className="flex-1 text-[#303030] leading-relaxed">
+                  <p className="flex-1 text-[#303030] leading-relaxed text-xs">
                     {selectedOrder.shipping?.houseNumber ||
                     (selectedOrder.shipping as any)?.houseNo
                       ? `${
