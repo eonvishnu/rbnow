@@ -665,6 +665,16 @@ export default function CartPage() {
         return;
       }
 
+      if (data.fullyPaidByWallet) {
+        setCheckoutState('cart_idle');
+        checkoutInProgressRef.current = false;
+        try {
+          window.sessionStorage.removeItem('royal_bengal_cart');
+        } catch (e) {}
+        router.push('/orders?success=true');
+        return;
+      }
+
       // Store structured checkout record with isolated snapshot
       let checkoutHistory: Array<any> = [];
       try {
@@ -1255,6 +1265,8 @@ export default function CartPage() {
                 'Add Delivery Address to Checkout'
               ) : hasStockIssues ? (
                 'Resolve Stock Issues to Checkout'
+              ) : grandTotal === 0 ? (
+                'Place Order (Paid via Wallet)'
               ) : (
                 'Place Order & Pay'
               )}

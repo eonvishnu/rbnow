@@ -564,6 +564,25 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    if (orderTotal === 0) {
+      await supabase
+        .from("orders")
+        .update({
+          status: "confirmed",
+          payment_status: "captured",
+          payment_method: "wallet",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+
+      return jsonResponse({
+        success: true,
+        checkoutId: order.checkout_id || order.id,
+        orderId: order.id,
+        fullyPaidByWallet: true,
+      });
+    }
+
     if (!isRetry) {
       const { data: paymentRecord, error: payErr } = await supabase
         .from("payments")
