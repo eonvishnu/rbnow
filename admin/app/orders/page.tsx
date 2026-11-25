@@ -1061,6 +1061,98 @@ export default function AdminOrders() {
     );
   };
 
+  const handleBulkItemSummaryPrint = () => {
+    const selectedOrdersList = orders.filter(
+      (o) => selected.has(o.id) && o.status !== 'pending_payment'
+    );
+
+    if (!selectedOrdersList.length) {
+      flash('error', 'Please select at least one order to print item summary.');
+      return;
+    }
+
+    const summaryMap = new Map<string, { name: string; unit: string; totalQty: number; totalAmount: number }>();
+
+    selectedOrdersList.forEach(o => {
+      o.items.forEach(item => {
+        const key = `${item.name.toLowerCase()}_${(item.unit || '').toLowerCase()}`;
+        const existing = summaryMap.get(key);
+        if (existing) {
+          existing.totalQty += Number(item.qty || 0);
+          existing.totalAmount += Number(item.subtotal || (item.qty * item.price) || 0);
+        } else {
+          summaryMap.set(key, {
+            name: item.name,
+            unit: item.unit || 'pack',
+            totalQty: Number(item.qty || 0),
+            totalAmount: Number(item.subtotal || (item.qty * item.price) || 0),
+          });
+        }
+      });
+    });
+
+    const aggregatedItems = Array.from(summaryMap.values());
+    const totalOrdersCount = selectedOrdersList.length;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Master Picking Summary - ${totalOrdersCount} Orders</title>
+          <style>
+            body { font-family: sans-serif; padding: 28px; color: #1a1a1a; max-width: 800px; margin: 0 auto; }
+            h1 { font-size: 20px; font-weight: 900; color: #006b50; margin-bottom: 4px; }
+            .subtitle { font-size: 12px; color: #616161; margin-bottom: 24px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+            th { background: #006b50; color: #fff; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; }
+            td { padding: 10px 12px; border-bottom: 1px solid #e3eae6; }
+            .r { text-align: right; }
+            .footer { margin-top: 32px; font-size: 11px; color: #616161; text-align: center; border-top: 1px solid #e3eae6; padding-top: 12px; }
+            @media print { button { display: none; } }
+          </style>
+        </head>
+        <body>
+          <h1>ROYAL BENGAL — MASTER PICKING SUMMARY</h1>
+          <div class="subtitle">Aggregated Item Quantities across <strong>${totalOrdersCount}</strong> selected orders | Generated on ${new Date().toLocaleString('en-IN')}</div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Product Item</th>
+                <th>Unit</th>
+                <th class="r">Total Required Qty</th>
+                <th class="r">Est. Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${aggregatedItems.map(i => `
+                <tr>
+                  <td><strong>${i.name}</strong></td>
+                  <td>${i.unit}</td>
+                  <td class="r"><strong>${i.totalQty}</strong></td>
+                  <td class="r">₹${i.totalAmount.toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            Confidential — Internal Warehouse &amp; Procurement Picking List
+          </div>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `;
+
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    } else {
+      flash('error', 'Allow pop-ups to print the item summary.');
+    }
+  };
+
   const copyAddress = async (o: AdminOrder) => {
     const text = [
       o.shipping?.name || o.userName,
@@ -1880,10 +1972,19 @@ export default function AdminOrders() {
               <button
                 type="button"
                 onClick={handleBulkPrint}
-                className="min-h-9 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#006B50] hover:bg-[#00543f] text-white text-xs sm:text-[13px] font-semibold shadow-sm transition-colors"
+                className="min-h-9 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#006B50] hover:bg-[#00543f] text-white text-xs sm:text-[13px] font-semibold shadow-sm transition-colors cursor-pointer"
               >
                 <Printer size={14} />
                 Print invoices
+              </button>
+
+              <button
+                type="button"
+                onClick={handleBulkItemSummaryPrint}
+                className="min-h-9 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs sm:text-[13px] font-semibold shadow-sm transition-colors cursor-pointer"
+              >
+                <Printer size={14} />
+                Print item summary
               </button>
 
               <button
@@ -2020,14 +2121,9 @@ export default function AdminOrders() {
                         />
                       </td>
 
-                      <td className="px-3 py-1.5 text-[#303030]">
-                        <div className="space-y-0.5 max-w-[220px]">
-                          {o.items.map((item: any, idx: number) => (
-                            <div key={idx} className="text-xs truncate" title={`${item.qty}x ${item.name}`}>
-                              <span className="font-bold text-[#004D3B]">{item.qty}x</span> {item.name}
-                            </div>
-                          ))}
-                        </div>
+                      <td className="px-3 py-1.5 text-[#64736c] tabular-nums">
+                        {o.items.length}{' '}
+                        {o.items.length === 1 ? 'item' : 'items'}
                       </td>
 
                       {fulfillmentReady && (
