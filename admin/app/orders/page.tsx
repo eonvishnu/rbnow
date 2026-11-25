@@ -2419,15 +2419,17 @@ export default function AdminOrders() {
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-[13px]">
               {/* CUSTOMER */}
               <Card className="p-4 space-y-3">
-                <h3 className="text-sm font-bold text-[#17211d] flex items-center gap-2">
-                  <User size={15} className="text-[#006B50]" />
-                  Customer
+                <h3 className="text-sm font-bold text-[#17211d] flex items-center gap-2 truncate">
+                  <User size={15} className="text-[#006B50] shrink-0" />
+                  <span className="truncate">{selectedOrder.userName || 'Customer'}</span>
                 </h3>
 
                 <div>
-                  <p className="font-semibold text-[#17211d]">
-                    {customerName(selectedOrder)}
-                  </p>
+                  {selectedOrder.shipping?.name && selectedOrder.shipping.name !== selectedOrder.userName && (
+                    <p className="text-xs text-[#64736c] font-medium mb-1">
+                      Recipient: <strong className="text-[#17211d]">{selectedOrder.shipping.name}</strong>
+                    </p>
+                  )}
 
                   <p className="text-[#64736c] flex items-center gap-1.5 mt-1">
                     <Phone size={13} />
