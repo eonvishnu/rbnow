@@ -31,16 +31,35 @@ export async function listProductCategories(): Promise<ProductCategory[]> {
 }
 
 export async function updateProductAvailability(productId: string, isAvailable: boolean) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const adminId = session?.user?.id;
+
   const { error } = await supabase
     .from('products')
     .update({ is_available: isAvailable, updated_at: new Date().toISOString() })
     .eq('id', productId);
 
   if (error) throw error;
+
+  if (adminId) {
+    try {
+      await supabase.from('admin_audit_logs').insert({
+        admin_id: adminId,
+        action: 'UPDATE_PRODUCT_AVAILABILITY',
+        details: `Updated product availability (ID: ${productId}) to ${isAvailable ? 'Active' : 'Disabled'}`,
+        created_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.warn('Audit log write warning:', e?.message || e);
+    }
+  }
 }
 
 export async function updateVariantPricesAndStock(updates: ProductVariantQuickUpdate[]) {
-  return Promise.all(updates.map(async (update) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  const adminId = session?.user?.id;
+
+  const results = await Promise.all(updates.map(async (update) => {
     const { error } = await supabase
       .from('product_variants')
       .update({
@@ -53,6 +72,21 @@ export async function updateVariantPricesAndStock(updates: ProductVariantQuickUp
 
     return { id: update.id, error };
   }));
+
+  if (adminId) {
+    try {
+      await supabase.from('admin_audit_logs').insert({
+        admin_id: adminId,
+        action: 'UPDATE_STOCK',
+        details: `Updated stock and pricing for ${updates.length} variant(s)`,
+        created_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.warn('Audit log write warning:', e?.message || e);
+    }
+  }
+
+  return results;
 }
 
 export async function deleteProduct(productId: string) {
