@@ -1153,6 +1153,68 @@ export default function AdminOrders() {
     }
   };
 
+  const handleBulkItemSummaryCsvExport = () => {
+    const selectedOrdersList = orders.filter(
+      (o) => selected.has(o.id) && o.status !== 'pending_payment'
+    );
+
+    if (!selectedOrdersList.length) {
+      flash('error', 'Please select at least one order to export item summary.');
+      return;
+    }
+
+    const summaryMap = new Map<string, { name: string; unit: string; totalQty: number; totalAmount: number }>();
+
+    selectedOrdersList.forEach(o => {
+      o.items.forEach(item => {
+        const key = `${item.name.toLowerCase()}_${(item.unit || '').toLowerCase()}`;
+        const existing = summaryMap.get(key);
+        if (existing) {
+          existing.totalQty += Number(item.qty || 0);
+          existing.totalAmount += Number(item.subtotal || (item.qty * item.price) || 0);
+        } else {
+          summaryMap.set(key, {
+            name: item.name,
+            unit: item.unit || 'pack',
+            totalQty: Number(item.qty || 0),
+            totalAmount: Number(item.subtotal || (item.qty * item.price) || 0),
+          });
+        }
+      });
+    });
+
+    const aggregatedItems = Array.from(summaryMap.values());
+
+    const rows = [
+      ['Product Item', 'Unit', 'Total Required Qty', 'Est. Value'],
+      ...aggregatedItems.map(i => [
+        i.name,
+        i.unit,
+        i.totalQty,
+        i.totalAmount.toFixed(2),
+      ]),
+    ];
+
+    const blob = new Blob(
+      [
+        '\uFEFF' +
+          rows.map((r) => r.map(csvSafe).join(',')).join('\r\n'),
+      ],
+      { type: 'text/csv;charset=utf-8;' }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+
+    a.href = url;
+    a.download = `item-summary-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const copyAddress = async (o: AdminOrder) => {
     const text = [
       o.shipping?.name || o.userName,
@@ -1985,6 +2047,15 @@ export default function AdminOrders() {
               >
                 <Printer size={14} />
                 Print item summary
+              </button>
+
+              <button
+                type="button"
+                onClick={handleBulkItemSummaryCsvExport}
+                className="min-h-9 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#1a1a1a] hover:bg-black text-white text-xs sm:text-[13px] font-semibold shadow-sm transition-colors cursor-pointer"
+              >
+                <Download size={14} />
+                Export item summary CSV
               </button>
 
               <button
