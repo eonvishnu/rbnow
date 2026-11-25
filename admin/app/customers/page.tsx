@@ -148,6 +148,17 @@ export default function CustomersPage() {
   });
   const [addressSubmitting, setAddressSubmitting] = useState(false);
 
+  const extractErrorMsg = (err: any, fallback: string) => {
+    if (!err) return fallback;
+    if (typeof err === 'string') return err;
+    if (err.message) return err.message;
+    if (err.details) return err.details;
+    if (err.hint) return err.hint;
+    const str = JSON.stringify(err);
+    if (str && str !== '{}') return str;
+    return fallback;
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selected) return;
@@ -170,8 +181,8 @@ export default function CustomersPage() {
       const res = await getAdminCustomersPaginated(page, PAGE_SIZE, searchQuery);
       setCustomers(res.customers);
     } catch (err: any) {
-      console.error(err);
-      flash('error', err.message || 'Failed to update profile.');
+      console.error('Update profile error:', err);
+      flash('error', extractErrorMsg(err, 'Failed to update profile.'));
     } finally {
       setSavingProfile(false);
     }
@@ -214,8 +225,8 @@ export default function CustomersPage() {
       setEditingAddress(null);
       await refreshCustomerDetails();
     } catch (err: any) {
-      console.error(err);
-      flash('error', err.message || 'Failed to save address.');
+      console.error('Save address error:', err);
+      flash('error', extractErrorMsg(err, 'Failed to save address.'));
     } finally {
       setAddressSubmitting(false);
     }
@@ -229,8 +240,8 @@ export default function CustomersPage() {
       flash('success', 'Address deleted.');
       await refreshCustomerDetails();
     } catch (err: any) {
-      console.error(err);
-      flash('error', err.message || 'Failed to delete address.');
+      console.error('Delete address error:', err);
+      flash('error', extractErrorMsg(err, 'Failed to delete address.'));
     }
   };
 
@@ -307,8 +318,8 @@ export default function CustomersPage() {
         setWalletMsg(null);
       }, 1500);
     } catch (err: any) {
-      console.error(err);
-      setWalletMsg({ success: false, text: err.message || 'Failed to update wallet.' });
+      console.error('Wallet adjustment error:', err);
+      setWalletMsg({ success: false, text: extractErrorMsg(err, 'Failed to update wallet.') });
     } finally {
       setWalletSubmitting(false);
     }
