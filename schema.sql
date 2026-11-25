@@ -1873,6 +1873,15 @@ DECLARE
   v_current_balance NUMERIC(12,2);
   v_new_balance NUMERIC(12,2);
 BEGIN
+  -- Verify that the caller is authenticated and has super_admin or admin role
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid()
+      AND (role = 'super_admin' OR role = 'admin')
+  ) THEN
+    RAISE EXCEPTION 'Unauthorized: Only super admins can adjust customer wallets';
+  END IF;
+
   -- Lock wallet row for update to prevent concurrent race conditions
   SELECT balance INTO v_current_balance
   FROM public.customer_wallets
