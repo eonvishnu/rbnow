@@ -92,7 +92,29 @@ export default function CustomersPage() {
         setCustomerWallet(0);
       }
       if (addrRes.data) setCustomerAddresses(addrRes.data);
-      if (txRes.data) setCustomerTransactions(txRes.data);
+      if (txRes.data) {
+        const txs = txRes.data;
+        const adminIds = [...new Set(txs.map((t: any) => t.performed_by).filter(Boolean))];
+        const adminMap = new Map<string, string>();
+        if (adminIds.length > 0) {
+          const { data: adminProfiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, email')
+            .in('id', adminIds);
+          if (adminProfiles) {
+            adminProfiles.forEach((ap: any) => {
+              adminMap.set(ap.id, ap.display_name || ap.email || 'Admin');
+            });
+          }
+        }
+        const mappedTxs = txs.map((tx: any) => ({
+          ...tx,
+          adminName: tx.performed_by ? adminMap.get(tx.performed_by) : null,
+        }));
+        setCustomerTransactions(mappedTxs);
+      } else {
+        setCustomerTransactions([]);
+      }
     } catch (error) {
       console.error('Customer detail data fetch error:', error);
     } finally {
@@ -610,10 +632,13 @@ export default function CustomersPage() {
                             <p className="text-center text-[#616161] py-4">No wallet transactions recorded.</p>
                           ) : (
                             customerTransactions.map((tx: any) => (
-                              <div key={tx.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100 flex items-start justify-between gap-2">
+                              <div key={tx.id} className="text-xs space-y-1 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100 flex items-start justify-between gap-2">
                                 <div>
                                   <p className="font-bold text-[#1a1a1a]">{tx.description}</p>
-                                  <p className="text-[10px] text-gray-400">{new Date(tx.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                                  <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                                    <span>{new Date(tx.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                                    {tx.adminName && <span>• Processed by: <strong className="text-gray-600">{tx.adminName}</strong></span>}
+                                  </div>
                                 </div>
                                 <span className={`font-black shrink-0 ${tx.type === 'credit' ? 'text-emerald-800' : 'text-rose-600'}`}>
                                   {tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount))}
