@@ -161,9 +161,9 @@ export default function AddressesPage() {
                         <p className="text-gray-500 text-xs font-medium uppercase tracking-widest mt-2 mb-8">Pin delivery location on map for express checkout</p>
                         <button 
                             onClick={() => setShowMapPicker(true)}
-                            className="bg-emerald-800 text-amber-300 px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-900/20 hover:bg-emerald-900 transition-all flex items-center gap-2 mx-auto"
+                            className="bg-emerald-800 text-amber-300 px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-900/20 hover:bg-emerald-900 transition-all flex items-center gap-2 mx-auto cursor-pointer"
                         >
-                            <Map size={16} /> Pin Address on Map
+                            <Plus size={16} /> Add new address
                         </button>
                     </div>
                 ) : (
