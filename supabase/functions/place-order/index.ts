@@ -199,7 +199,7 @@ Deno.serve(async (req: Request) => {
       return badRequest("Invalid request body.");
     }
 
-    const { items, details, couponCode, checkoutId, action } = body;
+    const { items, details, couponCode, checkoutId, action, storeCreditAmount } = body;
 
     if (checkoutId !== undefined && checkoutId !== null && !isValidUuid(checkoutId)) {
       return badRequest("Invalid checkout ID.");
@@ -472,8 +472,41 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      let storeCreditUsed = 0;
+      if (storeCreditAmount && Number(storeCreditAmount) > 0 && !isRetry) {
+        const requestedCredit = Number(storeCreditAmount);
+        const { data: walletData } = await supabase
+          .from("customer_wallets")
+          .select("id, balance")
+          .eq("user_id", finalUserId)
+          .maybeSingle();
+
+        if (walletData) {
+          const availableBalance = Number(walletData.balance || 0);
+          const subtotalAfterDiscount = Math.max(0, verifiedSubtotal - discountAmount);
+          const totalBeforeCredit = subtotalAfterDiscount + deliveryFee;
+          storeCreditUsed = Math.min(requestedCredit, availableBalance, totalBeforeCredit);
+
+          if (storeCreditUsed > 0) {
+            const { error: rpcErr } = await supabase.rpc("adjust_customer_wallet", {
+              p_wallet_id: walletData.id,
+              p_user_id: finalUserId,
+              p_amount: storeCreditUsed,
+              p_type: "debit",
+              p_description: `Store credit applied toward order`,
+              p_performed_by: finalUserId,
+            });
+
+            if (rpcErr) {
+              console.error("Store credit deduction error:", rpcErr);
+              return badRequest("Failed to apply store credit.");
+            }
+          }
+        }
+      }
+
       const subtotalAfterDiscount = Math.max(0, verifiedSubtotal - discountAmount);
-      orderTotal = subtotalAfterDiscount + deliveryFee;
+      orderTotal = Math.max(0, subtotalAfterDiscount + deliveryFee - storeCreditUsed);
       amountInPaise = Math.round(orderTotal * 100);
 
       const targetCheckoutId = crypto.randomUUID();
@@ -488,6 +521,7 @@ Deno.serve(async (req: Request) => {
           subtotal: verifiedSubtotal,
           delivery_fee: deliveryFee,
           discount: discountAmount,
+          store_credit_used: storeCreditUsed,
           total: orderTotal,
           currency: "INR",
           payment_method: "razorpay",

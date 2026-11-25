@@ -595,6 +595,7 @@ export default function CartPage() {
         couponCode: appliedCoupon ? appliedCoupon.code : null,
         userId: user.id,
         browserId,
+        storeCreditAmount: useStoreCredit ? storeCreditDiscount : 0,
       };
 
       let accessToken = null;
@@ -671,29 +672,6 @@ export default function CartPage() {
         if (rawHistory) checkoutHistory = JSON.parse(rawHistory);
       } catch (storageErr) {
         console.warn('Could not read checkout history:', storageErr);
-      }
-
-      if (useStoreCredit && storeCreditDiscount > 0) {
-        try {
-          const { data: walletRes } = await supabase
-            .from('customer_wallets')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (walletRes) {
-            await supabase.rpc('adjust_customer_wallet', {
-              p_wallet_id: walletRes.id,
-              p_user_id: user.id,
-              p_amount: storeCreditDiscount,
-              p_type: 'debit',
-              p_description: `Store credit applied toward order (Checkout ID: ${data.checkoutId})`,
-              p_performed_by: user.id,
-            });
-          }
-        } catch (e) {
-          console.error('Error debiting store credit at checkout:', e);
-        }
       }
 
       const checkoutRecord = {

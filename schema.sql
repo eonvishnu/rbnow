@@ -361,6 +361,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
   subtotal NUMERIC(10, 2) NOT NULL,
   delivery_fee NUMERIC(10, 2) NULL DEFAULT 0,
   discount NUMERIC(10, 2) NULL DEFAULT 0,
+  store_credit_used NUMERIC(10, 2) NULL DEFAULT 0,
   total NUMERIC(10, 2) NOT NULL,
   status TEXT NULL DEFAULT 'pending_payment'::text,
   notes TEXT NULL,
