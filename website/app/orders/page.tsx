@@ -278,6 +278,7 @@ export default function OrdersPage() {
         .from("orders")
         .select("*, order_items(*), order_status_history(*)")
         .eq("user_id", user.id)
+        .neq("status", "pending_payment")
         .order("created_at", { ascending: false });
 
       if (ordersError) {
