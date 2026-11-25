@@ -12,6 +12,10 @@ export const createProductSchema = z.object({
   name: z.string().trim().min(1, 'Product name is required.'),
   category: z.string().trim().min(1, 'Choose a category.'),
   description: z.string(),
+  sale_mode: z.enum(['regular', 'preorder']).default('regular'),
+  expected_dispatch_date: z.string().optional().nullable(),
+  preorder_limit: z.coerce.number().int().min(0).optional().nullable(),
+  preorder_description: z.string().optional().nullable(),
   variants: z.array(productVariantInputSchema).min(1, 'At least one product variant is required.'),
 });
 
@@ -21,6 +25,10 @@ export const editProductSchema = z.object({
   category: z.string().trim().min(1, 'Choose a category.'),
   description: z.string(),
   imageUrl: z.string(),
+  sale_mode: z.enum(['regular', 'preorder']).default('regular'),
+  expected_dispatch_date: z.string().optional().nullable(),
+  preorder_limit: z.coerce.number().int().min(0).optional().nullable(),
+  preorder_description: z.string().optional().nullable(),
   hasNewImage: z.boolean(),
   removed: z.array(z.string()),
   variants: z.array(z.object({
@@ -50,6 +58,7 @@ export const quickVariantUpdateSchema = z.object({
 export const productCategoryRowSchema = z.object({
   id: z.string(),
   name: z.string(),
+  parent_id: z.string().nullable(),
 });
 
 export const productVariantRowSchema = z.object({
@@ -71,6 +80,10 @@ export const catalogProductRowSchema = z.object({
   description: z.string().nullable(),
   image_url: z.string().nullable(),
   is_available: z.boolean().nullable(),
+  sale_mode: z.string().nullable().default('regular'),
+  expected_dispatch_date: z.string().nullable(),
+  preorder_limit: z.coerce.number().nullable(),
+  preorder_description: z.string().nullable(),
   product_variants: z.array(productVariantRowSchema).nullable(),
 });
 

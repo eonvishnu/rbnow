@@ -1,19 +1,31 @@
 import { supabase } from '@/lib/supabase';
-import { preorderRows } from '../schemas/preorder.schema';
-import type { PreorderCampaign } from '../types/preorder';
 
 export async function listPreorderWorkspace() {
-  const [campaignResult, productResult] = await Promise.all([
-    supabase.from('preorder_campaigns')
-      .select('*, product_variants(*, products(*))')
-      .order('created_at', { ascending: false }),
-    supabase.from('products').select('id, name, product_variants(id, unit, price, stock)').order('name'),
-  ]);
-  if (campaignResult.error) throw campaignResult.error;
-  if (productResult.error) throw productResult.error;
+  const { data, error } = await supabase
+    .from('products')
+    .select('*, product_variants(*)')
+    .eq('sale_mode', 'preorder')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+
+  const campaigns = (data || []).map(p => ({
+    id: p.id,
+    name: p.name,
+    product_id: p.id,
+    product_variant_id: p.product_variants?.[0]?.id,
+    status: p.is_available ? 'active' : 'fulfilled',
+    expected_available_at: p.expected_dispatch_date,
+    max_quantity: p.preorder_limit || 100,
+    reserved_quantity: p.product_variants?.[0]?.preorder_reserved_qty || 0,
+    price: p.product_variants?.[0]?.price || 0,
+    product_variants: p.product_variants?.[0],
+    products: p,
+  }));
+
   return {
-    campaigns: preorderRows.campaigns.parse(campaignResult.data),
-    products: preorderRows.products.parse(productResult.data),
+    campaigns,
+    products: data || [],
   };
 }
 
@@ -25,24 +37,22 @@ export async function insertPreorderCampaign(input: {
   maxQuantity: number;
   expectedDate: string;
 }) {
-  const { error } = await supabase.from('preorder_campaigns').insert({
-    name: input.name || 'Special Harvest Pre-Order',
-    product_id: input.productId,
-    product_variant_id: input.variantId,
-    status: 'active',
-    expected_available_at: new Date(input.expectedDate).toISOString(),
-    max_quantity: input.maxQuantity,
-    reserved_quantity: 0,
-    price: input.price,
-  });
+  const { error } = await supabase.from('products')
+    .update({
+      sale_mode: 'preorder',
+      expected_dispatch_date: input.expectedDate,
+      preorder_limit: input.maxQuantity,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', input.productId);
   if (error) throw error;
 }
 
-export async function fulfillPreorderCampaign(campaignId: string, variantId: string, reservedQty: number) {
-  const { error: campaignError } = await supabase.from('preorder_campaigns')
-    .update({ status: 'fulfilled', updated_at: new Date().toISOString() })
-    .eq('id', campaignId);
-  if (campaignError) throw campaignError;
+export async function fulfillPreorderCampaign(productId: string, variantId: string, reservedQty: number) {
+  const { error: prodErr } = await supabase.from('products')
+    .update({ is_available: false, updated_at: new Date().toISOString() })
+    .eq('id', productId);
+  if (prodErr) throw prodErr;
 
   const { data: variant, error: variantError } = await supabase.from('product_variants')
     .select('stock')
@@ -57,6 +67,6 @@ export async function fulfillPreorderCampaign(campaignId: string, variantId: str
   }
 }
 
-export function getCampaignVariant(campaign: PreorderCampaign) {
+export function getCampaignVariant(campaign: any) {
   return campaign.product_variants;
 }

@@ -3,11 +3,20 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Eye, EyeOff, Loader2, AlertCircle, ShieldCheck } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  AlertCircle,
+  ShieldCheck,
+  Mail,
+  Lock,
+  ArrowRight,
+  HelpCircle,
+  CheckCircle2,
+  Clock,
+} from "lucide-react";
 import { hasAdminStaffRole } from "@/features/auth/services/auth.service";
-
-const field =
-  "w-full min-h-11 py-2 rounded-lg bg-white px-3 text-base sm:text-sm text-[#1a1a1a] placeholder:text-[#8a8a8a] shadow-[0_0_0_1px_rgba(0,0,0,0.2)] outline-none focus:shadow-[0_0_0_2px_#005bd3] transition-shadow disabled:bg-[#f7f7f7] disabled:text-[#616161]";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -16,9 +25,24 @@ export default function AdminLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [capsOn, setCapsOn] = useState(false);
   const [error, setError] = useState("");
+  const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [reasonAlert, setReasonAlert] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
+
+  // Read URL reason parameter on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reason = params.get("reason");
+    if (reason === "idle_timeout") {
+      setReasonAlert("You were signed out due to inactivity.");
+    } else if (reason === "session_expired") {
+      setReasonAlert("Your 8-hour admin session has expired. Please sign in again.");
+    }
+  }, []);
 
   // Already signed in as staff? Skip the form.
   useEffect(() => {
@@ -34,7 +58,7 @@ export default function AdminLoginPage() {
       }
       if (active) {
         setCheckingSession(false);
-        setTimeout(() => emailRef.current?.focus(), 0);
+        setTimeout(() => emailRef.current?.focus(), 50);
       }
     })();
     return () => {
@@ -44,9 +68,10 @@ export default function AdminLoginPage() {
 
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (loading) return;
+    if (loading || success) return;
     setLoading(true);
     setError("");
+    setReasonAlert("");
 
     const { data, error: authError } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
@@ -55,150 +80,300 @@ export default function AdminLoginPage() {
 
     if (authError || !data?.user) {
       setLoading(false);
-      // Wrong credentials get a deliberately generic message; other failures are likely network or server related.
       setError(
         authError && authError.status && authError.status >= 500
-          ? "We couldn't reach the server. Please try again in a moment."
+          ? "We couldn't reach the authentication server. Please try again shortly."
           : authError?.message?.toLowerCase().includes("fetch")
-          ? "Check your internet connection and try again."
-          : "Incorrect email or password."
+          ? "Network error. Check your internet connection and try again."
+          : "Incorrect email or password. Please verify your credentials."
       );
       setPassword("");
       return;
     }
 
-    // Stop non-staff accounts here instead of leaving them on a blank screen
+    // Verify staff role before granting access
     const ok = await hasAdminStaffRole(data.user.id);
     if (ok === false) {
       await supabase.auth.signOut();
       setLoading(false);
       setPassword("");
-      setError("This account doesn't have staff access. Ask a super admin to grant you a role.");
+      setError(
+        "Access denied. This account does not have staff privileges assigned."
+      );
       return;
     }
 
+    // Record login timestamp & activity for session guard
+    localStorage.setItem("rb_admin_login_ts", String(Date.now()));
+    localStorage.setItem("rb_admin_last_activity", String(Date.now()));
+
+    setSuccess(true);
     router.replace("/");
     router.refresh();
   };
 
   if (checkingSession) {
     return (
-      <main className="min-h-dvh grid place-items-center bg-[#f1f1f1]">
-        <Loader2 size={24} className="animate-spin text-[#616161]" aria-label="Loading" />
+      <main className="min-h-dvh flex flex-col items-center justify-center bg-[#f6f6f7] px-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-[#18181b] flex items-center justify-center p-2 shadow-sm animate-pulse">
+            <img
+              src="/logo.png"
+              alt="Royal Bengal"
+              className="w-full h-full object-contain opacity-90"
+            />
+          </div>
+          <div className="flex items-center gap-2 text-xs font-medium text-[#616161]">
+            <Loader2 size={14} className="animate-spin text-[#18181b]" />
+            <span>Verifying session…</span>
+          </div>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center bg-[#f1f1f1] px-4 py-8 text-[#303030] antialiased">
-      <div className="w-full max-w-[400px]">
-        {/* Brand */}
-        <div className="flex flex-col items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-xl bg-[#1a1a1a] flex items-center justify-center p-2 shadow-[0_2px_8px_rgba(0,0,0,0.15)]">
-            <img src="/logo.png" alt="Royal Bengal" className="w-full h-full object-contain" />
+    <main className="relative min-h-dvh flex flex-col items-center justify-center bg-[#f6f6f7] px-4 py-10 text-[#18181b] antialiased selection:bg-[#18181b] selection:text-white">
+      {/* Subtle architectural background grid */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 bg-[radial-gradient(#d4d4d8_1px,transparent_1px)] [background-size:20px_20px] opacity-45"
+      />
+
+      <div className="relative z-10 w-full max-w-[420px]">
+        {/* Brand Header */}
+        <div className="flex flex-col items-center text-center mb-7">
+          <div className="relative mb-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-[#18181b] flex items-center justify-center p-2.5 shadow-[0_4px_14px_rgba(0,0,0,0.14)] ring-1 ring-black/10">
+              <img
+                src="/logo.png"
+                alt="Royal Bengal"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <span
+              title="Secure Admin Environment"
+              className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/10"
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
           </div>
-          <div className="text-center">
-            <p className="text-base font-semibold text-[#1a1a1a]">Royal Bengal</p>
-            <p className="text-xs text-[#616161]">Store admin</p>
+
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold tracking-tight text-[#18181b]">
+              Royal Bengal
+            </span>
+            <span className="inline-flex items-center rounded-md bg-black/[0.06] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#52525b]">
+              Admin
+            </span>
           </div>
+          <p className="mt-1 text-xs text-[#71717a]">
+            Store Operations &amp; Management Console
+          </p>
         </div>
 
-        <form
-          onSubmit={signIn}
-          noValidate={false}
-          className="space-y-4 rounded-xl bg-white p-5 sm:p-6 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_2px_12px_rgba(0,0,0,0.06)]"
-        >
-          <header>
-            <h1 className="text-xl font-semibold text-[#1a1a1a]">Log in</h1>
-            <p className="mt-1 text-sm sm:text-[13px] text-[#616161]">Use your staff account to continue.</p>
+        {/* Main Card */}
+        <div className="rounded-2xl bg-white p-6 sm:p-8 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-4px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.07]">
+          <header className="mb-6">
+            <h1 className="text-xl font-semibold tracking-tight text-[#18181b]">
+              Sign in to dashboard
+            </h1>
+            <p className="mt-1 text-[13px] text-[#71717a]">
+              Enter your authorized staff credentials to continue.
+            </p>
           </header>
+
+          {reasonAlert && (
+            <div
+              role="alert"
+              aria-live="polite"
+              className="mb-5 flex items-start gap-2.5 rounded-xl border border-amber-200/80 bg-amber-50/90 px-3.5 py-3 text-[13px] leading-snug text-amber-900"
+            >
+              <Clock
+                size={16}
+                className="mt-0.5 shrink-0 text-amber-600"
+              />
+              <span>{reasonAlert}</span>
+            </div>
+          )}
 
           {error && (
             <div
               role="alert"
               aria-live="assertive"
-              className="flex gap-2 rounded-lg bg-[#fed1d7] px-3 py-2.5 text-sm sm:text-[13px] text-[#8e0b21]"
+              className="mb-5 flex items-start gap-2.5 rounded-xl border border-red-200/80 bg-red-50/90 px-3.5 py-3 text-[13px] leading-snug text-red-900"
             >
-              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <AlertCircle
+                size={16}
+                className="mt-0.5 shrink-0 text-red-600"
+              />
               <span>{error}</span>
             </div>
           )}
 
-          <label className="block space-y-1.5">
-            <span className="text-sm sm:text-[13px] font-medium">Email</span>
-            <input
-              ref={emailRef}
-              required
-              type="email"
-              inputMode="email"
-              autoComplete="username"
-              autoCapitalize="none"
-              spellCheck={false}
-              placeholder="you@example.com"
-              value={email}
-              disabled={loading}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                if (error) setError("");
-              }}
-              className={field}
-            />
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-sm sm:text-[13px] font-medium">Password</span>
-            <div className="relative">
-              <input
-                required
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                placeholder="Enter your password"
-                value={password}
-                disabled={loading}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (error) setError("");
-                }}
-                onKeyUp={(e) => setCapsOn(e.getModifierState("CapsLock"))}
-                onBlur={() => setCapsOn(false)}
-                className={`${field} pr-11`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((s) => !s)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 p-2.5 rounded-lg text-[#616161] hover:text-[#1a1a1a] hover:bg-black/5"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
-                tabIndex={-1}
+          <form onSubmit={signIn} className="space-y-4">
+            {/* Email Field */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="admin-email"
+                className="block text-[13px] font-medium text-[#27272a]"
               >
-                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                Staff email
+              </label>
+              <div className="relative">
+                <Mail
+                  size={16}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a1a1aa]"
+                />
+                <input
+                  id="admin-email"
+                  ref={emailRef}
+                  required
+                  type="email"
+                  inputMode="email"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="name@royalbengal.com"
+                  value={email}
+                  disabled={loading || success}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (error) setError("");
+                  }}
+                  className="w-full h-11 rounded-xl bg-white pl-10 pr-3.5 text-sm text-[#18181b] placeholder:text-[#a1a1aa] ring-1 ring-inset ring-[#d4d4d8] outline-none transition-all focus:ring-2 focus:ring-[#18181b] disabled:bg-[#f4f4f5] disabled:text-[#71717a]"
+                />
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="admin-password"
+                  className="block text-[13px] font-medium text-[#27272a]"
+                >
+                  Password
+                </label>
+                {capsOn && (
+                  <span className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                    Caps Lock on
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <Lock
+                  size={16}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a1a1aa]"
+                />
+                <input
+                  id="admin-password"
+                  required
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="••••••••••••"
+                  value={password}
+                  disabled={loading || success}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError("");
+                  }}
+                  onKeyUp={(e) => setCapsOn(e.getModifierState("CapsLock"))}
+                  onBlur={() => setCapsOn(false)}
+                  className="w-full h-11 rounded-xl bg-white pl-10 pr-11 text-sm text-[#18181b] placeholder:text-[#a1a1aa] ring-1 ring-inset ring-[#d4d4d8] outline-none transition-all focus:ring-2 focus:ring-[#18181b] disabled:bg-[#f4f4f5] disabled:text-[#71717a]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg text-[#71717a] hover:text-[#18181b] hover:bg-black/[0.04] transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Session Persistence Checkbox */}
+            <div className="flex items-center gap-2.5 pt-1">
+              <input
+                id="keep-signed-in"
+                type="checkbox"
+                checked={keepSignedIn}
+                onChange={(e) => setKeepSignedIn(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-[#18181b] focus:ring-[#18181b] cursor-pointer"
+              />
+              <label htmlFor="keep-signed-in" className="text-xs text-[#52525b] select-none cursor-pointer">
+                Keep me signed in for 8 hours
+              </label>
+            </div>
+
+            {/* Submit Button */}
+            <div className="pt-1">
+              <button
+                type="submit"
+                disabled={loading || success || !email.trim() || !password}
+                className="group relative w-full h-11 rounded-xl bg-[#18181b] hover:bg-[#27272a] active:scale-[0.99] text-sm font-medium text-white shadow-sm disabled:opacity-45 disabled:pointer-events-none transition-all inline-flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {success ? (
+                  <>
+                    <CheckCircle2 size={16} className="text-emerald-400" />
+                    <span>Authenticated, redirecting…</span>
+                  </>
+                ) : loading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Verifying credentials…</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign in</span>
+                    <ArrowRight
+                      size={15}
+                      className="transition-transform group-hover:translate-x-0.5"
+                    />
+                  </>
+                )}
               </button>
             </div>
-            {capsOn && <p className="text-xs text-[#5e4200] bg-[#ffd6a4] rounded-md px-2 py-1 w-fit">Caps Lock is on</p>}
-          </label>
+          </form>
 
-          <button
-            type="submit"
-            disabled={loading || !email.trim() || !password}
-            className="w-full min-h-11 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <Loader2 size={16} className="animate-spin" /> Signing in…
-              </>
-            ) : (
-              "Log in"
-            )}
-          </button>
+          {/* Card Footer Security Notice */}
+          <div className="mt-6 pt-5 border-t border-[#f4f4f5] flex items-center justify-between text-xs text-[#71717a]">
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+              Role-verified access
+            </span>
 
-          <p className="flex items-center justify-center gap-1.5 text-xs text-[#616161] text-center pt-1">
-            <ShieldCheck size={13} className="shrink-0" />
-            Only authorized staff accounts can sign in.
-          </p>
-        </form>
+            <button
+              type="button"
+              onClick={() => setShowHelp((prev) => !prev)}
+              className="inline-flex items-center gap-1 font-medium text-[#52525b] hover:text-[#18181b] transition-colors cursor-pointer"
+            >
+              <HelpCircle size={13} />
+              <span>Need help?</span>
+            </button>
+          </div>
 
-        <p className="mt-5 text-center text-xs text-[#8a8a8a]">
-          Forgot your password? Ask a super admin to reset it for you.
+          {/* Expandable Access / Reset Help Drawer */}
+          {showHelp && (
+            <div className="mt-3 rounded-xl bg-[#fafafa] p-3.5 text-xs leading-relaxed text-[#52525b] ring-1 ring-inset ring-black/[0.06]">
+              <p className="font-medium text-[#18181b] mb-1">
+                Account &amp; Password Recovery
+              </p>
+              <p>
+                Self-service password resets are disabled for staff security.
+                Contact your store <strong>Super Admin</strong> to issue a
+                temporary password or provision staff permissions.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Legal / Audit Footer */}
+        <p className="mt-6 text-center text-[11px] text-[#a1a1aa]">
+          Protected workspace. All administrative sign-ins are logged.
         </p>
       </div>
     </main>

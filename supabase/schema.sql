@@ -46,30 +46,55 @@ create table if not exists public.categories (
 
 -- 3. PRODUCTS TABLE (Parent entity)
 create table if not exists public.products (
-  id uuid primary key default gen_random_uuid(),
+  id uuid not null default gen_random_uuid (),
   name text not null,
-  description text,
-  image_url text,
-  category_id uuid references public.categories(id) on delete set null,
-  category_name text,
-  is_available boolean default true,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  description text null,
+  image_url text null,
+  category_id uuid null,
+  category_name text null,
+  is_available boolean null default true,
+  created_at timestamp with time zone null default now(),
+  updated_at timestamp with time zone null default now(),
+  is_preorder boolean not null default false,
+  preorder_delivery_date date null,
+  preorder_limit integer null,
+  sale_mode text not null default 'regular'::text,
+  preorder_start_at timestamp with time zone null,
+  preorder_end_at timestamp with time zone null,
+  expected_dispatch_date date null,
+  preorder_description text null,
+  constraint products_pkey primary key (id),
+  constraint products_category_id_fkey foreign KEY (category_id) references categories (id) on delete set null,
+  constraint products_sale_mode_check check (
+    (
+      sale_mode = any (array['regular'::text, 'preorder'::text])
+    )
+  )
 );
+
+create index IF not exists idx_products_category_id on public.products using btree (category_id);
+create index IF not exists idx_products_sale_mode on public.products using btree (sale_mode);
 
 -- 4. PRODUCT VARIANTS TABLE (Relational units/prices/stock)
 create table if not exists public.product_variants (
-  id uuid primary key default gen_random_uuid(),
-  product_id uuid references public.products(id) on delete cascade not null,
-  unit text not null, -- e.g. '250g', '500g', '1 kg', '2 kg', '500ml', '1 Litre'
+  id uuid not null default gen_random_uuid (),
+  product_id uuid not null,
+  unit text not null,
   price numeric(10, 2) not null,
-  original_price numeric(10, 2),
-  stock integer default 0,
-  sku text,
-  is_available boolean default true,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  original_price numeric(10, 2) null,
+  stock integer null default 0,
+  sku text null,
+  is_available boolean null default true,
+  created_at timestamp with time zone null default now(),
+  updated_at timestamp with time zone null default now(),
+  preorder_enabled boolean not null default false,
+  preorder_limit integer null,
+  preorder_reserved_qty integer not null default 0,
+  constraint product_variants_pkey primary key (id),
+  constraint product_variants_product_id_fkey foreign KEY (product_id) references products (id) on delete CASCADE
 );
+
+create index IF not exists idx_product_variants_preorder_enabled on public.product_variants using btree (preorder_enabled);
 
 -- 5. BANNERS TABLE
 create table if not exists public.banners (

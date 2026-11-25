@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
 import '../config/constants.dart';
 import '../services/supabase_service.dart';
+import '../widgets/category_circles.widget.dart';
+import '../widgets/preorder_carousel.widget.dart';
+import '../widgets/product_card.widget.dart';
+import 'product_details_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback onOpenCart;
   final Function(Map<String, dynamic> item) onAddToCart;
+  final Function(String id, int quantity) onUpdateCartQuantity;
+  final List<Map<String, dynamic>> cartItems;
 
   const HomeScreen({
     super.key,
     required this.onOpenCart,
     required this.onAddToCart,
+    required this.onUpdateCartQuantity,
+    required this.cartItems,
   });
 
   @override
@@ -20,114 +29,293 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _activeCategory = 'All';
-  String _activeSubCategory = 'all';
+  String? _activeSubCategoryId;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  final Map<String, String> _selectedVariantIdMap = {};
 
   List<Map<String, dynamic>> _parentCategories = [];
   Map<String, List<Map<String, dynamic>>> _subCategoriesMap = {};
   List<Map<String, dynamic>> _banners = [];
+  List<Map<String, dynamic>> _preorders = [];
   List<Map<String, dynamic>> _products = [];
   bool _loading = true;
+  String _currentAddress = 'Madhapur, Hyderabad (Delivery Available)';
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _checkAndRequestLocation();
   }
 
-  void _loadData() async {
-    setState(() => _loading = true);
-    final workspace = await SupabaseService.getCategoryWorkspace();
-    final banners = await SupabaseService.getBanners();
-    final prods = await SupabaseService.getProducts(
-      categoryFilter: _activeCategory,
-      subCategoryFilter: _activeSubCategory,
-    );
+  Future<void> _checkAndRequestLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
 
-    setState(() {
-      _parentCategories = workspace['parents'] as List<Map<String, dynamic>>? ?? [];
-      _subCategoriesMap = workspace['subMap'] as Map<String, List<Map<String, dynamic>>>? ?? {};
-      _banners = banners;
-      _products = prods;
-      _loading = false;
-    });
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition();
+      if (mounted) {
+        setState(() {
+          _currentAddress = 'Lat: ${position.latitude.toStringAsFixed(2)}, Lng: ${position.longitude.toStringAsFixed(2)}';
+        });
+      }
+    } catch (e) {
+      debugPrint("Location request error: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   List<Map<String, dynamic>> get _currentSubCategories {
     if (_activeCategory.toLowerCase() == 'all') return [];
-    final selectedCat = _parentCategories.firstWhere(
-      (c) => (c['name'] ?? '').toString().toLowerCase() == _activeCategory.toLowerCase(),
+    final parent = _parentCategories.firstWhere(
+      (cat) => (cat['name'] ?? '').toString().toLowerCase() == _activeCategory.toLowerCase(),
       orElse: () => {},
     );
-    if (selectedCat.isEmpty || selectedCat['id'] == null) return [];
-    return _subCategoriesMap[selectedCat['id'].toString()] ?? [];
+    if (parent.isEmpty || parent['id'] == null) return [];
+    return _subCategoriesMap[parent['id'].toString()] ?? [];
   }
 
-  void _showSupportDialog() {
+  List<Map<String, dynamic>> get _filteredProducts {
+    if (_searchQuery.trim().isEmpty) return _products;
+    final q = _searchQuery.toLowerCase().trim();
+    return _products.where((p) {
+      final name = (p['name'] ?? '').toString().toLowerCase();
+      final cat = (p['category_name'] ?? '').toString().toLowerCase();
+      return name.contains(q) || cat.contains(q);
+    }).toList();
+  }
+
+  void _loadData() async {
+    setState(() => _loading = true);
+    try {
+      final workspace = await SupabaseService.getCategoryWorkspace();
+      final parents = workspace['parents'] as List<Map<String, dynamic>>? ?? [];
+      final subMap = workspace['subMap'] as Map<String, List<Map<String, dynamic>>>? ?? {};
+
+      List<String>? parentSubcategoryIds;
+      if (_activeCategory.toLowerCase() != 'all') {
+        final selectedParent = parents.firstWhere(
+          (cat) => (cat['name'] ?? '').toString().toLowerCase() == _activeCategory.toLowerCase(),
+          orElse: () => {},
+        );
+        if (selectedParent.isNotEmpty && selectedParent['id'] != null) {
+          final children = subMap[selectedParent['id'].toString()] ?? [];
+          parentSubcategoryIds = children.map((sub) => sub['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
+        } else {
+          parentSubcategoryIds = [];
+        }
+      }
+
+      final results = await Future.wait([
+        SupabaseService.getBanners(),
+        SupabaseService.getPreorderProducts(),
+        SupabaseService.getProducts(
+          parentSubcategoryIds: parentSubcategoryIds,
+          subCategoryId: _activeSubCategoryId,
+        ),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _parentCategories = parents;
+        _subCategoriesMap = subMap;
+        _banners = results[0];
+        _preorders = results[1];
+        _products = results[2];
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint("Error loading home data: $e");
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  bool _isVariantAvailable(Map<String, dynamic> variant) {
+    final isAvailable = variant['is_available'] == true;
+    final stock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
+    return isAvailable && stock > 0;
+  }
+
+  int _getAvailableVariantIndex(List variants) {
+    for (int i = 0; i < variants.length; i++) {
+      final variant = Map<String, dynamic>.from(variants[i] as Map);
+      if (_isVariantAvailable(variant)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  Map<String, dynamic>? _getSelectedVariant(String productId, List variants) {
+    if (variants.isEmpty) return null;
+    final selectedId = _selectedVariantIdMap[productId];
+
+    if (selectedId != null) {
+      for (final item in variants) {
+        final variant = Map<String, dynamic>.from(item as Map);
+        if (variant['id']?.toString() == selectedId && _isVariantAvailable(variant)) {
+          return variant;
+        }
+      }
+    }
+
+    final firstAvailableIndex = _getAvailableVariantIndex(variants);
+    if (firstAvailableIndex == -1) {
+      return variants.isNotEmpty ? Map<String, dynamic>.from(variants[0] as Map) : null;
+    }
+
+    return Map<String, dynamic>.from(variants[firstAvailableIndex] as Map);
+  }
+
+  void _showLocationDialog() {
+    final TextEditingController addressController = TextEditingController(text: _currentAddress);
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppConstants.primaryDarkEmerald,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('ROYAL CONCIERGE', style: GoogleFonts.montserrat(color: AppConstants.royalGold, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 2)),
-                    const SizedBox(height: 2),
-                    const Text('Customer Support', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                  ],
+              Text('SELECT DELIVERY LOCATION', style: GoogleFonts.montserrat(color: AppConstants.primaryDarkEmerald, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+              const SizedBox(height: 8),
+              const Text('Enter your delivery address to verify real-time delivery availability & speed.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: addressController,
+                decoration: InputDecoration(
+                  labelText: 'Delivery Address / Area',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: const Icon(Icons.location_on, color: AppConstants.primaryDarkEmerald),
                 ),
               ),
               const SizedBox(height: 16),
-
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: const BoxDecoration(color: AppConstants.lightMint, shape: BoxShape.circle),
-                  child: const Icon(Icons.chat, color: AppConstants.darkEmeraldText, size: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppConstants.primaryDarkEmerald,
+                    foregroundColor: AppConstants.royalGold,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _currentAddress = addressController.text.isNotEmpty ? addressController.text : 'Hyderabad';
+                    });
+                    addressController.dispose();
+                    Navigator.pop(context);
+                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                      const SnackBar(content: Text('Delivery location updated! We deliver to your area.'), backgroundColor: AppConstants.primaryDarkEmerald),
+                    );
+                  },
+                  child: const Text('CHECK AVAILABILITY & SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
-                title: const Text('WHATSAPP US', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-                subtitle: const Text('Instant chat support', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                onTap: () async {
-                  Navigator.pop(context);
-                  const url = 'https://wa.me/916304076069';
-                  if (await canLaunchUrl(Uri.parse(url))) {
-                    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                  }
-                },
               ),
-
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.amber.shade50, shape: BoxShape.circle),
-                  child: const Icon(Icons.phone, color: Colors.amber, size: 20),
-                ),
-                title: const Text('CALL US', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-                subtitle: const Text('Direct phone support', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                onTap: () async {
-                  Navigator.pop(context);
-                  const url = 'tel:+916304076069';
-                  if (await canLaunchUrl(Uri.parse(url))) {
-                    await launchUrl(Uri.parse(url));
-                  }
-                },
-              ),
+              const SizedBox(height: 20),
             ],
           ),
         );
       },
+    );
+  }
+
+  void _showSupportDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text('Royal Bengal Concierge', style: GoogleFonts.playfairDisplay(fontWeight: FontWeight.w900, color: AppConstants.headerEmerald)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Need assistance with your gourmet order or fresh catch?', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.green.shade50, shape: BoxShape.circle),
+                child: const Icon(Icons.chat, color: Colors.green, size: 20),
+              ),
+              title: const Text('WHATSAPP SUPPORT', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+              subtitle: const Text('Chat with our concierge', style: TextStyle(fontSize: 10, color: Colors.grey)),
+              onTap: () async {
+                Navigator.pop(context);
+                const url = 'https://wa.me/916304076069?text=Hello%20Royal%20Bengal,%20I%20need%20help%20with%20my%20order.';
+                if (await canLaunchUrl(Uri.parse(url))) {
+                  await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.amber.shade50, shape: BoxShape.circle),
+                child: const Icon(Icons.phone, color: Colors.amber, size: 20),
+              ),
+              title: const Text('CALL US', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+              subtitle: const Text('Direct phone support', style: TextStyle(fontSize: 10, color: Colors.grey)),
+              onTap: () async {
+                Navigator.pop(context);
+                const url = 'tel:+916304076069';
+                if (await canLaunchUrl(Uri.parse(url))) {
+                  await launchUrl(Uri.parse(url));
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubCategoryPill(String title, String? subId, bool isSelected) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _activeSubCategoryId = subId;
+        });
+        _loadData();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppConstants.royalGold : AppConstants.primaryDarkEmerald,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppConstants.royalGold.withOpacity(0.8)),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            color: isSelected ? AppConstants.primaryDarkEmerald : Colors.white,
+          ),
+        ),
+      ),
     );
   }
 
@@ -136,46 +324,65 @@ class _HomeScreenState extends State<HomeScreen> {
     final subCats = _currentSubCategories;
 
     return Scaffold(
-      backgroundColor: AppConstants.warmBackground,
+      backgroundColor: AppConstants.warmCreamBackground,
       appBar: AppBar(
-        backgroundColor: AppConstants.primaryDarkEmerald,
+        backgroundColor: AppConstants.warmCreamBackground,
         elevation: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        toolbarHeight: 68,
+        title: Row(
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: const BoxDecoration(shape: BoxShape.circle, color: AppConstants.royalGold),
-                  padding: const EdgeInsets.all(1.5),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.asset('assets/logo.png', fit: BoxFit.cover),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'ROYAL BENGAL',
-                  style: GoogleFonts.playfairDisplay(fontSize: 16, fontWeight: FontWeight.w900, color: AppConstants.royalGold, letterSpacing: 1.5),
-                ),
-              ],
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                border: Border.all(color: AppConstants.royalGold, width: 1.5),
+              ),
+              padding: const EdgeInsets.all(2),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(19),
+                child: Image.asset('assets/logo.png', fit: BoxFit.cover),
+              ),
             ),
-            const SizedBox(height: 2),
-            Text(AppConstants.bengaliTagline, style: const TextStyle(fontSize: 9, color: Colors.white70, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'The Royal Bengal Fresh',
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: AppConstants.darkEmeraldText,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    AppConstants.bengaliTagline,
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      color: AppConstants.darkEmeraldText,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         actions: [
           IconButton(
             icon: Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppConstants.headerEmerald,
+                color: Colors.white,
                 border: Border.all(color: AppConstants.royalGold, width: 1.5),
               ),
-              child: const Icon(Icons.headset_mic, color: AppConstants.royalGold, size: 18),
+              child: const Icon(Icons.headset_mic, color: AppConstants.headerEmerald, size: 18),
             ),
             onPressed: _showSupportDialog,
           ),
@@ -183,30 +390,65 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: CustomScrollView(
         slivers: [
-          // Header Delivery Location Bar
+          // Real-time Integrated Search Bar
           SliverToBoxAdapter(
             child: Container(
-              color: AppConstants.primaryDarkEmerald,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: AppConstants.warmCreamBackground,
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                height: 44,
                 decoration: BoxDecoration(
-                  color: AppConstants.headerEmerald,
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: AppConstants.cardBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (val) {
+                    setState(() {
+                      _searchQuery = val;
+                    });
+                  },
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppConstants.darkCharcoalText),
+                  decoration: const InputDecoration(
+                    hintText: 'Search cuts, fresh catch & delicacies...',
+                    hintStyle: TextStyle(fontSize: 12, color: AppConstants.mutedGreyText, fontWeight: FontWeight.w500),
+                    prefixIcon: Icon(Icons.search, color: AppConstants.mutedGreyText, size: 18),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Header Delivery Location Bar
+          SliverToBoxAdapter(
+            child: GestureDetector(
+              onTap: _showLocationDialog,
+              child: Container(
+                color: AppConstants.warmCreamBackground,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Row(
-                  children: const [
-                    Icon(Icons.location_on, color: AppConstants.royalGold, size: 16),
-                    SizedBox(width: 6),
+                  children: [
+                    const Icon(Icons.location_on_outlined, color: Colors.orange, size: 16),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Deliver to: HOME - 5th floor, penthouse, Hyderabad...',
+                        'Deliver to: $_currentAddress',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: AppConstants.royalGold, fontWeight: FontWeight.w900, fontSize: 11),
+                        style: const TextStyle(color: AppConstants.darkCharcoalText, fontWeight: FontWeight.w900, fontSize: 11),
                       ),
                     ),
-                    Icon(Icons.keyboard_arrow_down, color: AppConstants.royalGold, size: 16),
+                    const Icon(Icons.keyboard_arrow_down, color: Colors.orange, size: 16),
                   ],
                 ),
               ),
@@ -250,26 +492,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             bottom: 12,
                             left: 14,
                             right: 14,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    banner['title'] ?? '',
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppConstants.royalGold,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Text('EXPRESS', style: TextStyle(color: AppConstants.primaryDarkEmerald, fontSize: 9, fontWeight: FontWeight.w900)),
-                                ),
-                              ],
+                            child: Text(
+                              banner['title'] ?? '',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -280,21 +507,34 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
+          // Pre-orders Horizontal Carousel
+          PreorderCarouselWidget(
+            preorders: _preorders,
+            onProductTap: (product) {
+              showProductDetailsModal(
+                context: context,
+                product: product,
+                onAddToCart: widget.onAddToCart,
+                onOpenCart: widget.onOpenCart,
+              );
+            },
+            onAddToCart: widget.onAddToCart,
+          ),
+
           // Sticky Category Circles Row
           SliverPersistentHeader(
             pinned: true,
             delegate: _SliverCategoryDelegate(
-              child: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  children: [
-                    _buildCategoryCircle('All', '🛍️', null, _activeCategory == 'All'),
-                    ..._parentCategories.map((cat) => _buildCategoryCircle(cat['name'] ?? '', '🍽️', cat['image_url'], _activeCategory.toLowerCase() == (cat['name'] ?? '').toString().toLowerCase())),
-                  ],
-                ),
+              child: CategoryCirclesWidget(
+                parentCategories: _parentCategories,
+                activeCategory: _activeCategory,
+                onSelectCategory: (categoryName) {
+                  setState(() {
+                    _activeCategory = categoryName;
+                    _activeSubCategoryId = null;
+                  });
+                  _loadData();
+                },
               ),
             ),
           ),
@@ -309,8 +549,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildSubCategoryPill('ALL', null, _activeSubCategory == 'all'),
-                      ...subCats.map((sub) => _buildSubCategoryPill(sub['name'] ?? '', sub['id']?.toString(), _activeSubCategory.toLowerCase() == (sub['name'] ?? '').toString().toLowerCase())),
+                      _buildSubCategoryPill(
+                        'ALL',
+                        null,
+                        _activeSubCategoryId == null,
+                      ),
+                      ...subCats.map((sub) {
+                        final id = sub['id']?.toString();
+                        return _buildSubCategoryPill(
+                          sub['name']?.toString() ?? '',
+                          id,
+                          _activeSubCategoryId == id,
+                        );
+                      }),
                     ],
                   ),
                 ),
@@ -320,7 +571,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // Product Grid List
           _loading
               ? const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: AppConstants.headerEmerald)))
-              : _products.isEmpty
+              : _filteredProducts.isEmpty
                   ? SliverFillRemaining(
                       child: Center(
                         child: Column(
@@ -328,7 +579,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: const [
                             Icon(Icons.set_meal_outlined, size: 48, color: Colors.grey),
                             SizedBox(height: 12),
-                            Text('No products found in this category.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+                            Text('No products found matching your search or category.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
                           ],
                         ),
                       ),
@@ -338,99 +589,95 @@ class _HomeScreenState extends State<HomeScreen> {
                       sliver: SliverGrid(
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2,
-                          childAspectRatio: 0.62,
+                          childAspectRatio: 0.78,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
                         ),
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                            final product = _products[index];
+                            final product = _filteredProducts[index];
                             final variants = product['product_variants'] as List? ?? [];
-                            final firstVariant = variants.isNotEmpty ? variants[0] : null;
+                            final pId = product['id'].toString();
 
-                            return Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Colors.grey.shade200),
-                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8)],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Image Container
-                                  Expanded(
-                                    child: Container(
-                                      width: double.infinity,
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey.shade100,
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(16),
-                                        child: Image.network(
-                                          product['image_url'] ?? 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=600&q=80',
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 40, color: Colors.grey),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
+                            final activeVariant = _getSelectedVariant(pId, variants);
 
-                                  Text(
-                                    product['name'] ?? 'Fresh Catch',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, height: 1.2),
-                                  ),
-                                  const SizedBox(height: 4),
+                            final originalPrice = num.tryParse(activeVariant?['original_price']?.toString() ?? product['original_price']?.toString() ?? '0') ?? 0;
+                            final productOriginalPrice = num.tryParse(product['original_price']?.toString() ?? '0') ?? 0;
+                            final resolvedOriginalPrice = originalPrice > 0 ? originalPrice : productOriginalPrice;
 
-                                  Row(
-                                    children: [
-                                      Text(
-                                        '₹${firstVariant?['price'] ?? product['price'] ?? 150}',
-                                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppConstants.darkCharcoalText),
-                                      ),
-                                      Text(
-                                        ' / ${firstVariant?['unit'] ?? 'pack'}',
-                                        style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
+                            final variantDiscount = num.tryParse(activeVariant?['discount']?.toString() ?? activeVariant?['discount_percent']?.toString() ?? '0') ?? 0;
+                            final productDiscount = num.tryParse(product['discount']?.toString() ?? product['discount_percent']?.toString() ?? '0') ?? 0;
+                            final discountPercent = variantDiscount > 0 ? variantDiscount : productDiscount;
 
-                                  SizedBox(
-                                    width: double.infinity,
-                                    height: 34,
-                                    child: ElevatedButton(
-                                      onPressed: () {
-                                        widget.onAddToCart({
-                                          'id': firstVariant?['id'] ?? product['id'],
-                                          'name': product['name'],
-                                          'price': firstVariant?['price'] ?? 150,
-                                          'unit': firstVariant?['unit'] ?? 'pack',
-                                          'img': product['image_url'],
-                                        });
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppConstants.lightMint,
-                                        foregroundColor: AppConstants.darkEmeraldText,
-                                        elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          side: const BorderSide(color: AppConstants.mintBorder),
-                                        ),
-                                      ),
-                                      child: const Text('ADD TO CART', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10)),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            final currentPrice = num.tryParse(activeVariant?['price']?.toString() ?? product['price']?.toString() ?? '150') ?? 150;
+
+                            final hasDiscount = discountPercent > 0 || resolvedOriginalPrice > currentPrice;
+                            final effectiveDiscount = discountPercent > 0 ? discountPercent.round() : (hasDiscount && resolvedOriginalPrice > currentPrice ? (((resolvedOriginalPrice - currentPrice) / resolvedOriginalPrice) * 100).round() : 0);
+                            final displayOriginalPrice = resolvedOriginalPrice > currentPrice ? resolvedOriginalPrice : (effectiveDiscount > 0 ? (currentPrice / (1 - (effectiveDiscount / 100))).round() : 0);
+
+                            final comboId = '$pId-${activeVariant?['id'] ?? pId}';
+                            final cartMatch = widget.cartItems.firstWhere(
+                              (i) => (i['product_id'] ?? i['id']).toString() == pId &&
+                                     i['variant_id']?.toString() == activeVariant?['id']?.toString(),
+                              orElse: () => {},
+                            );
+                            final cartQuantity = int.tryParse(cartMatch['quantity']?.toString() ?? '0') ?? 0;
+
+                            return ProductCardWidget(
+                              product: product,
+                              activeVariant: activeVariant,
+                              effectiveDiscount: effectiveDiscount,
+                              currentPrice: currentPrice,
+                              displayOriginalPrice: displayOriginalPrice,
+                              variants: variants,
+                              pId: pId,
+                              selectedVariantId: activeVariant?['id']?.toString(),
+                              cartQuantity: cartQuantity,
+                              onSelectVariant: (prodId, varId) {
+                                setState(() {
+                                  _selectedVariantIdMap[prodId] = varId;
+                                });
+                              },
+                              onTap: () {
+                                showProductDetailsModal(
+                                  context: context,
+                                  product: product,
+                                  onAddToCart: widget.onAddToCart,
+                                  onOpenCart: widget.onOpenCart,
+                                );
+                              },
+                              onAddToCart: () {
+                                final varId = activeVariant?['id']?.toString();
+                                widget.onAddToCart({
+                                  'id': comboId,
+                                  'product_id': pId,
+                                  'variant_id': varId,
+                                  'name': product['name'],
+                                  'price': currentPrice,
+                                  'unit': activeVariant?['unit'] ?? 'pack',
+                                  'img': product['image_url'],
+                                  'quantity': 1,
+                                });
+                              },
+                              onIncrement: () {
+                                final varId = activeVariant?['id']?.toString();
+                                widget.onAddToCart({
+                                  'id': comboId,
+                                  'product_id': pId,
+                                  'variant_id': varId,
+                                  'name': product['name'],
+                                  'price': currentPrice,
+                                  'unit': activeVariant?['unit'] ?? 'pack',
+                                  'img': product['image_url'],
+                                  'quantity': 1,
+                                });
+                              },
+                              onDecrement: () {
+                                widget.onUpdateCartQuantity(comboId, cartQuantity - 1);
+                              },
                             );
                           },
-                          childCount: _products.length,
+                          childCount: _filteredProducts.length,
                         ),
                       ),
                     ),
@@ -438,110 +685,22 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  Widget _buildCategoryCircle(String label, String defaultIcon, String? imageUrl, bool isActive) {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _activeCategory = label;
-          _activeSubCategory = 'all';
-        });
-        _loadData();
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 12),
-        child: Column(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: isActive
-                    ? const LinearGradient(colors: [Color(0xFFFFD54F), Color(0xFFFFB300)])
-                    : null,
-                color: isActive ? null : Colors.grey.shade100,
-              ),
-              padding: const EdgeInsets.all(2),
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isActive ? AppConstants.primaryDarkEmerald : Colors.white,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(26),
-                  child: imageUrl != null && imageUrl.isNotEmpty
-                      ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (c, e, s) => Center(child: Text(defaultIcon, style: const TextStyle(fontSize: 20))))
-                      : Center(child: Text(defaultIcon, style: const TextStyle(fontSize: 20))),
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: isActive ? FontWeight.w900 : FontWeight.bold,
-                color: isActive ? AppConstants.primaryDarkEmerald : Colors.grey.shade700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSubCategoryPill(String label, String? subCategoryId, bool isActive) {
-    return GestureDetector(
-      onTap: () async {
-        setState(() {
-          _activeSubCategory = label;
-          _loading = true;
-        });
-        final prods = await SupabaseService.getProducts(
-          categoryFilter: _activeCategory,
-          subCategoryFilter: label,
-          subCategoryId: subCategoryId,
-        );
-        setState(() {
-          _products = prods;
-          _loading = false;
-        });
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive ? AppConstants.royalGold : const Color(0xFF004D3B),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isActive ? AppConstants.royalGold : const Color(0xFF005A45)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-            color: isActive ? const Color(0xFF00382B) : AppConstants.lightMint,
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _SliverCategoryDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
-
   _SliverCategoryDelegate({required this.child});
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => child;
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
 
   @override
-  double get maxExtent => 82;
+  double get maxExtent => 100;
 
   @override
-  double get minExtent => 82;
+  double get minExtent => 100;
 
   @override
   bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) => true;

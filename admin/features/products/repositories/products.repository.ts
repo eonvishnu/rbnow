@@ -11,7 +11,7 @@ import type {
 export async function listProducts() {
   const { data, error } = await supabase
     .from('products')
-    .select('id, name, category_id, category_name, description, image_url, is_available, product_variants(id, product_id, unit, price, original_price, stock, sku, is_available)')
+    .select('id, name, category_id, category_name, description, image_url, is_available, sale_mode, expected_dispatch_date, preorder_limit, preorder_description, product_variants(id, product_id, unit, price, original_price, stock, sku, is_available)')
     .order('name');
 
   if (error) throw error;
@@ -22,7 +22,7 @@ export async function listProducts() {
 export async function listProductCategories(): Promise<ProductCategory[]> {
   const { data, error } = await supabase
     .from('categories')
-    .select('id, name')
+    .select('id, name, parent_id')
     .order('name');
 
   if (error) throw error;
@@ -77,6 +77,10 @@ export async function createProductRecord(input: {
   categoryName: string;
   description: string;
   imageUrl: string;
+  sale_mode?: string;
+  expected_dispatch_date?: string | null;
+  preorder_limit?: number | null;
+  preorder_description?: string | null;
   variants: Array<{
     unit: string;
     price: number;
@@ -95,6 +99,10 @@ export async function createProductRecord(input: {
       description: input.description,
       image_url: input.imageUrl,
       is_available: true,
+      sale_mode: input.sale_mode || 'regular',
+      expected_dispatch_date: input.expected_dispatch_date || null,
+      preorder_limit: input.preorder_limit || null,
+      preorder_description: input.preorder_description || null,
     })
     .select('id')
     .single();
@@ -118,6 +126,10 @@ export async function updateProductRecord(input: {
   categoryName: string;
   description: string;
   imageUrl: string;
+  sale_mode?: string;
+  expected_dispatch_date?: string | null;
+  preorder_limit?: number | null;
+  preorder_description?: string | null;
   removedVariantIds: string[];
   variants: Array<{
     id: string;
@@ -135,6 +147,10 @@ export async function updateProductRecord(input: {
       category_id: input.categoryId,
       description: input.description,
       image_url: input.imageUrl,
+      sale_mode: input.sale_mode || 'regular',
+      expected_dispatch_date: input.expected_dispatch_date || null,
+      preorder_limit: input.preorder_limit || null,
+      preorder_description: input.preorder_description || null,
       updated_at: now,
     })
     .eq('id', input.id);

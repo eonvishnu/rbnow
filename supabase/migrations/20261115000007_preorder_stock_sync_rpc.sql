@@ -95,7 +95,7 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Order total calculation mismatch.');
   END IF;
 
-  -- 4. Server-Side Cryptographic SHA-256 Canonical Fingerprint Calculation
+  -- 4. Server-Side Canonical Fingerprint Calculation using md5
   SELECT string_agg(
     format('%s:%s:%s:%s:%s:%s:%s:%s',
       COALESCE((x->>'product_id')::text, ''),
@@ -111,17 +111,13 @@ BEGIN
   ) INTO v_items_json
   FROM jsonb_array_elements(p_items) AS x;
 
-  v_computed_fingerprint := encode(
-    digest(
-      format('name:%s|phone:%s|addr:%s|sub:%s|del:%s|disc:%s|tot:%s|items:[%s]',
-        COALESCE(p_customer_name, ''),
-        COALESCE(p_customer_phone, ''),
-        COALESCE(p_delivery_address::text, '{}'),
-        p_subtotal, p_delivery_fee, p_discount, p_total, COALESCE(v_items_json, '')
-      ),
-      'sha256'
-    ),
-    'hex'
+  v_computed_fingerprint := md5(
+    format('name:%s|phone:%s|addr:%s|sub:%s|del:%s|disc:%s|tot:%s|items:[%s]',
+      COALESCE(p_customer_name, ''),
+      COALESCE(p_customer_phone, ''),
+      COALESCE(p_delivery_address::text, '{}'),
+      p_subtotal, p_delivery_fee, p_discount, p_total, COALESCE(v_items_json, '')
+    )
   );
 
   -- 5. Advisory Transaction Lock keyed by checkout_id
@@ -135,20 +131,24 @@ BEGIN
     IF v_existing_order.user_id <> p_user_id THEN
       RETURN jsonb_build_object('success', false, 'error', 'Checkout ID belongs to another user.');
     END IF;
-    IF v_existing_order.payload_fingerprint IS DISTINCT FROM v_computed_fingerprint THEN
-      RETURN jsonb_build_object('success', false, 'error', 'Checkout ID reused with modified cart contents or pricing.');
-    END IF;
 
-    RETURN jsonb_build_object(
-      'success', true,
-      'order', row_to_json(v_existing_order),
-      'items', (
-        SELECT json_agg(row_to_json(oi) ORDER BY oi.product_id, oi.variant_id, oi.quantity)
-        FROM public.order_items oi
-        WHERE oi.order_id = v_existing_order.id
-      ),
-      'already_exists', true
-    );
+    -- If existing order was cancelled, failed, or abandoned, allow placing a fresh order
+    IF v_existing_order.status IN ('cancelled', 'failed') OR v_existing_order.payment_status = 'failed' THEN
+      -- Allow proceeding to create a new order record
+    ELSIF v_existing_order.payload_fingerprint IS DISTINCT FROM v_computed_fingerprint THEN
+      RETURN jsonb_build_object('success', false, 'error', 'Checkout ID reused with modified cart contents or pricing.');
+    ELSE
+      RETURN jsonb_build_object(
+        'success', true,
+        'order', row_to_json(v_existing_order),
+        'items', (
+          SELECT json_agg(row_to_json(oi) ORDER BY oi.product_id, oi.variant_id, oi.quantity)
+          FROM public.order_items oi
+          WHERE oi.order_id = v_existing_order.id
+        ),
+        'already_exists', true
+      );
+    END IF;
   END IF;
 
   -- 6. Create Order Record (Status: pending_payment) - ZERO Inventory Mutation at Creation

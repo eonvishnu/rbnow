@@ -380,7 +380,7 @@ class _ProductDetailsContentState extends State<ProductDetailsContent> {
                               'quantity': _quantity,
                             });
 
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            ScaffoldMessenger.maybeOf(context)?.showSnackBar(
                               SnackBar(
                                 content: Text('Added $_quantity x ${widget.product['name']} ($unit) to cart!'),
                                 backgroundColor: AppConstants.headerEmerald,

@@ -16,6 +16,11 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function badRequest(errorMsg: string) {
+  console.error("Place-order 400 Bad Request:", errorMsg);
+  return jsonResponse({ error: errorMsg }, 400);
+}
+
 function deg2rad(deg: number) { return deg * (Math.PI / 180); }
 
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -170,6 +175,7 @@ Deno.serve(async (req: Request) => {
     const bearerMatch = authorization.match(/^Bearer\s+(\S+)$/i);
 
     if (!bearerMatch) {
+      console.error("Place-order auth error: No Authorization bearer token provided");
       return jsonResponse({ error: "Please log in to place an order." }, 401);
     }
 
@@ -179,21 +185,24 @@ Deno.serve(async (req: Request) => {
     });
 
     const { data: { user }, error: userErr } = await authClient.auth.getUser(accessToken);
+    console.log("Place-order auth result - user ID:", user?.id, "error:", userErr?.message);
+
     if (userErr || !user) {
-      return jsonResponse({ error: "Invalid or expired authentication token." }, 401);
+      console.error("Place-order auth error: user is null or invalid token", userErr);
+      return jsonResponse({ error: `Invalid or expired authentication token. User is null. Error: ${userErr?.message || 'none'}` }, 401);
     }
 
     const finalUserId = user.id;
     const body = await req.json();
 
     if (!body || typeof body !== "object" || Array.isArray(body)) {
-      return jsonResponse({ error: "Invalid request body." }, 400);
+      return badRequest("Invalid request body.");
     }
 
     const { items, details, couponCode, checkoutId, action } = body;
 
     if (checkoutId !== undefined && checkoutId !== null && !isValidUuid(checkoutId)) {
-      return jsonResponse({ error: "Invalid checkout ID." }, 400);
+      return badRequest("Invalid checkout ID.");
     }
 
     // SERVER-SIDE ABANDON ACTION WITH SHARED RECONCILIATION
@@ -210,12 +219,12 @@ Deno.serve(async (req: Request) => {
       }
 
       if (existingOrder.status !== 'pending_payment' || existingOrder.payment_status !== 'pending') {
-        return jsonResponse({ error: "Order cannot be abandoned in its current state." }, 400);
+        return badRequest("Order cannot be abandoned in its current state.");
       }
 
       const recon = await reconcileOrderPayments(supabase, checkoutId, razorpayKeyId, razorpayKeySecret);
       if (!recon.safeToProceed) {
-        return jsonResponse({ error: recon.error || "Cannot abandon order while payment attempts are active or unresolved." }, 400);
+        return badRequest(recon.error || "Cannot abandon order while payment attempts are active or unresolved.");
       }
 
       const { data: abResult, error: abErr } = await supabase.rpc('abandon_pending_order', {
@@ -224,7 +233,7 @@ Deno.serve(async (req: Request) => {
       });
 
       if (abErr || !abResult?.success) {
-        return jsonResponse({ error: abErr?.message || abResult?.error || "Failed to abandon pending order." }, 400);
+        return badRequest(abErr?.message || abResult?.error || "Failed to abandon pending order.");
       }
       return jsonResponse({ success: true, abandoned: true });
     }
@@ -252,7 +261,7 @@ Deno.serve(async (req: Request) => {
     if (isRetry) {
       const recon = await reconcileOrderPayments(supabase, checkoutId, razorpayKeyId, razorpayKeySecret);
       if (!recon.safeToProceed) {
-        return jsonResponse({ error: recon.error || "Order payment reconciliation failed." }, 400);
+        return badRequest(recon.error || "Order payment reconciliation failed.");
       }
 
       const { data: reservation, error: resErr } = await supabase.rpc("reserve_payment_attempt", {
@@ -261,7 +270,7 @@ Deno.serve(async (req: Request) => {
       });
 
       if (resErr || !reservation?.success) {
-        return jsonResponse({ error: reservation?.error || "Unable to reserve payment attempt for retry." }, 400);
+        return badRequest(reservation?.error || "Unable to reserve payment attempt for retry.");
       }
 
       paymentRecordId = reservation.payment_id;
@@ -286,7 +295,7 @@ Deno.serve(async (req: Request) => {
 
       if (existingOrder.currency && existingOrder.currency !== "INR") {
         await markPaymentFailedIfCreated(paymentRecordId, "Unsupported order currency during retry");
-        return jsonResponse({ error: "Unsupported order currency." }, 400);
+        return badRequest("Unsupported order currency.");
       }
 
       order = existingOrder;
@@ -302,36 +311,223 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ error: "Order amount validation failed. Please contact support." }, 409);
       }
     } else {
-      // Normal order creation logic with cart validation, discount, delivery fee, and atomic create_pending_order RPC
       if (!Array.isArray(items) || items.length === 0) {
-        return jsonResponse({ error: "Cart items are required." }, 400);
+        return badRequest("Cart items are required.");
       }
 
-      // [Cart items validation, stock check, coupon validation, delivery fee calculation...]
-      // ...
+      // Fetch delivery settings and calculate subtotal/delivery fee
+      const { data: dSettings } = await supabase
+        .from("delivery_settings")
+        .select("*")
+        .eq("id", "default")
+        .maybeSingle();
+
+      const normalizedItems = [];
+      for (const item of items) {
+        const rawVariantId = item.variant_id || item.id;
+        const rawProductId = item.product_id;
+        const qty = Number(item.quantity || item.qty || 1);
+
+        let variant: any = null;
+
+        if (rawVariantId) {
+          const { data: vData } = await supabase
+            .from("product_variants")
+            .select("id, product_id, price, stock, preorder_enabled, preorder_reserved_qty, preorder_limit")
+            .eq("id", rawVariantId)
+            .maybeSingle();
+          variant = vData;
+        }
+
+        if (!variant && rawProductId) {
+          const { data: vData } = await supabase
+            .from("product_variants")
+            .select("id, product_id, price, stock, preorder_enabled, preorder_reserved_qty, preorder_limit")
+            .eq("product_id", rawProductId)
+            .limit(1)
+            .maybeSingle();
+          variant = vData;
+        }
+
+        if (!variant && rawVariantId) {
+          const { data: vData } = await supabase
+            .from("product_variants")
+            .select("id, product_id, price, stock, preorder_enabled, preorder_reserved_qty, preorder_limit")
+            .eq("product_id", rawVariantId)
+            .limit(1)
+            .maybeSingle();
+          variant = vData;
+        }
+
+        if (!variant) {
+          return badRequest(`Product or variant not found for item ${item.product_name || item.name || rawVariantId}.`);
+        }
+
+        const { data: productData } = await supabase
+          .from("products")
+          .select("name, sale_mode, expected_dispatch_date, image_url")
+          .eq("id", variant.product_id)
+          .maybeSingle();
+
+        const isPreorder = productData?.sale_mode === 'preorder' || variant.preorder_enabled === true;
+        const expectedDispatchDate = productData?.expected_dispatch_date || item.expectedDispatchDate || null;
+        const saleModeSnapshot = productData?.sale_mode || 'regular';
+
+        if (isPreorder) {
+          const currentReserved = Number(variant.preorder_reserved_qty || 0);
+          const limit = Number(variant.preorder_limit || 100);
+          if ((currentReserved + qty) > limit) {
+            return badRequest(`Pre-order limit exceeded for ${productData?.name || 'Product'}. Remaining capacity: ${Math.max(0, limit - currentReserved)}`);
+          }
+        } else {
+          if (Number(variant.stock || 0) < qty) {
+            return badRequest(`Item ${productData?.name || item.product_name || 'Product'} is out of stock or insufficient stock available.`);
+          }
+        }
+
+        verifiedSubtotal += Number(variant.price) * qty;
+
+        normalizedItems.push({
+          product_id: variant.product_id,
+          variant_id: variant.id,
+          product_name: productData?.name || item.product_name || item.name || 'Product',
+          variant_unit: item.variant_unit || item.unit || 'pack',
+          product_image: productData?.image_url || item.product_image || item.img || '',
+          price: Number(item.price || variant.price),
+          quantity: qty,
+          total_price: Number(item.price || variant.price) * qty,
+          is_preorder: isPreorder,
+          expected_dispatch_date: expectedDispatchDate,
+          expected_available_date: expectedDispatchDate,
+          sale_mode_snapshot: saleModeSnapshot,
+          fulfillment_type: isPreorder ? 'preorder' : 'regular',
+        });
+      }
+
+      // Delivery fee computation
+      const mode = dSettings?.delivery_mode || 'preset_rules';
+      const storeLat = Number(dSettings?.store_latitude ?? STORE_LAT);
+      const storeLng = Number(dSettings?.store_longitude ?? STORE_LNG);
+      const custLat = Number(details?.lat || 0);
+      const custLng = Number(details?.lng || 0);
+      const distanceKm = getDistanceFromLatLonInKm(storeLat, storeLng, custLat, custLng);
+
+      if (mode === 'flat_fee') {
+        deliveryFee = Number(dSettings?.flat_delivery_fee || 65);
+      } else if (mode === 'preset_rules') {
+        const radius = Number(dSettings?.preset_zone_radius_km || 5);
+        if (distanceKm <= radius) {
+          const sub1 = Number(dSettings?.preset_zone1_subtotal || 299);
+          const fee1 = Number(dSettings?.preset_zone1_fee || 30);
+          deliveryFee = verifiedSubtotal >= sub1 ? 0 : fee1;
+        } else {
+          const sub2 = Number(dSettings?.preset_zone2_subtotal || 499);
+          const fee2 = Number(dSettings?.preset_zone2_fee || 30);
+          deliveryFee = verifiedSubtotal >= sub2 ? 0 : fee2;
+        }
+      } else if (mode === 'distance_tiered') {
+        const t1 = Number(dSettings?.tier1_max_km || 5);
+        const t2 = Number(dSettings?.tier2_max_km || 10);
+        const t3 = Number(dSettings?.tier3_max_km || 25);
+        if (distanceKm <= t1) {
+          const sub = Number(dSettings?.tier1_subtotal || 299);
+          const fee = Number(dSettings?.tier1_fee || 30);
+          deliveryFee = verifiedSubtotal >= sub ? 0 : fee;
+        } else if (distanceKm <= t2) {
+          const sub = Number(dSettings?.tier2_subtotal || 500);
+          const fee = Number(dSettings?.tier2_fee || 30);
+          deliveryFee = verifiedSubtotal >= sub ? 0 : fee;
+        } else if (distanceKm <= t3) {
+          const sub = Number(dSettings?.tier3_subtotal || 699);
+          const fee = Number(dSettings?.tier3_fee || 30);
+          deliveryFee = verifiedSubtotal >= sub ? 0 : fee;
+        } else {
+          const sub = Number(dSettings?.tier4_subtotal || 999);
+          const fee = Number(dSettings?.tier4_fee || 50);
+          deliveryFee = verifiedSubtotal >= sub ? 0 : fee;
+        }
+      }
+
+      // Coupon validation
+      if (couponCode && typeof couponCode === 'string') {
+        const { data: coupon } = await supabase
+          .from("coupons")
+          .select("*")
+          .eq("code", couponCode.toUpperCase().trim())
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (coupon && (!coupon.expiry_date || new Date(coupon.expiry_date) >= new Date())) {
+          if (verifiedSubtotal >= Number(coupon.min_order_amount || 0)) {
+            if (coupon.discount_type === 'percentage') {
+              discountAmount = Math.floor((verifiedSubtotal * Number(coupon.discount_value)) / 100);
+              if (coupon.max_discount_amount) {
+                discountAmount = Math.min(discountAmount, Number(coupon.max_discount_amount));
+              }
+            } else {
+              discountAmount = Number(coupon.discount_value);
+            }
+            discountAmount = Math.min(discountAmount, verifiedSubtotal);
+          }
+        }
+      }
+
       const subtotalAfterDiscount = Math.max(0, verifiedSubtotal - discountAmount);
       orderTotal = subtotalAfterDiscount + deliveryFee;
       amountInPaise = Math.round(orderTotal * 100);
 
-      // Concurrency-safe new order creation using atomic create_pending_order RPC
-      const { data: orderRes, error: orderRpcErr } = await supabase.rpc('create_pending_order', {
-        p_user_id: finalUserId,
-        p_customer_name: details?.name || "Customer",
-        p_customer_phone: details?.phone || "",
-        p_delivery_address: details || {},
-        p_subtotal: verifiedSubtotal,
-        p_delivery_fee: deliveryFee,
-        p_discount: discountAmount,
-        p_total: orderTotal,
-      });
+      const targetCheckoutId = crypto.randomUUID();
+      const { data: newOrder, error: orderErr } = await supabase
+        .from("orders")
+        .insert({
+          checkout_id: targetCheckoutId,
+          user_id: finalUserId,
+          customer_name: details?.name || "Customer",
+          customer_phone: details?.phone || "",
+          delivery_address: details || {},
+          subtotal: verifiedSubtotal,
+          delivery_fee: deliveryFee,
+          discount: discountAmount,
+          total: orderTotal,
+          currency: "INR",
+          payment_method: "razorpay",
+          payment_status: "pending",
+          status: "pending_payment",
+          order_source: "online_web",
+        })
+        .select("*")
+        .single();
 
-      if (orderRpcErr || !orderRes?.success) {
-        return jsonResponse({ error: orderRpcErr?.message || orderRes?.error || "Failed to create pending order." }, 400);
+      if (orderErr || !newOrder) {
+        return badRequest(orderErr?.message || "Failed to create order record.");
       }
-      order = orderRes.order;
+      order = newOrder;
 
-      // Insert order items snapshot
-      // ...
+      const orderItemsRows = normalizedItems.map((item: any) => ({
+        order_id: order.id,
+        product_id: item.product_id,
+        variant_id: item.variant_id,
+        product_name: item.product_name,
+        product_image: item.product_image,
+        price: item.price,
+        quantity: item.quantity,
+        total_price: item.total_price,
+        variant_unit: item.variant_unit,
+        is_preorder: item.is_preorder || false,
+        expected_dispatch_date: item.expected_dispatch_date || null,
+        expected_available_date: item.expected_available_date || null,
+        sale_mode_snapshot: item.sale_mode_snapshot || 'regular',
+        fulfillment_type: item.fulfillment_type || 'regular',
+      }));
+
+      const { error: itemsErr } = await supabase
+        .from("order_items")
+        .insert(orderItemsRows);
+
+      if (itemsErr) {
+        await supabase.from("orders").delete().eq("id", order.id);
+        return badRequest(itemsErr.message || "Failed to create order items.");
+      }
     }
 
     if (!isRetry) {
@@ -355,8 +551,39 @@ Deno.serve(async (req: Request) => {
 
     const customReceiptId = `RB-${paymentRecordId.replace(/-/g, '')}`;
 
-    // Razorpay order creation and linking logic ...
-    // [Razorpay fetch, timeout handling, error preservation]
+    const rzpOrderRes = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: amountInPaise,
+        currency: "INR",
+        receipt: customReceiptId,
+        notes: {
+          checkoutId: order.id,
+          userId: finalUserId,
+        },
+      }),
+      signal: AbortSignal.timeout(RAZORPAY_TIMEOUT_MS),
+    });
+
+    if (!rzpOrderRes.ok) {
+      const rzpErrText = await rzpOrderRes.text();
+      console.error("Razorpay order creation failed:", rzpErrText);
+      if (!isRetry) {
+        await supabase.from("orders").update({ status: "cancelled" }).eq("id", order.id).eq("status", "pending_payment");
+      }
+      return jsonResponse({ error: "Failed to initialize payment gateway order." }, 500);
+    }
+
+    const razorpayOrder = await rzpOrderRes.json();
+
+    await supabase
+      .from("payments")
+      .update({ razorpay_order_id: razorpayOrder.id, updated_at: new Date().toISOString() })
+      .eq("id", paymentRecordId);
 
     return jsonResponse({
       success: true,

@@ -74,15 +74,23 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
         setDynamicCategories(catData.map(c => ({ id: c.id, name: c.name, imageUrl: c.image_url })));
       }
 
-      // 2. Fetch active pre-order campaigns dynamically
+      // 2. Fetch active pre-order products dynamically
       const { data: preorders } = await supabase
-        .from('preorder_campaigns')
-        .select('*, product_variants(*, products(*))')
-        .eq('status', 'active')
+        .from('products')
+        .select('*, product_variants(*)')
+        .eq('sale_mode', 'preorder')
+        .eq('is_available', true)
         .order('created_at', { ascending: false });
 
       if (preorders) {
-        setPreorderCampaigns(preorders);
+        setPreorderCampaigns(preorders.map(p => ({
+          id: p.id,
+          name: p.name,
+          price: p.product_variants?.[0]?.price || 0,
+          expected_available_at: p.expected_dispatch_date,
+          product_variants: p.product_variants?.[0],
+          products: p,
+        })));
       }
 
       // 3. Fetch store settings

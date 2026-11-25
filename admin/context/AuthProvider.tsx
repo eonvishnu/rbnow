@@ -34,6 +34,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // Idle inactivity timeout (30 minutes)
+  useEffect(() => {
+    if (!user) return;
+
+    let timeoutId: NodeJS.Timeout;
+    const INACTIVITY_LIMIT = 30 * 60 * 1000; // 30 minutes
+
+    const handleActivity = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(async () => {
+        await signOut();
+        window.location.href = '/login?reason=inactivity';
+      }, INACTIVITY_LIMIT);
+    };
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach((event) => window.addEventListener(event, handleActivity));
+
+    // Initialize timer
+    handleActivity();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach((event) => window.removeEventListener(event, handleActivity));
+    };
+  }, [user]);
+
   useEffect(() => {
     // Fetch initial session
     const initAuth = async () => {

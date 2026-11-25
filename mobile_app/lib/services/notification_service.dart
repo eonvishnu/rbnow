@@ -29,7 +29,7 @@ class NotificationService {
   FirebaseMessaging get _firebaseMessaging => FirebaseMessaging.instance;
 
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized || kIsWeb) return;
 
     try {
       if (Firebase.apps.isEmpty) {

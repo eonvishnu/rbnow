@@ -78,9 +78,10 @@ interface GatewayConfig {
 }
 
 const SETTINGS_TABS = [
-  { id: 'payments', label: 'Payment gateway', icon: CreditCard },
   { id: 'store', label: 'Store status & GPS', icon: Store },
   { id: 'delivery', label: 'Delivery & shipping', icon: Truck },
+  { id: 'payments', label: 'Payment gateway', icon: CreditCard },
+
 ] as const;
 
 const DEFAULT_GATEWAY_ROSTER: GatewayConfig[] = [
@@ -148,7 +149,7 @@ export default function StoreSettingsPage() {
   const [presetZone2Subtotal, setPresetZone2Subtotal] = useState<number>(499);
   const [presetZone2Fee, setPresetZone2Fee] = useState<number>(30);
 
-  // Distance Tiered 3-Zone Values (Editable)
+  // Distance Tiered 4-Zone Values (Editable)
   const [tier1Km, setTier1Km] = useState<number>(5);
   const [tier1Subtotal, setTier1Subtotal] = useState<number>(299);
   const [tier1Fee, setTier1Fee] = useState<number>(30);
@@ -157,8 +158,12 @@ export default function StoreSettingsPage() {
   const [tier2Subtotal, setTier2Subtotal] = useState<number>(500);
   const [tier2Fee, setTier2Fee] = useState<number>(30);
 
+  const [tier3Km, setTier3Km] = useState<number>(25);
   const [tier3Subtotal, setTier3Subtotal] = useState<number>(699);
   const [tier3Fee, setTier3Fee] = useState<number>(30);
+
+  const [tier4Subtotal, setTier4Subtotal] = useState<number>(999);
+  const [tier4Fee, setTier4Fee] = useState<number>(50);
 
   // Fetch Live Settings & Gateways from Supabase
   const fetchAllSettings = async () => {
@@ -235,8 +240,11 @@ export default function StoreSettingsPage() {
           setTier2Km(Number(cleanSettings.tier2_max_km || 10));
           setTier2Subtotal(Number(cleanSettings.tier2_subtotal || 500));
           setTier2Fee(Number(cleanSettings.tier2_fee || 30));
+          setTier3Km(Number(cleanSettings.tier3_max_km || 25));
           setTier3Subtotal(Number(cleanSettings.tier3_subtotal || 699));
           setTier3Fee(Number(cleanSettings.tier3_fee || 30));
+          setTier4Subtotal(Number(cleanSettings.tier4_subtotal || 999));
+          setTier4Fee(Number(cleanSettings.tier4_fee || 50));
         }
       } catch (err) {
         console.warn('Error fetching clean delivery_settings:', err);
@@ -359,9 +367,10 @@ export default function StoreSettingsPage() {
           isActive: true,
         });
       } else {
-        // Mode B: Distance-Tiered 3-Zone Rules
+        // Mode B: Distance-Tiered 4-Zone Rules
         const safeTier1 = Math.max(1, tier1Km);
         const safeTier2 = Math.max(safeTier1 + 1, tier2Km);
+        const safeTier3 = Math.max(safeTier2 + 1, tier3Km);
 
         // Tier 1 (0 to safeTier1 km)
         generatedRules.push({
@@ -415,11 +424,11 @@ export default function StoreSettingsPage() {
           isActive: true,
         });
 
-        // Tier 3 (Beyond safeTier2 km)
+        // Tier 3 (safeTier2 to safeTier3 km)
         generatedRules.push({
-          name: `Free delivery beyond ${safeTier2} km (orders > ₹${tier3Subtotal})`,
+          name: `Free delivery ${safeTier2}-${safeTier3} km (orders > ₹${tier3Subtotal})`,
           minDistanceKm: safeTier2,
-          maxDistanceKm: null,
+          maxDistanceKm: safeTier3,
           minOrderAmount: tier3Subtotal,
           maxOrderAmount: null,
           minCheckoutSubtotal: 0,
@@ -429,15 +438,41 @@ export default function StoreSettingsPage() {
           isActive: true,
         });
         generatedRules.push({
-          name: `Standard fee beyond ${safeTier2} km (orders <= ₹${tier3Subtotal})`,
+          name: `Standard fee ${safeTier2}-${safeTier3} km (orders <= ₹${tier3Subtotal})`,
           minDistanceKm: safeTier2,
-          maxDistanceKm: null,
+          maxDistanceKm: safeTier3,
           minOrderAmount: 0,
           maxOrderAmount: tier3Subtotal,
           minCheckoutSubtotal: 0,
           feeType: 'fixed',
           feeAmount: tier3Fee,
           priority: 6,
+          isActive: true,
+        });
+
+        // Tier 4 (Beyond safeTier3 km, e.g. 25km+)
+        generatedRules.push({
+          name: `Free delivery beyond ${safeTier3} km (orders > ₹${tier4Subtotal})`,
+          minDistanceKm: safeTier3,
+          maxDistanceKm: null,
+          minOrderAmount: tier4Subtotal,
+          maxOrderAmount: null,
+          minCheckoutSubtotal: 0,
+          feeType: 'free',
+          feeAmount: 0,
+          priority: 7,
+          isActive: true,
+        });
+        generatedRules.push({
+          name: `Standard fee beyond ${safeTier3} km (orders <= ₹${tier4Subtotal})`,
+          minDistanceKm: safeTier3,
+          maxDistanceKm: null,
+          minOrderAmount: 0,
+          maxOrderAmount: tier4Subtotal,
+          minCheckoutSubtotal: 0,
+          feeType: 'fixed',
+          feeAmount: tier4Fee,
+          priority: 8,
           isActive: true,
         });
       }
@@ -458,8 +493,11 @@ export default function StoreSettingsPage() {
         tier2_max_km: tier2Km,
         tier2_subtotal: tier2Subtotal,
         tier2_fee: tier2Fee,
+        tier3_max_km: tier3Km,
         tier3_subtotal: tier3Subtotal,
         tier3_fee: tier3Fee,
+        tier4_subtotal: tier4Subtotal,
+        tier4_fee: tier4Fee,
       });
 
       // Also attempt legacy rule sync
@@ -1320,23 +1358,23 @@ export default function StoreSettingsPage() {
               </div>
             </div>
           ) : (
-            /* MODE B: DISTANCE-BASED 3-TIER RULES */
+            /* MODE B: DISTANCE-BASED 4-TIER RULES */
             <div className="bg-white p-6 rounded-xl shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] space-y-4">
               <div className="border-b border-gray-100 pb-3 flex justify-between items-center">
                 <div>
-                  <h2 className="text-sm font-semibold text-[#1a1a1a]">Distance-based 3-tier rules (Editable & Non-Overlapping)</h2>
+                  <h2 className="text-sm font-semibold text-[#1a1a1a]">Distance-based 4-tier rules (Editable & Non-Overlapping)</h2>
                   <p className="text-xs text-[#616161]">Tier boundaries automatically adjust so adjacent distance ranges stay perfectly seamless.</p>
                 </div>
                 <span className="bg-[#cdfed4] text-[#014b40] px-2.5 py-1 rounded-full text-[10px] font-semibold">
-                  3 Distance Tiers
+                  4 Distance Tiers (Up to 25km+)
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {/* TIER 1 CARD */}
                 <div className="bg-[#fafafa] p-4 rounded-xl border border-gray-200 space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-xs text-[#1a1a1a]">Tier 1 (Within {tier1Km} km)</span>
+                    <span className="font-bold text-xs text-[#1a1a1a]">Tier 1 (0 - {tier1Km} km)</span>
                     <span className="text-[10px] font-medium bg-white px-2 py-0.5 rounded border text-gray-600">
                       0 - {tier1Km} km
                     </span>
@@ -1416,13 +1454,23 @@ export default function StoreSettingsPage() {
                 {/* TIER 3 CARD */}
                 <div className="bg-[#fafafa] p-4 rounded-xl border border-gray-200 space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-xs text-[#1a1a1a]">Tier 3 (Beyond {Math.max(tier1Km + 1, tier2Km)} km)</span>
+                    <span className="font-bold text-xs text-[#1a1a1a]">Tier 3 ({Math.max(tier1Km + 1, tier2Km)} - {Math.max(Math.max(tier1Km + 1, tier2Km) + 1, tier3Km)} km)</span>
                     <span className="text-[10px] font-medium bg-white px-2 py-0.5 rounded border text-gray-600">
-                      {Math.max(tier1Km + 1, tier2Km)} km+
+                      {Math.max(tier1Km + 1, tier2Km)} - {Math.max(Math.max(tier1Km + 1, tier2Km) + 1, tier3Km)} km
                     </span>
                   </div>
 
-                  <div className="pt-8">
+                  <div>
+                    <label className="font-medium text-[#616161] block mb-1">Tier 3 max distance (KM)</label>
+                    <input
+                      type="number"
+                      value={tier3Km}
+                      onChange={e => setTier3Km(Math.max(Math.max(tier1Km + 1, tier2Km) + 1, Number(e.target.value)))}
+                      className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs text-[#1a1a1a] outline-none font-bold"
+                    />
+                  </div>
+
+                  <div>
                     <label className="font-medium text-[#616161] block mb-1">Free delivery subtotal (₹)</label>
                     <input
                       type="number"
@@ -1438,6 +1486,36 @@ export default function StoreSettingsPage() {
                       type="number"
                       value={tier3Fee}
                       onChange={e => setTier3Fee(Number(e.target.value))}
+                      className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs text-[#1a1a1a] outline-none font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {/* TIER 4 CARD */}
+                <div className="bg-[#fafafa] p-4 rounded-xl border border-gray-200 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-xs text-[#1a1a1a]">Tier 4 (Beyond {Math.max(Math.max(tier1Km + 1, tier2Km) + 1, tier3Km)} km)</span>
+                    <span className="text-[10px] font-medium bg-white px-2 py-0.5 rounded border text-gray-600">
+                      {Math.max(Math.max(tier1Km + 1, tier2Km) + 1, tier3Km)} km+
+                    </span>
+                  </div>
+
+                  <div className="pt-8">
+                    <label className="font-medium text-[#616161] block mb-1">Free delivery subtotal (₹)</label>
+                    <input
+                      type="number"
+                      value={tier4Subtotal}
+                      onChange={e => setTier4Subtotal(Number(e.target.value))}
+                      className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs text-[#1a1a1a] outline-none font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium text-[#616161] block mb-1">Fee below subtotal (₹)</label>
+                    <input
+                      type="number"
+                      value={tier4Fee}
+                      onChange={e => setTier4Fee(Number(e.target.value))}
                       className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs text-[#1a1a1a] outline-none font-semibold"
                     />
                   </div>

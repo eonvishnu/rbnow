@@ -34,14 +34,17 @@ export const adminOrderRowSchema = z.object({
   user_phone: z.string().nullable().optional(),
   user_name: z.string().nullable().optional(),
   fulfillment_exception: z.string().nullable().optional(),
-  payments: z.object({
+  payment_status: z.string().nullable().optional(),
+  razorpay_order_id: z.string().nullable().optional(),
+  razorpay_payment_id: z.string().nullable().optional(),
+  payments: z.array(z.object({
     id: z.string(),
     status: z.string().nullable().optional(),
     razorpay_order_id: z.string().nullable().optional(),
     razorpay_payment_id: z.string().nullable().optional(),
     amount: z.coerce.number().nullable().optional(),
     currency: z.string().nullable().optional(),
-  }).nullable().optional(),
+  })).nullable().optional(),
   order_items: z.array(z.object({
     id: z.string(),
     product_id: z.string().nullable(),

@@ -37,6 +37,10 @@ export async function getProductCatalog(): Promise<{
     description: row.description,
     imageUrl: row.image_url,
     isAvailable: row.is_available !== false,
+    sale_mode: (row.sale_mode as any) || 'regular',
+    expected_dispatch_date: row.expected_dispatch_date,
+    preorder_limit: row.preorder_limit,
+    preorder_description: row.preorder_description,
     variants: (row.product_variants || []).slice().sort((a, b) => a.price - b.price),
   }));
 
@@ -93,6 +97,10 @@ export async function createCatalogProduct(input: ProductDraft & {
     categoryName: parsed.category,
     description: parsed.description,
     imageUrl,
+    sale_mode: parsed.sale_mode,
+    expected_dispatch_date: parsed.expected_dispatch_date,
+    preorder_limit: parsed.preorder_limit,
+    preorder_description: parsed.preorder_description,
     variants: parsed.variants.map((variant) => ({
       unit: variant.unit,
       price: variant.price,
@@ -111,6 +119,10 @@ export async function updateCatalogProduct(draft: ProductEditDraft, categories: 
     category: draft.category,
     description: draft.description,
     imageUrl: draft.imageUrl,
+    sale_mode: draft.sale_mode,
+    expected_dispatch_date: draft.expected_dispatch_date,
+    preorder_limit: draft.preorder_limit,
+    preorder_description: draft.preorder_description,
     hasNewImage: Boolean(draft.newImageFile),
     removed: draft.removed,
     variants: draft.variants,
@@ -127,6 +139,10 @@ export async function updateCatalogProduct(draft: ProductEditDraft, categories: 
     categoryName: parsed.category,
     description: parsed.description,
     imageUrl,
+    sale_mode: parsed.sale_mode,
+    expected_dispatch_date: parsed.expected_dispatch_date,
+    preorder_limit: parsed.preorder_limit,
+    preorder_description: parsed.preorder_description,
     removedVariantIds: parsed.removed,
     variants: parsed.variants.map((variant) => ({
       id: variant.id,

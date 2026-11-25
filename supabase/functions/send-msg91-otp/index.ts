@@ -22,7 +22,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const msg91AuthKey = Deno.env.get("MSG91_AUTH_KEY") || "462554AbqVLm5Vl6ae70734P1";
+    const msg91AuthKey = Deno.env.get("MSG91_AUTH_KEY") || "591902AFzBp65rX3a6b015132P1";
     const msg91TemplateId = Deno.env.get("MSG91_TEMPLATE_ID");
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -169,6 +169,7 @@ Deno.serve(async (req: Request) => {
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
+
     });
 
   } catch (error: any) {

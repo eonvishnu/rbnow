@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '../context/AuthProvider';
+import { AdminSessionGuard } from '@/components/AdminSessionGuard';
 import { supabase } from '../lib/supabase';
 import "./globals.css";
 import {
@@ -28,7 +29,8 @@ import {
   Settings,
   CalendarClock,
   Hourglass,
-  LogOut
+  LogOut,
+  Sparkles
 } from 'lucide-react';
 
 function AdminShell({ children }: { children: React.ReactNode }) {
@@ -235,6 +237,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
                 <SidebarLink href="/settings" label="Store settings" icon={<Settings size={17} />} />
                 <SidebarLink href="/coupons" label="Discounts" icon={<Tag size={17} />} />
                 <SidebarLink href="/banner" label="Banners" icon={<Megaphone size={17} />} />
+                <SidebarLink href="/upsells" label="Cart Upsells" icon={<Sparkles size={17} />} />
                 <SidebarLink href="/staff" label="Staff & access" icon={<ShieldCheck size={17} />} />
               </div>
             )}
@@ -323,7 +326,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <AuthProvider>
-          <AdminShell>{children}</AdminShell>
+          <AdminSessionGuard>
+            <AdminShell>{children}</AdminShell>
+          </AdminSessionGuard>
         </AuthProvider>
       </body>
     </html>

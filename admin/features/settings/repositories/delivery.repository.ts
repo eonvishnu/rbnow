@@ -28,8 +28,11 @@ export async function fetchCleanDeliverySettings() {
     tier2_max_km: 10,
     tier2_subtotal: 500,
     tier2_fee: 30,
+    tier3_max_km: 25,
     tier3_subtotal: 699,
     tier3_fee: 30,
+    tier4_subtotal: 999,
+    tier4_fee: 50,
   };
 }
 
@@ -52,8 +55,11 @@ export async function saveCleanDeliverySettings(settings: any) {
       tier2_max_km: Number(settings.tier2_max_km || 10),
       tier2_subtotal: Number(settings.tier2_subtotal || 500),
       tier2_fee: Number(settings.tier2_fee || 30),
+      tier3_max_km: Number(settings.tier3_max_km || 25),
       tier3_subtotal: Number(settings.tier3_subtotal || 699),
       tier3_fee: Number(settings.tier3_fee || 30),
+      tier4_subtotal: Number(settings.tier4_subtotal || 999),
+      tier4_fee: Number(settings.tier4_fee || 50),
       updated_at: new Date().toISOString(),
     });
 

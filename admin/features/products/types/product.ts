@@ -17,12 +17,17 @@ export interface AdminProduct {
   description: string | null;
   imageUrl: string | null;
   isAvailable: boolean;
+  sale_mode: 'regular' | 'preorder';
+  expected_dispatch_date: string | null;
+  preorder_limit: number | null;
+  preorder_description: string | null;
   variants: ProductVariant[];
 }
 
 export interface ProductCategory {
   id: string;
   name: string;
+  parent_id: string | null;
 }
 
 export interface ProductVariantInput {
@@ -37,6 +42,10 @@ export interface ProductDraft {
   name: string;
   category: string;
   description: string;
+  sale_mode?: 'regular' | 'preorder';
+  expected_dispatch_date?: string;
+  preorder_limit?: number | null;
+  preorder_description?: string | null;
 }
 
 export interface EditableProductVariant {
@@ -52,6 +61,10 @@ export interface ProductEditDraft {
   category: string;
   description: string;
   imageUrl: string;
+  sale_mode: 'regular' | 'preorder';
+  expected_dispatch_date: string;
+  preorder_limit: string;
+  preorder_description: string;
   newImageFile: File | null;
   newImagePreview: string;
   removed: string[];

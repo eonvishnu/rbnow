@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../config/constants.dart';
 import '../services/supabase_service.dart';
 
@@ -7,12 +9,14 @@ class CartScreen extends StatefulWidget {
   final List<Map<String, dynamic>> cartItems;
   final VoidCallback onClearCart;
   final Function(String id) onRemoveItem;
+  final Function(String id, int quantity) onUpdateQuantity;
 
   const CartScreen({
     super.key,
     required this.cartItems,
     required this.onClearCart,
     required this.onRemoveItem,
+    required this.onUpdateQuantity,
   });
 
   @override
@@ -24,9 +28,35 @@ class _CartScreenState extends State<CartScreen> {
   String? _appliedCoupon;
   int _couponDiscount = 0;
   String? _couponMessage;
+  bool _isCheckingOut = false;
+  late Razorpay _razorpay;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!kIsWeb) {
+      _razorpay = Razorpay();
+      _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+      _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+      _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    }
+  }
+
+  @override
+  void dispose() {
+    _couponController.dispose();
+    if (!kIsWeb) {
+      _razorpay.clear();
+    }
+    super.dispose();
+  }
 
   int get _subtotal {
-    return widget.cartItems.fold(0, (sum, item) => sum + (int.tryParse(item['price'].toString()) ?? 150));
+    return widget.cartItems.fold(0, (sum, item) {
+      final price = int.tryParse(item['price']?.toString() ?? '150') ?? 150;
+      final qty = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
+      return sum + (price * qty);
+    });
   }
 
   int get _deliveryFee => _subtotal >= 499 ? 0 : 30;
@@ -38,6 +68,8 @@ class _CartScreenState extends State<CartScreen> {
 
     try {
       final res = await SupabaseService.client.from('coupons').select('*').eq('code', code).maybeSingle();
+      if (!mounted) return;
+
       if (res == null || res['is_active'] != true) {
         setState(() => _couponMessage = 'Invalid or expired promo code.');
         return;
@@ -65,8 +97,126 @@ class _CartScreenState extends State<CartScreen> {
         _couponMessage = 'Promo code "$code" applied! You saved ₹$discount';
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _couponMessage = 'Failed to validate promo code.');
     }
+  }
+
+  void _handleCheckout() async {
+    final user = SupabaseService.client.auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('Please sign in or continue as guest to place an order.')),
+      );
+      return;
+    }
+
+    setState(() => _isCheckingOut = true);
+
+    try {
+      final orderItems = widget.cartItems.map((item) => {
+        'product_id': item['product_id'] ?? item['id'],
+        'variant_id': item['variant_id'],
+        'quantity': int.tryParse(item['quantity']?.toString() ?? '1') ?? 1,
+      }).toList();
+
+      // 1. Initialize order & payment attempt on backend
+      final res = await SupabaseService.client.functions.invoke('place-order', body: {
+        'items': orderItems,
+        'coupon_code': _appliedCoupon,
+      });
+
+      if (!mounted) return;
+
+      final data = res.data;
+      if (data == null || (data is Map && data['success'] != true)) {
+        throw Exception(data is Map ? (data['error'] ?? 'Order creation failed') : 'Order creation failed');
+      }
+
+      final keyId = data['keyId'];
+      final razorpayOrderId = data['razorpayOrderId'];
+      final amountInPaise = (num.parse(data['total'].toString()) * 100).toInt();
+
+      // 2. Open Razorpay Checkout SDK
+      var options = {
+        'key': keyId,
+        'amount': amountInPaise,
+        'name': 'The Royal Bengal Fresh',
+        'description': 'Gourmet Order Payment',
+        'order_id': razorpayOrderId,
+        'prefill': {
+          'contact': user.phone ?? '',
+          'email': user.email ?? ''
+        },
+        'theme': {'color': '#004D3B'}
+      };
+
+      if (!kIsWeb) {
+        _razorpay.open(options);
+      } else {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('Web checkout simulation: Payment verified!')),
+        );
+        await _verifyPaymentAndComplete(razorpayOrderId, 'pay_mock_${DateTime.now().millisecondsSinceEpoch}', '0' * 64);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('Checkout Error: $e'), backgroundColor: Colors.red),
+      );
+      setState(() => _isCheckingOut = false);
+    }
+  }
+
+  Future<void> _verifyPaymentAndComplete(String orderId, String paymentId, String signature) async {
+    try {
+      await SupabaseService.client.functions.invoke('verify-payment', body: {
+        'razorpay_order_id': orderId,
+        'razorpay_payment_id': paymentId,
+        'razorpay_signature': signature,
+      });
+
+      if (!mounted) return;
+
+      widget.onClearCart();
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text('Payment Verified & Order Placed Successfully!'),
+          backgroundColor: AppConstants.primaryDarkEmerald,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('Payment verification failed: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _isCheckingOut = false);
+    }
+  }
+
+  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    await _verifyPaymentAndComplete(
+      response.orderId ?? response.paymentId ?? '',
+      response.paymentId ?? '',
+      response.signature ?? '',
+    );
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    if (!mounted) return;
+    setState(() => _isCheckingOut = false);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text('Payment Failed: ${response.message ?? 'Cancelled'}'), backgroundColor: Colors.red),
+    );
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    if (!mounted) return;
+    setState(() => _isCheckingOut = false);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text('External Wallet Selected: ${response.walletName}')),
+    );
   }
 
   @override
@@ -100,7 +250,6 @@ class _CartScreenState extends State<CartScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Address Card
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -126,8 +275,11 @@ class _CartScreenState extends State<CartScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Cart Items
                   ...widget.cartItems.map((item) {
+                    final qty = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
+                    final price = int.tryParse(item['price']?.toString() ?? '150') ?? 150;
+                    final itemId = item['id'].toString();
+
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
@@ -153,13 +305,38 @@ class _CartScreenState extends State<CartScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(item['name'] ?? 'Fresh Catch', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                Text('₹${item['price']} / ${item['unit']}', style: const TextStyle(color: AppConstants.darkEmeraldText, fontSize: 11, fontWeight: FontWeight.bold)),
+                                Text('₹$price / ${item['unit']}', style: const TextStyle(color: AppConstants.darkEmeraldText, fontSize: 11, fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),
+                          Row(
+                            children: [
+                              InkWell(
+                                onTap: () => widget.onUpdateQuantity(itemId, qty - 1),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(color: AppConstants.lightMint, borderRadius: BorderRadius.circular(6)),
+                                  child: const Icon(Icons.remove, size: 14, color: AppConstants.darkEmeraldText),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+                              ),
+                              InkWell(
+                                onTap: () => widget.onUpdateQuantity(itemId, qty + 1),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(color: AppConstants.lightMint, borderRadius: BorderRadius.circular(6)),
+                                  child: const Icon(Icons.add, size: 14, color: AppConstants.darkEmeraldText),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(width: 8),
                           IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 20),
-                            onPressed: () => widget.onRemoveItem(item['id'].toString()),
+                            icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
+                            onPressed: () => widget.onRemoveItem(itemId),
                           )
                         ],
                       ),
@@ -167,7 +344,6 @@ class _CartScreenState extends State<CartScreen> {
                   }),
                   const SizedBox(height: 16),
 
-                  // Promo Coupon Box
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -204,7 +380,6 @@ class _CartScreenState extends State<CartScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Bill Summary Card
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -226,17 +401,15 @@ class _CartScreenState extends State<CartScreen> {
                           width: double.infinity,
                           height: 52,
                           child: ElevatedButton(
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order Placed Successfully!')));
-                              widget.onClearCart();
-                              Navigator.pop(context);
-                            },
+                            onPressed: _isCheckingOut ? null : _handleCheckout,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppConstants.royalGold,
                               foregroundColor: AppConstants.headerEmerald,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             ),
-                            child: const Text('PLACE ORDER & PAY', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 1.5)),
+                            child: _isCheckingOut
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppConstants.headerEmerald))
+                                : const Text('PLACE ORDER & PAY', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 1.5)),
                           ),
                         )
                       ],

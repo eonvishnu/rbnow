@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { UploadCloud, ArrowLeft, Image as ImageIcon, Save, CheckCircle, Plus, Trash2, Loader2, X, Sparkles } from 'lucide-react';
+import { UploadCloud, ArrowLeft, Image as ImageIcon, Save, CheckCircle, Plus, Trash2, Loader2, X, Sparkles, Calendar } from 'lucide-react';
 import {
   createCatalogProduct,
   getProductCategories,
@@ -26,6 +26,10 @@ export default function AddProductPage() {
     name: '',
     category: '',
     description: '',
+    sale_mode: 'regular',
+    expected_dispatch_date: '',
+    preorder_limit: 100,
+    preorder_description: '',
   });
 
   const [variants, setVariants] = useState<ProductVariantInput[]>([
@@ -97,7 +101,7 @@ export default function AddProductPage() {
     try {
       await createCatalogProduct({ ...product, variants, imageFile }, dbCategories);
 
-      alert("Product & WebP Image Uploaded Successfully!");
+      alert("Product, Pre-order & WebP Image Uploaded Successfully!");
       router.push('/products');
     } catch (error) {
       console.error("Upload error:", error);
@@ -123,7 +127,7 @@ export default function AddProductPage() {
 
         {/* GENERAL PRODUCT INFO */}
         <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4">
-          <h2 className="text-xs font-black uppercase tracking-wider text-emerald-950">1. Product Info</h2>
+          <h2 className="text-xs font-black uppercase tracking-wider text-emerald-950">1. Product Info & Sale Mode</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -151,6 +155,60 @@ export default function AddProductPage() {
               </select>
             </div>
           </div>
+
+          {/* PRESALE TOGGLE SWITCH */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-200">
+            <div>
+              <span className="text-xs font-black uppercase text-gray-900 block">Enable Pre-Order / Presale Mode</span>
+              <span className="text-[10px] text-gray-500 font-medium">Toggle on if customers are reserving a future catch or harvest item.</span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={product.sale_mode === 'preorder'}
+                onChange={e => setProduct({
+                  ...product,
+                  sale_mode: e.target.checked ? 'preorder' : 'regular',
+                })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-800"></div>
+            </label>
+          </div>
+
+          {/* DYNAMIC PRESALE DETAILS CONTAINER */}
+          {product.sale_mode === 'preorder' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200 animate-in fade-in duration-200">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-emerald-900 mb-1">Expected Dispatch Date</label>
+                <input
+                  type="date"
+                  value={product.expected_dispatch_date || ''}
+                  onChange={e => setProduct({...product, expected_dispatch_date: e.target.value})}
+                  className="w-full bg-white border border-emerald-300 rounded-xl px-4 py-2.5 text-xs font-bold text-gray-900 outline-none focus:border-emerald-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-emerald-900 mb-1">Default Pre-order Limit</label>
+                <input
+                  type="number"
+                  value={product.preorder_limit ?? 100}
+                  onChange={e => setProduct({...product, preorder_limit: Number(e.target.value)})}
+                  className="w-full bg-white border border-emerald-300 rounded-xl px-4 py-2.5 text-xs font-bold text-gray-900 outline-none focus:border-emerald-700"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold uppercase text-emerald-900 mb-1">Pre-order Notice / Harvesting Details</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Harvested fresh from Padma River on dispatch morning"
+                  value={product.preorder_description || ''}
+                  onChange={e => setProduct({...product, preorder_description: e.target.value})}
+                  className="w-full bg-white border border-emerald-300 rounded-xl px-4 py-2.5 text-xs font-bold text-gray-900 outline-none focus:border-emerald-700"
+                />
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Description</label>
@@ -228,7 +286,7 @@ export default function AddProductPage() {
                   />
                 </div>
 
-                <div className="w-full sm:w-28">
+                <div className="w-full sm:w-32">
                   <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Price (₹)</label>
                   <input
                     required
@@ -239,7 +297,7 @@ export default function AddProductPage() {
                   />
                 </div>
 
-                <div className="w-full sm:w-24">
+                <div className="w-full sm:w-28">
                   <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Stock</label>
                   <input
                     required

@@ -76,6 +76,9 @@ export interface AdminOrder {
   shipping: AdminDeliveryAddress | null;
   userPhone: string | null;
   userName: string | null;
+  paymentStatus: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
   itemChanges: AdminOrderItemChange[];
   items: AdminOrderItem[];
 }

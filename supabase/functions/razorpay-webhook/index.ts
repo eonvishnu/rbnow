@@ -299,7 +299,7 @@ Deno.serve(async (req: Request) => {
       if (razorpayOrderId) {
         const { data: payRec, error: payErr } = await supabase
           .from('payments')
-          .select('id, status')
+          .select('id, order_id, status')
           .eq('razorpay_order_id', razorpayOrderId)
           .maybeSingle();
 
@@ -329,6 +329,17 @@ Deno.serve(async (req: Request) => {
             return new Response(JSON.stringify({ error: "Database update failed." }), {
               status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
+          }
+
+          if (payRec.order_id) {
+            await supabase
+              .from('orders')
+              .update({
+                payment_status: 'failed',
+                status: 'cancelled',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', payRec.order_id);
           }
         }
       }

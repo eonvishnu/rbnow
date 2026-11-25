@@ -32,6 +32,14 @@ type Tab = 'all' | 'active' | 'disabled' | 'low';
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
 
+const priceRange = (p: AdminProduct) => {
+  if (!p.variants.length) return '₹0';
+  const prices = p.variants.map((v) => Number(v.price) || 0);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? formatCurrency(min) : `${formatCurrency(min)} – ${formatCurrency(max)}`;
+};
+
 const inputCls =
   'w-full min-h-11 sm:min-h-9 py-2 px-3 text-base sm:text-[13px] text-[#1a1a1a] placeholder:text-[#8a8a8a] bg-white rounded-lg shadow-[0_0_0_1px_rgba(0,0,0,0.2)] outline-none focus:shadow-[0_0_0_2px_#005bd3] transition-shadow';
 
@@ -42,7 +50,8 @@ export default function ProductsPage() {
 
   const [tab, setTab] = useState<Tab>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState('All');
+  const [filterParentCatId, setFilterParentCatId] = useState('All');
+  const [filterSubCatName, setFilterSubCatName] = useState('All');
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   // quick edit
@@ -107,17 +116,35 @@ export default function ProductsPage() {
     { id: 'low', label: 'Low stock', count: products.filter(hasLowStock).length },
   ];
 
+  const parentCategories = useMemo(() => {
+    return categories.filter((c: any) => !c.parent_id);
+  }, [categories]);
+
+  const availableSubcategories = useMemo(() => {
+    if (filterParentCatId === 'All') return [];
+    return categories.filter((c: any) => c.parent_id === filterParentCatId);
+  }, [categories, filterParentCatId]);
+
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return products.filter((p) => {
       const matchesQ = !q || p.name.toLowerCase().includes(q) || String(p.category || '').toLowerCase().includes(q);
-      const matchesCat = filterCategory === 'All' || p.category === filterCategory;
+
+      let matchesCat = true;
+      if (filterSubCatName !== 'All') {
+        matchesCat = p.category === filterSubCatName;
+      } else if (filterParentCatId !== 'All') {
+        const parentCat = categories.find((c: any) => c.id === filterParentCatId);
+        const subCatNames = categories.filter((c: any) => c.parent_id === filterParentCatId).map((c: any) => c.name);
+        matchesCat = p.category === parentCat?.name || subCatNames.includes(p.category);
+      }
+
       const matchesTab = tab === 'all' ? true : tab === 'active' ? p.isAvailable : tab === 'disabled' ? !p.isAvailable : hasLowStock(p);
       return matchesQ && matchesCat && matchesTab;
     });
-  }, [products, searchQuery, filterCategory, tab]);
+  }, [products, searchQuery, filterParentCatId, filterSubCatName, tab, categories]);
 
-  useEffect(() => setVisible(PAGE_SIZE), [searchQuery, filterCategory, tab]);
+  useEffect(() => setVisible(PAGE_SIZE), [searchQuery, filterParentCatId, filterSubCatName, tab]);
 
   // ---------- enable / disable ----------
   const handleToggle = async (p: AdminProduct) => {
@@ -217,10 +244,19 @@ export default function ProductsPage() {
       category: p.category || '',
       description: p.description || '',
       imageUrl: p.imageUrl || '',
+      sale_mode: p.sale_mode || 'regular',
+      expected_dispatch_date: p.expected_dispatch_date || '',
+      preorder_limit: p.preorder_limit !== null && p.preorder_limit !== undefined ? String(p.preorder_limit) : '',
+      preorder_description: p.preorder_description || '',
       newImageFile: null as File | null,
       newImagePreview: '' as string,
       removed: [] as string[],
-      variants: p.variants.map((v) => ({ id: v.id, unit: v.unit || '', price: String(v.price ?? ''), stock: String(v.stock ?? '') })),
+      variants: p.variants.map((v) => ({
+        id: v.id,
+        unit: v.unit || '',
+        price: String(v.price ?? ''),
+        stock: String(v.stock ?? ''),
+      })),
     });
   };
 
@@ -253,48 +289,48 @@ export default function ProductsPage() {
       return {
         ...cur,
         variants: cur.variants.filter((_, i) => i !== index),
-        removed: isSaved ? [...cur.removed, v.id] : cur.removed, // deleted only when you press Save
+        removed: isSaved ? [...cur.removed, String(v.id)] : cur.removed,
       };
     });
 
-  const handleEditImage = async (file: File | undefined) => {
-    if (imageInputRef.current) imageInputRef.current.value = '';
+  const handleEditImage = (file?: File) => {
     if (!file) return;
-    const err = validateProductImage(file);
-    if (err) return setEditError(err);
-    setEditError('');
-    const webp = await compressProductImage(file);
-    setEditing((cur) => {
-      if (!cur) return cur;
-      if (cur?.newImagePreview) URL.revokeObjectURL(cur.newImagePreview);
-      return { ...cur, newImageFile: webp, newImagePreview: URL.createObjectURL(webp) };
-    });
+    compressProductImage(file)
+      .then((webp) => {
+        setEditing((cur) => {
+          if (!cur) return cur;
+          if (cur.newImagePreview) URL.revokeObjectURL(cur.newImagePreview);
+          return { ...cur, newImageFile: webp, newImagePreview: URL.createObjectURL(webp) };
+        });
+      })
+      .catch((err) => {
+        console.error('Image compression error:', err);
+        setEditing((cur) => {
+          if (!cur) return cur;
+          if (cur.newImagePreview) URL.revokeObjectURL(cur.newImagePreview);
+          return { ...cur, newImageFile: file, newImagePreview: URL.createObjectURL(file) };
+        });
+      });
   };
 
-  const handleUpdateProduct = async (e?: React.FormEvent) => {
-    e?.preventDefault();
+  const handleUpdateProduct = async () => {
     if (!editing) return;
-    setEditError('');
+    if (!editing.name.trim()) return setEditError('Product name is required.');
+    if (!editing.variants.length) return setEditError('At least one variant is required.');
 
     setIsSubmitting(true);
+    setEditError('');
     try {
       await updateCatalogProduct(editing, categories);
+      flash('success', 'Product updated successfully');
       closeEditor();
-      flash('success', 'Product saved');
       fetchProducts();
     } catch (error) {
       console.error('Update failed:', error);
-      setEditError(error instanceof Error ? error.message : 'Failed to save changes');
+      setEditError(error instanceof Error ? error.message : 'Could not save product changes.');
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const priceRange = (p: AdminProduct) => {
-    const prices = p.variants.map((v) => Number(v.price) || 0);
-    if (!prices.length) return '—';
-    const lo = Math.min(...prices), hi = Math.max(...prices);
-    return lo === hi ? formatCurrency(lo) : `${formatCurrency(lo)} – ${formatCurrency(hi)}`;
   };
 
   return (
@@ -345,10 +381,32 @@ export default function ProductsPage() {
                 className={`${inputCls} pl-9`}
               />
             </div>
-            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className={`${inputCls} sm:w-56 cursor-pointer`}>
-              <option value="All">All categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.name}>{c.name}</option>
+
+            {/* Parent Category Filter */}
+            <select
+              value={filterParentCatId}
+              onChange={(e) => {
+                setFilterParentCatId(e.target.value);
+                setFilterSubCatName('All');
+              }}
+              className={`${inputCls} sm:w-44 cursor-pointer`}
+            >
+              <option value="All">All parent categories</option>
+              {parentCategories.map((c: any) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+
+            {/* Subcategory Filter (Cascading) */}
+            <select
+              value={filterSubCatName}
+              onChange={(e) => setFilterSubCatName(e.target.value)}
+              disabled={filterParentCatId === 'All' || availableSubcategories.length === 0}
+              className={`${inputCls} sm:w-44 cursor-pointer disabled:opacity-50`}
+            >
+              <option value="All">All subcategories</option>
+              {availableSubcategories.map((sub: any) => (
+                <option key={sub.id} value={sub.name}>{sub.name}</option>
               ))}
             </select>
           </div>
@@ -382,6 +440,7 @@ export default function ProductsPage() {
                       <div className="flex items-center gap-1.5 flex-wrap mt-1">
                         <Pill tone="bg-[#f1f1f1] text-[#303030]">{p.category || 'General'}</Pill>
                         <Pill tone={p.isAvailable ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-[#e3e3e3] text-[#303030]'}>{p.isAvailable ? 'Active' : 'Disabled'}</Pill>
+                        {p.sale_mode === 'preorder' && <Pill tone="bg-amber-100 text-amber-900">Pre-order</Pill>}
                         {!p.imageUrl && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">No image</Pill>}
                         {allOut ? <Pill tone="bg-[#fed1d7] text-[#8e0b21]">Out of stock</Pill> : hasLowStock(p) && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">Low stock</Pill>}
                       </div>
@@ -542,6 +601,34 @@ export default function ProductsPage() {
                     {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </Field>
+
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div>
+                    <span className="text-sm font-semibold text-[#1a1a1a] block">Pre-Order / Presale Mode</span>
+                    <span className="text-xs text-[#616161]">Enable if customers are reserving a future catch/harvest item.</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editing.sale_mode === 'preorder'}
+                      onChange={(e) => setEditField({ sale_mode: e.target.checked ? 'preorder' : 'regular' })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#014b40]"></div>
+                  </label>
+                </div>
+
+                {editing.sale_mode === 'preorder' && (
+                  <div className="p-3 bg-emerald-50/50 rounded-lg border border-emerald-200 space-y-3 animate-in fade-in duration-200">
+                    <Field label="Expected Dispatch Date">
+                      <input type="date" value={editing.expected_dispatch_date} onChange={(e) => setEditField({ expected_dispatch_date: e.target.value })} className={inputCls} />
+                    </Field>
+                    <Field label="Pre-order Notice / Harvesting Details">
+                      <input type="text" value={editing.preorder_description} onChange={(e) => setEditField({ preorder_description: e.target.value })} placeholder="e.g. Harvested fresh from Padma River on dispatch morning" className={inputCls} />
+                    </Field>
+                  </div>
+                )}
+
                 <Field label="Description">
                   <textarea rows={3} value={editing.description} onChange={(e) => setEditField({ description: e.target.value })} className={inputCls} />
                 </Field>
@@ -663,12 +750,17 @@ function Switch({ on, onClick, disabled, label }: { on: boolean; onClick: () => 
       role="switch"
       aria-checked={on}
       aria-label={label}
-      title={label}
-      onClick={onClick}
       disabled={disabled}
-      className={`relative w-10 h-6 rounded-full shrink-0 transition-colors disabled:opacity-60 ${on ? 'bg-[#303030]' : 'bg-[#c9c9c9]'}`}
+      onClick={onClick}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+        on ? 'bg-[#014b40]' : 'bg-gray-300'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-4' : ''}`} />
+      <span
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-250 ease-in-out ${
+          on ? 'translate-x-5' : 'translate-x-0'
+        }`}
+      />
     </button>
   );
 }
