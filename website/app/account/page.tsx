@@ -60,11 +60,12 @@ export default function AccountPage() {
     if (user) {
       const fetchAccountStats = async () => {
         try {
-          // 1. Fetch Orders Count
+          // 1. Fetch Orders Count (excluding pending_payment)
           const { count: oCount } = await supabase
             .from('orders')
             .select('id', { count: 'exact', head: true })
-            .eq('user_id', user.id);
+            .eq('user_id', user.id)
+            .neq('status', 'pending_payment');
 
           if (oCount !== null) setOrdersCount(oCount);
 
