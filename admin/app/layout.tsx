@@ -180,65 +180,61 @@ function AdminShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-5" onClick={() => setMobileMenuOpen(false)}>
+          <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4" onClick={() => setMobileMenuOpen(false)}>
             <div className="space-y-0.5">
               <SidebarLink href="/" label="Home" icon={<Home size={17} />} exact />
+            </div>
 
-              {(isSuperAdmin || isOpsStaff || isSupportAgent || isReadOnly) && (
+            {(isSuperAdmin || isOpsStaff || isSupportAgent || isReadOnly) && (
+              <div className="space-y-0.5">
+                <SectionLabel>Orders & fulfillment</SectionLabel>
                 <SidebarLink
                   href="/orders"
                   label="Orders"
                   icon={<ShoppingBag size={17} />}
                   badge={pendingCount ? String(pendingCount) : undefined}
                 />
-              )}
-
-              {(isSuperAdmin || isOpsStaff || isReadOnly) && (
-                <SidebarLink href="/batches" label="Batches" icon={<CalendarClock size={17} />} />
-              )}
-
-              {(isSuperAdmin || isOpsStaff || isReadOnly) && (
-                <SidebarLink href="/backorders" label="Backorders" icon={<Hourglass size={17} />} />
-              )}
-
-              {(isSuperAdmin || isSupportAgent || isReadOnly) && (
-                <SidebarLink href="/checkouts" label="Checkouts" icon={<Clock size={17} />} />
-              )}
-
-              {(isSuperAdmin || isSupportAgent || isReadOnly) && (
-                <SidebarLink href="/carts" label="Abandoned carts" icon={<ShoppingCart size={17} />} />
-              )}
-
-              {(isSuperAdmin || isOpsStaff || isReadOnly) && (
-                <SidebarLink href="/products" label="Products" icon={<Package size={17} />} />
-              )}
-
-              {(isSuperAdmin || isSupportAgent || isReadOnly) && (
-                <SidebarLink href="/customers" label="Customers" icon={<Users size={17} />} />
-              )}
-
-              {(isSuperAdmin || isOpsStaff || isReadOnly) && (
-                <SidebarLink href="/preorders" label="Pre-orders" icon={<Clock size={17} />} />
-              )}
-            </div>
+                {(isSuperAdmin || isOpsStaff || isReadOnly) && (
+                  <SidebarLink href="/batches" label="Batches" icon={<CalendarClock size={17} />} />
+                )}
+                {(isSuperAdmin || isOpsStaff || isReadOnly) && (
+                  <SidebarLink href="/backorders" label="Backorders" icon={<Hourglass size={17} />} />
+                )}
+                {(isSuperAdmin || isOpsStaff || isReadOnly) && (
+                  <SidebarLink href="/preorders" label="Pre-orders" icon={<Clock size={17} />} />
+                )}
+                {(isSuperAdmin || isSupportAgent || isReadOnly) && (
+                  <SidebarLink href="/checkouts" label="Checkouts" icon={<Clock size={17} />} />
+                )}
+                {(isSuperAdmin || isSupportAgent || isReadOnly) && (
+                  <SidebarLink href="/carts" label="Abandoned carts" icon={<ShoppingCart size={17} />} />
+                )}
+              </div>
+            )}
 
             {(isSuperAdmin || isOpsStaff || isReadOnly) && (
               <div className="space-y-0.5">
                 <SectionLabel>Catalog & inventory</SectionLabel>
+                <SidebarLink href="/products" label="Products" icon={<Package size={17} />} />
+                {isSuperAdmin && <SidebarLink href="/products/add" label="Add product" icon={<PlusCircle size={17} />} exact />}
                 <SidebarLink href="/categories" label="Categories" icon={<Layers size={17} />} />
                 <SidebarLink href="/procurement" label="Procurement" icon={<Truck size={17} />} />
-                {isSuperAdmin && <SidebarLink href="/products/add" label="Add product" icon={<PlusCircle size={17} />} exact />}
               </div>
             )}
 
             {isSuperAdmin && (
               <div className="space-y-0.5">
-                <SectionLabel>Settings</SectionLabel>
-                <SidebarLink href="/settings" label="Store settings" icon={<Settings size={17} />} />
+                <SectionLabel>Marketing & conversion</SectionLabel>
                 <SidebarLink href="/coupons" label="Discounts" icon={<Tag size={17} />} />
                 <SidebarLink href="/banner" label="Banners" icon={<Megaphone size={17} />} />
                 <SidebarLink href="/upsells" label="Cart Upsells" icon={<Sparkles size={17} />} />
-                <SidebarLink href="/staff" label="Staff & access" icon={<ShieldCheck size={17} />} />
+              </div>
+            )}
+
+            {(isSuperAdmin || isSupportAgent || isReadOnly) && (
+              <div className="space-y-0.5">
+                <SectionLabel>Customers</SectionLabel>
+                <SidebarLink href="/customers" label="Customers" icon={<Users size={17} />} />
               </div>
             )}
 
@@ -246,6 +242,14 @@ function AdminShell({ children }: { children: React.ReactNode }) {
               <div className="space-y-0.5">
                 <SectionLabel>Sales channels</SectionLabel>
                 <SidebarLink href="/orders/create" label="Create order" icon={<Plus size={17} />} exact />
+              </div>
+            )}
+
+            {isSuperAdmin && (
+              <div className="space-y-0.5">
+                <SectionLabel>Administration</SectionLabel>
+                <SidebarLink href="/settings" label="Store settings" icon={<Settings size={17} />} />
+                <SidebarLink href="/staff" label="Staff & access" icon={<ShieldCheck size={17} />} />
               </div>
             )}
           </nav>
