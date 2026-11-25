@@ -1,19 +1,22 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthProvider';
 import Link from 'next/link';
-import { ArrowLeft, Wallet, ArrowUpRight, ArrowDownLeft, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowLeft, Wallet, ArrowUpRight, ArrowDownLeft, Loader2 } from 'lucide-react';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
+
+const PAGE_SIZE = 10;
 
 export default function WalletPage() {
   const { user, loading: authLoading } = useAuth();
   const [wallet, setWallet] = useState<any | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -50,6 +53,12 @@ export default function WalletPage() {
       fetchWalletData();
     }
   }, [user, authLoading]);
+
+  const totalPages = Math.max(1, Math.ceil(transactions.length / PAGE_SIZE));
+  const paginatedTransactions = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return transactions.slice(start, start + PAGE_SIZE);
+  }, [transactions, page]);
 
   if (authLoading || loading) {
     return (
@@ -94,17 +103,17 @@ export default function WalletPage() {
 
         {/* Transactions Ledger */}
         <div className="bg-white rounded-[32px] p-6 border border-gray-100 shadow-sm space-y-4">
-          <h3 className="text-xs font-black uppercase tracking-wider text-emerald-950 flex items-center gap-2">
-            <Sparkles size={16} className="text-amber-600" /> Transaction History ({transactions.length})
+          <h3 className="text-xs font-black uppercase tracking-wider text-emerald-950">
+            Transaction History ({transactions.length})
           </h3>
 
           <div className="divide-y divide-gray-100">
-            {transactions.length === 0 ? (
+            {paginatedTransactions.length === 0 ? (
               <div className="py-12 text-center text-gray-400 text-xs font-bold uppercase tracking-wider">
                 No wallet transactions recorded yet.
               </div>
             ) : (
-              transactions.map((tx: any) => (
+              paginatedTransactions.map((tx: any) => (
                 <div key={tx.id} className="py-4 first:pt-0 last:pb-0 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${tx.type === 'credit' ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'}`}>
@@ -122,6 +131,28 @@ export default function WalletPage() {
               ))
             )}
           </div>
+
+          {transactions.length > PAGE_SIZE && (
+            <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+              <span>Page {page} of {totalPages} ({transactions.length} total)</span>
+              <div className="flex gap-2">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  className="px-3 py-1.5 rounded-lg bg-gray-100 font-bold text-gray-800 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Prev
+                </button>
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  className="px-3 py-1.5 rounded-lg bg-gray-100 font-bold text-gray-800 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </main>
