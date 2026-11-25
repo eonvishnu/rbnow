@@ -639,11 +639,12 @@ export default function CustomersPage() {
                           <p className="text-center text-[#616161]">No saved addresses found.</p>
                         ) : (
                           customerAddresses.map((addr: any) => (
-                            <div key={addr.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
+                            <div key={addr.id} className="text-xs space-y-1 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
                               <div className="flex items-center justify-between">
                                 <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
                                 <span className="text-[10px] text-gray-400">{addr.pincode}</span>
                               </div>
+                              {addr.name && <p className="font-semibold text-gray-900">Recipient: {addr.name}</p>}
                               <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
                               {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
                             </div>
