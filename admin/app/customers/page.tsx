@@ -396,9 +396,9 @@ export default function CustomersPage() {
               <button onClick={() => setSelected(null)} className="p-2 -mr-2 rounded-lg hover:bg-gray-100 cursor-pointer" aria-label="Close"><X size={18} /></button>
             </div>
 
-            <div className={`flex-1 overflow-y-auto p-5 ${drawerTab === 'wallet' ? 'grid grid-cols-1 md:grid-cols-2 gap-4 items-start' : 'space-y-4'} text-[13px] transition-all`}>
+            <div className={`flex-1 overflow-hidden p-5 ${drawerTab === 'wallet' ? 'grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch' : 'overflow-y-auto space-y-4'} text-[13px] transition-all`}>
               {/* Left Column: Customer Details (always visible) */}
-              <div className="space-y-4">
+              <div className={`space-y-4 ${drawerTab === 'wallet' ? 'h-full overflow-y-auto pr-1' : ''}`}>
                 <Card className="p-4">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -501,7 +501,7 @@ export default function CustomersPage() {
 
               {/* Right Column: Wallet Management & Transactions (extends side-by-side when drawerTab === 'wallet') */}
               {drawerTab === 'wallet' && (
-                <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="space-y-4 h-full overflow-y-auto pr-1 animate-in fade-in duration-200">
                   <div className="flex items-center justify-between bg-white p-3 rounded-xl shadow-2xs">
                     <span className="font-semibold text-[#1a1a1a]">Wallet Management</span>
                     <button
