@@ -225,7 +225,6 @@ export default function CustomersPage() {
                             {c.isAtRisk && <Pill tone="bg-[#fed1d7] text-[#8e0b21]">At risk</Pill>}
                             {isStaff(c.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(c.role)}</Pill>}
                           </div>
-                          <p className="text-xs text-[#616161] truncate">{c.email || 'No email'}</p>
                         </div>
                       </div>
                     </td>
@@ -287,7 +286,6 @@ export default function CustomersPage() {
                   </div>
                 </div>
                 <div className="mt-4 space-y-2 text-[#303030]">
-                  <p className="flex items-center gap-2"><Mail size={14} className="text-[#8a8a8a]" />{selected.email || 'No email on file'}</p>
                   <p className="flex items-center gap-2"><Phone size={14} className="text-[#8a8a8a]" />{selected.phoneNumber || 'No phone on file'}</p>
                 </div>
               </Card>
