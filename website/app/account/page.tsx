@@ -27,7 +27,6 @@ export default function AccountPage() {
   const { user, userData, refreshUserData, loading: authLoading } = useAuth();
   const router = useRouter();
   const [storeCredit, setStoreCredit] = useState(0);
-  const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
   const [ordersCount, setOrdersCount] = useState(0);
   const [addressesCount, setAddressesCount] = useState(0);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -77,23 +76,6 @@ export default function AccountPage() {
             .eq('user_id', user.id);
 
           if (aCount !== null) setAddressesCount(aCount);
-
-          // 3. Fetch Store Credit & Transactions
-          const { data: walletData } = await supabase
-            .from('customer_wallets')
-            .select('id, balance')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (walletData) {
-            setStoreCredit(Number(walletData.balance || 0));
-            const { data: txData } = await supabase
-              .from('wallet_transactions')
-              .select('*')
-              .eq('wallet_id', walletData.id)
-              .order('created_at', { ascending: false });
-            if (txData) setWalletTransactions(txData);
-          }
         } catch (err) {
           console.error('Error fetching account details:', err);
         }
@@ -261,37 +243,6 @@ export default function AccountPage() {
             </div>
             <ChevronRight size={18} className="text-gray-400 group-hover:translate-x-1 transition-transform" />
           </Link>
-        </div>
-
-        {/* Wallet Transactions Ledger */}
-        <div className="bg-white rounded-[32px] p-6 border border-gray-100 shadow-sm space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-800 flex items-center justify-center shrink-0">
-              <Wallet size={20} />
-            </div>
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-tight text-emerald-950">Store Credit &amp; Transactions</h3>
-              <p className="text-xs text-gray-500 font-medium">Your Royal Bengal cashback and refund ledger</p>
-            </div>
-          </div>
-
-          <div className="divide-y divide-gray-100 max-h-60 overflow-y-auto">
-            {walletTransactions.length === 0 ? (
-              <p className="py-6 text-center text-gray-400 text-xs font-bold uppercase tracking-wider">No wallet transactions yet.</p>
-            ) : (
-              walletTransactions.map((tx: any) => (
-                <div key={tx.id} className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3 text-xs">
-                  <div>
-                    <p className="font-bold text-gray-900">{tx.description}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{new Date(tx.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                  </div>
-                  <span className={`font-black shrink-0 ${tx.type === 'credit' ? 'text-emerald-800' : 'text-rose-600'}`}>
-                    {tx.type === 'credit' ? '+' : '-'}&#x20b9;{tx.amount}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
 
           {/* Admin Workspace Link (If Admin) */}
           {userData?.role === 'admin' && (
