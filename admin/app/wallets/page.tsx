@@ -112,6 +112,7 @@ export default function AdminWalletsPage() {
           amount: amt,
           type: txType,
           description: actionDesc,
+          performed_by: adminUser?.id || null,
         });
 
       if (txErr) throw txErr;
