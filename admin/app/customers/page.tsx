@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, X, MessageSquare, Download, ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ShoppingBag, ChevronLeft, ChevronRight, Wallet, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Search, X, MessageSquare, Download, ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ShoppingBag, ChevronLeft, ChevronRight, Wallet, MapPin, PlusCircle, ArrowUpRight, ArrowDownLeft, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getAdminCustomersPaginated, getCustomerOrderHistory } from '@/features/customers/services/customers.service';
 import type { AdminCustomer, CustomerOrder } from '@/features/customers/types/customer';
@@ -43,8 +43,18 @@ export default function CustomersPage() {
   const [selected, setSelected] = useState<AdminCustomer | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [customerWallet, setCustomerWallet] = useState<number>(0);
+  const [customerWalletRecord, setCustomerWalletRecord] = useState<any | null>(null);
   const [customerAddresses, setCustomerAddresses] = useState<any[]>([]);
+  const [customerTransactions, setCustomerTransactions] = useState<any[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+
+  // Wallet adjustment modal state inside customer drawer
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [txType, setTxType] = useState<'credit' | 'debit'>('credit');
+  const [walletAmount, setWalletAmount] = useState('');
+  const [walletReason, setWalletReason] = useState('');
+  const [walletSubmitting, setWalletSubmitting] = useState(false);
+  const [walletMsg, setWalletMsg] = useState<{ success: boolean; text: string } | null>(null);
 
   useEffect(() => {
     const run = async () => {
@@ -62,27 +72,106 @@ export default function CustomersPage() {
     run();
   }, [page, searchQuery]);
 
+  const refreshCustomerDetails = async () => {
+    if (!selected) return;
+    setOrdersLoading(true);
+    try {
+      const [orders, walletRes, addrRes, txRes] = await Promise.all([
+        getCustomerOrderHistory(selected.id),
+        supabase.from('customer_wallets').select('*').eq('user_id', selected.id).maybeSingle(),
+        supabase.from('addresses').select('*').eq('user_id', selected.id).order('created_at', { ascending: false }),
+        supabase.from('wallet_transactions').select('*').eq('user_id', selected.id).order('created_at', { ascending: false }),
+      ]);
+      setCustomerOrders(orders);
+      if (walletRes.data) {
+        setCustomerWalletRecord(walletRes.data);
+        setCustomerWallet(Number(walletRes.data.balance || 0));
+      } else {
+        setCustomerWalletRecord(null);
+        setCustomerWallet(0);
+      }
+      if (addrRes.data) setCustomerAddresses(addrRes.data);
+      if (txRes.data) setCustomerTransactions(txRes.data);
+    } catch (error) {
+      console.error('Customer detail data fetch error:', error);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!selected) {
       setCustomerOrders([]);
       setCustomerWallet(0);
       setCustomerAddresses([]);
+      setCustomerTransactions([]);
+      setCustomerWalletRecord(null);
       return;
     }
-    setOrdersLoading(true);
-    Promise.all([
-      getCustomerOrderHistory(selected.id),
-      supabase.from('customer_wallets').select('balance').eq('user_id', selected.id).maybeSingle(),
-      supabase.from('addresses').select('*').eq('user_id', selected.id).order('created_at', { ascending: false }),
-    ])
-      .then(([orders, walletRes, addrRes]) => {
-        setCustomerOrders(orders);
-        if (walletRes.data) setCustomerWallet(Number(walletRes.data.balance || 0));
-        if (addrRes.data) setCustomerAddresses(addrRes.data);
-      })
-      .catch((error: unknown) => console.error('Customer detail data fetch error:', error))
-      .finally(() => setOrdersLoading(false));
+    refreshCustomerDetails();
   }, [selected]);
+
+  const handleWalletAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    const amt = Number(walletAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setWalletMsg({ success: false, text: 'Please enter a valid amount.' });
+      return;
+    }
+
+    if (txType === 'debit' && customerWallet < amt) {
+      setWalletMsg({ success: false, text: 'Cannot deduct more than current wallet balance.' });
+      return;
+    }
+
+    setWalletSubmitting(true);
+    setWalletMsg(null);
+
+    try {
+      let walletId = customerWalletRecord?.id;
+      if (!walletId) {
+        const { data: newW, error: newWErr } = await supabase
+          .from('customer_wallets')
+          .insert({ user_id: selected.id, balance: 0 })
+          .select('id')
+          .single();
+        if (newWErr) throw newWErr;
+        walletId = newW.id;
+      }
+
+      const { data: { user: adminUser } } = await supabase.auth.getUser();
+      const description = walletReason.trim() || (txType === 'credit' ? 'Admin Credited Store Credit' : 'Admin Debited Store Credit');
+
+      const { data: newBalance, error: rpcErr } = await supabase.rpc('adjust_customer_wallet', {
+        p_wallet_id: walletId,
+        p_user_id: selected.id,
+        p_amount: amt,
+        p_type: txType,
+        p_description: description,
+        p_performed_by: adminUser?.id || null,
+      });
+
+      if (rpcErr) throw rpcErr;
+
+      setWalletMsg({
+        success: true,
+        text: txType === 'credit' ? `Successfully credited ₹${amt}!` : `Successfully deducted ₹${amt}!`
+      });
+      setWalletAmount('');
+      setWalletReason('');
+      await refreshCustomerDetails();
+      setTimeout(() => {
+        setShowWalletModal(false);
+        setWalletMsg(null);
+      }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      setWalletMsg({ success: false, text: err.message || 'Failed to update wallet.' });
+    } finally {
+      setWalletSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null);
@@ -309,9 +398,50 @@ export default function CustomersPage() {
               <Card className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Wallet size={16} className="text-[#006B50]" />
-                  <span className="font-semibold text-[#1a1a1a]">Store Credit Balance</span>
+                  <div>
+                    <span className="font-semibold text-[#1a1a1a] block">Store Credit</span>
+                    <span className="text-xs font-bold text-emerald-900">{formatCurrency(customerWallet)}</span>
+                  </div>
                 </div>
-                <span className="font-bold text-emerald-900">{formatCurrency(customerWallet)}</span>
+                <button
+                  onClick={() => {
+                    setWalletAmount('');
+                    setWalletReason('');
+                    setTxType('credit');
+                    setWalletMsg(null);
+                    setShowWalletModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs font-medium transition-colors cursor-pointer"
+                >
+                  Manage wallet
+                </button>
+              </Card>
+
+              {/* Wallet Transactions History */}
+              <Card className="overflow-hidden">
+                <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
+                  <Wallet size={15} className="text-[#616161]" />
+                  <h3 className="text-sm font-semibold text-[#1a1a1a]">Wallet transaction logs ({customerTransactions.length})</h3>
+                </div>
+                <div className="p-4 space-y-2.5 max-h-48 overflow-y-auto">
+                  {ordersLoading ? (
+                    <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                  ) : customerTransactions.length === 0 ? (
+                    <p className="text-center text-[#616161] py-2">No wallet transactions recorded.</p>
+                  ) : (
+                    customerTransactions.map((tx: any) => (
+                      <div key={tx.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100 flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-[#1a1a1a]">{tx.description}</p>
+                          <p className="text-[10px] text-gray-400">{new Date(tx.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                        <span className={`font-black shrink-0 ${tx.type === 'credit' ? 'text-emerald-800' : 'text-rose-600'}`}>
+                          {tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount))}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
               </Card>
 
               <Card className="overflow-hidden">
@@ -386,6 +516,96 @@ export default function CustomersPage() {
             </div>
           </aside>
         </>
+      )}
+
+      {/* Modal for managing store credit (credit / debit) inside customer drawer */}
+      {showWalletModal && selected && (
+        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white text-gray-900 w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-2xl border border-gray-200 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b pb-4">
+              <h3 className="text-base font-black uppercase tracking-tight text-gray-900 flex items-center gap-2">
+                <Wallet className="text-emerald-700" size={20} /> Manage Wallet — {selected.displayName}
+              </h3>
+              <button onClick={() => setShowWalletModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleWalletAdjustment} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase text-gray-600">Action Type</label>
+                <div className="flex gap-2 p-1 bg-gray-100 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setTxType('credit')}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      txType === 'credit' ? 'bg-emerald-800 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <ArrowDownLeft size={14} /> Add Credit (+)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTxType('debit')}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      txType === 'debit' ? 'bg-rose-700 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <ArrowUpRight size={14} /> Deduct Credit (-)
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase text-gray-600">Amount (₹)</label>
+                <input
+                  required
+                  type="number"
+                  placeholder="e.g. 500"
+                  value={walletAmount}
+                  onChange={e => setWalletAmount(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white transition-all"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase text-gray-600">Reason / Description</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Refund, Promotional cashback"
+                  value={walletReason}
+                  onChange={e => setWalletReason(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white transition-all"
+                />
+              </div>
+
+              {walletMsg && (
+                <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${walletMsg.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+                  {walletMsg.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
+                  <span>{walletMsg.text}</span>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowWalletModal(false)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={walletSubmitting || !walletAmount}
+                  className={`flex-1 font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
+                    txType === 'credit' ? 'bg-emerald-800 hover:bg-emerald-900 text-amber-300' : 'bg-rose-700 hover:bg-rose-800 text-white'
+                  }`}
+                >
+                  {walletSubmitting ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
+                  <span>{txType === 'credit' ? 'Confirm Credit' : 'Confirm Debit'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
