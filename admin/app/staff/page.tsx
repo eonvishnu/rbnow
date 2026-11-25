@@ -6,6 +6,12 @@ import { Search, ShieldCheck, UserCheck, Lock, Activity, RefreshCcw } from 'luci
 import { changeStaffRole, listStaffAndAuditLogs } from '@/features/staff/services/staff.service';
 import type { StaffAuditLog, StaffProfile } from '@/features/staff/types/staff';
 
+const formatRole = (role?: string | null) => {
+  const r = (role || 'customer').toLowerCase();
+  if (r === 'super_admin' || r === 'admin') return 'Super Admin';
+  return r.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+};
+
 export default function StaffManagementPage() {
   const { user, userData } = useAuth();
   const [staff, setStaff] = useState<StaffProfile[]>([]);
@@ -132,7 +138,7 @@ export default function StaffManagementPage() {
 
                   <td className="px-4 py-3">
                     <select
-                      value={p.role || 'customer'}
+                      value={p.role === 'admin' ? 'super_admin' : (p.role || 'customer')}
                       disabled={updatingUserId === p.id || userData?.role !== 'super_admin' || user?.id === p.id}
                       onChange={e => handleRoleChange(p.id, e.target.value)}
                       className="bg-[#f7f7f7] border border-gray-200 rounded-lg px-3 h-8 text-xs font-medium text-[#1a1a1a] outline-none cursor-pointer"
@@ -147,7 +153,7 @@ export default function StaffManagementPage() {
 
                   <td className="px-4 py-3 text-right">
                     <span className="inline-flex items-center px-2.5 h-6 rounded-full text-xs font-medium bg-[#cdfed4] text-[#014b40]">
-                      <span className="capitalize">{String(p.role || 'customer').replace(/_/g, ' ')}</span>
+                      <span>{formatRole(p.role)}</span>
                     </span>
                   </td>
                 </tr>

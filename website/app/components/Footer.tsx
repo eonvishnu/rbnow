@@ -133,7 +133,7 @@ export const Footer = () => {
             <h4 className="text-amber-400 font-bold uppercase tracking-wider mb-4 text-xs">Concierge Contact</h4>
             <ul className="space-y-3 text-xs text-[#EFE8DC]/70">
               <li className="flex items-center gap-2.5"><MapPin size={16} className="text-amber-400 shrink-0" /> Rajendranagar, Hyderabad, Telangana</li>
-              <li className="flex items-center gap-2.5"><Mail size={16} className="text-amber-400 shrink-0" /> rbnow.in@gmail.com</li>
+              <li className="flex items-center gap-2.5"><Mail size={16} className="text-amber-400 shrink-0" /> care@rbnow.in</li>
               <li className="flex items-center gap-2.5"><Phone size={16} className="text-amber-400 shrink-0" /> +91 63040 76069</li>
             </ul>
           </div>

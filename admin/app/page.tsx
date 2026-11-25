@@ -104,7 +104,7 @@ export default function AdminDashboard() {
   const { current, previous, days } = useMemo(() => {
     const now = Date.now();
     const today0 = startOfDay(new Date());
-    const live = orders.filter((o) => o.status !== 'cancelled');
+    const live = orders.filter((o) => o.status !== 'cancelled' && o.status !== 'pending_payment');
     if (range === 'all') return { current: live, previous: [] as DashboardOrder[], days: 0 };
     const len = range === 'today' ? 1 : range === '7d' ? 7 : 30;
     const from = today0 - (len - 1) * DAY;
@@ -144,7 +144,7 @@ export default function AdminDashboard() {
       return { t, total: 0, count: 0 };
     });
     orders
-      .filter((o) => o.status !== 'cancelled')
+      .filter((o) => o.status !== 'cancelled' && o.status !== 'pending_payment')
       .forEach((o) => {
         const idx = Math.floor((startOfDay(new Date(o.createdAt)) - buckets[0].t) / DAY);
         if (idx >= 0 && idx < len) {
@@ -169,7 +169,9 @@ export default function AdminDashboard() {
   // ---- Operational numbers (all derived from real orders) -------------
   const counts = useMemo(() => {
     const c: Record<string, number> = { pending: 0, processing: 0, out_for_delivery: 0, delivered: 0, cancelled: 0 };
-    orders.forEach((o) => { c[o.status] = (c[o.status] || 0) + 1; });
+    orders
+      .filter((o) => o.status !== 'pending_payment')
+      .forEach((o) => { c[o.status] = (c[o.status] || 0) + 1; });
     return c;
   }, [orders]);
 

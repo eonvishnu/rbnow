@@ -47,6 +47,7 @@ export const ProductCard = ({
   const variantId = currentOption?.id || `${id}-${activeIdx}`;
   const availableStock = currentOption?.stockCount ?? 0;
   const isPreorder = !!currentOption?.preorderCampaign;
+  const expectedDispatchDate = currentOption?.preorderCampaign?.expected_dispatch_date || currentOption?.expectedDispatchDate;
 
   const originalPrice = currentOption?.price || 0;
   const hasDiscount = effectiveDiscount > 0;
@@ -190,7 +191,16 @@ export const ProductCard = ({
               <button 
                 onClick={(e) => { 
                   e.stopPropagation(); 
-                  handleAdd({ id: variantId, product_id: id, name, price: finalPrice, unit: currentOption.unit, img }, availableStock);
+                  handleAdd({
+                    id: variantId,
+                    product_id: id,
+                    name,
+                    price: finalPrice,
+                    unit: currentOption.unit,
+                    img,
+                    isPreorder,
+                    expectedDispatchDate
+                  }, availableStock);
                 }} 
                 disabled={quantity >= availableStock}
                 className={`px-2.5 h-full font-black text-lg hover:bg-black/10 transition-colors ${quantity >= availableStock ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -203,7 +213,16 @@ export const ProductCard = ({
               disabled={availableStock === 0}
               onClick={(e) => { 
                 e.stopPropagation(); 
-                handleAdd({ id: variantId, product_id: id, name, price: finalPrice, unit: currentOption.unit, img }, availableStock);
+                handleAdd({
+                  id: variantId,
+                  product_id: id,
+                  name,
+                  price: finalPrice,
+                  unit: currentOption.unit,
+                  img,
+                  isPreorder,
+                  expectedDispatchDate
+                }, availableStock);
               }}
               className={`font-black px-4 py-1.5 rounded-xl text-xs uppercase tracking-wider active:scale-95 transition-all shadow-sm ${
                 isPreorder

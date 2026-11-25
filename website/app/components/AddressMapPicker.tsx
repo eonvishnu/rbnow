@@ -9,7 +9,6 @@ import {
   Home,
   Briefcase,
   Building,
-  CheckCircle2,
   Loader2,
   AlertCircle,
   ArrowLeft,
@@ -37,6 +36,9 @@ interface AddressMapPickerProps {
   existingLabels?: string[];
 }
 
+// Default map center only (Hyderabad center) — never saved as address text
+const DEFAULT_CENTER = { lat: 17.3850, lng: 78.4867 };
+
 export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   onSave,
   onCancel,
@@ -44,11 +46,10 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   defaultName = '',
   existingLabels = [],
 }) => {
-  // 2-Step Flow: 'map' (Confirm Google Pin Location) -> 'details' (Fill House & Contact Details)
   const [pickerStep, setPickerStep] = useState<'map' | 'details'>('map');
 
-  const [lat, setLat] = useState(17.4483);
-  const [lng, setLng] = useState(78.3742);
+  const [lat, setLat] = useState(DEFAULT_CENTER.lat);
+  const [lng, setLng] = useState(DEFAULT_CENTER.lng);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -56,18 +57,35 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isDetectingGPS, setIsDetectingGPS] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [locationError, setLocationError] = useState('');
   const [labelError, setLabelError] = useState('');
   const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
 
-  const [detectedAddress, setDetectedAddress] = useState({
-    area: 'Hitech City, Madhapur',
-    city: 'Hyderabad',
-    pincode: '500081',
-    fullAddress: 'Hitech City, Madhapur, Hyderabad, Telangana - 500081',
+  // Start empty—never pre-populate fake neighborhood or pincode strings
+  const [detectedAddress, setDetectedAddress] = useState<{
+    area: string;
+    city: string;
+    pincode: string;
+    state: string;
+    fullAddress: string;
+    isVerified: boolean;
+  }>({
+    area: '',
+    city: '',
+    pincode: '',
+    state: '',
+    fullAddress: '',
+    isVerified: false,
   });
 
-  const isHomeUsed = useMemo(() => existingLabels.some(l => l.toUpperCase().trim() === 'HOME'), [existingLabels]);
-  const isWorkUsed = useMemo(() => existingLabels.some(l => l.toUpperCase().trim() === 'WORK'), [existingLabels]);
+  const isHomeUsed = useMemo(
+    () => existingLabels.some(l => l.toUpperCase().trim() === 'HOME'),
+    [existingLabels]
+  );
+  const isWorkUsed = useMemo(
+    () => existingLabels.some(l => l.toUpperCase().trim() === 'WORK'),
+    [existingLabels]
+  );
 
   const defaultType = !isHomeUsed ? 'home' : (!isWorkUsed ? 'work' : 'other');
 
@@ -84,12 +102,15 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<any>(null);
 
-  // Load Google Maps API Script dynamically
+  // Load Google Maps API Script dynamically (No hardcoded API key fallback)
   useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyDwr-cKcQ4nQFEVWwk7UI3cdRbEdLIcc4g';
-    if (!apiKey) return;
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      console.error('Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY');
+      return;
+    }
 
-    if (typeof window !== 'undefined' && (window as any).google?.maps?.Map) {
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.places) {
       setGoogleMapsLoaded(true);
       return;
     }
@@ -126,12 +147,14 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           gestureHandling: 'greedy',
         });
 
-        // Continuous center tracking when map stops moving
         map.addListener('idle', () => {
           const center = map.getCenter();
           if (center) {
             setLat(center.lat());
             setLng(center.lng());
+            // Invalidate previously resolved address whenever pin moves
+            setDetectedAddress(prev => ({ ...prev, isVerified: false }));
+            setLocationError('');
           }
         });
 
@@ -144,9 +167,9 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
     }
   }, [googleMapsLoaded, pickerStep]);
 
-  // Google Geocoder Place Search
+  // 1. Google Places Autocomplete Search (Strictly Telangana)
   useEffect(() => {
-    if (!googleMapsLoaded || !searchQuery || searchQuery.trim().length < 3) {
+    if (!googleMapsLoaded || !searchQuery || searchQuery.trim().length < 2) {
       setSuggestions([]);
       return;
     }
@@ -159,153 +182,211 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
         const google = (window as any).google;
         if (!google?.maps) return;
 
-        let GeocoderClass = google.maps.Geocoder;
-        if (!GeocoderClass && typeof google.maps.importLibrary === 'function') {
-          const geocodingLib = await google.maps.importLibrary("geocoding");
-          GeocoderClass = geocodingLib.Geocoder;
+        let AutocompleteServiceClass = google.maps.places?.AutocompleteService;
+        if (!AutocompleteServiceClass && typeof google.maps.importLibrary === 'function') {
+          const placesLib = await google.maps.importLibrary('places');
+          AutocompleteServiceClass = placesLib.AutocompleteService;
         }
 
-        if (!active || !GeocoderClass) {
-          setIsSearching(false);
+        if (!active || !AutocompleteServiceClass) {
+          if (active) setIsSearching(false);
           return;
         }
 
-        const geocoder = new GeocoderClass();
-        geocoder.geocode({ address: searchQuery, componentRestrictions: { country: 'IN' } }, (results: any, status: any) => {
-          if (!active) return;
-          setIsSearching(false);
-          if (status === 'OK' && results) {
-            setSuggestions(results.slice(0, 5));
-          } else {
-            setSuggestions([]);
+        const autocompleteService = new AutocompleteServiceClass();
+
+        const telanganaBounds = new google.maps.LatLngBounds(
+          { lat: 15.8300, lng: 77.2300 },
+          { lat: 19.9200, lng: 81.3200 }
+        );
+
+        autocompleteService.getPlacePredictions(
+          {
+            input: searchQuery.trim(),
+            componentRestrictions: { country: 'in' },
+            locationRestriction: telanganaBounds,
+          },
+          (predictions: any[] | null, status: string) => {
+            if (!active) return;
+            setIsSearching(false);
+
+            if (status === 'OK' && predictions) {
+              // Strictly keep only Telangana results (never fall back to other states)
+              const telanganaOnly = predictions.filter((item) => {
+                const desc = (item.description || '').toLowerCase();
+                return (
+                  desc.includes('telangana') ||
+                  desc.includes('hyderabad') ||
+                  desc.includes('secunderabad')
+                );
+              });
+              setSuggestions(telanganaOnly.slice(0, 5));
+            } else {
+              setSuggestions([]);
+            }
           }
-        });
+        );
       } catch (err) {
         if (active) setIsSearching(false);
-        console.error('Google Geocoder Search Error:', err);
+        console.error('Google Places Autocomplete Error:', err);
       }
     };
 
-    const timer = setTimeout(searchGooglePlace, 350);
+    const timer = setTimeout(searchGooglePlace, 300);
     return () => {
       active = false;
       clearTimeout(timer);
     };
   }, [searchQuery, googleMapsLoaded]);
 
-  const handleSelectGooglePlace = (item: any) => {
-    if (item.geometry && item.geometry.location) {
-      const placeLat = item.geometry.location.lat();
-      const placeLng = item.geometry.location.lng();
+  // 2. Resolve selected prediction's place_id to Lat/Lng
+  const handleSelectGooglePlace = async (item: any) => {
+    if (!item?.place_id) return;
 
-      setLat(placeLat);
-      setLng(placeLng);
-      setSuggestions([]);
-      setSearchQuery('');
-
-      if (googleMapRef.current) {
-        googleMapRef.current.setCenter({ lat: placeLat, lng: placeLng });
-        googleMapRef.current.setZoom(17);
+    try {
+      const google = (window as any).google;
+      let GeocoderClass = google.maps.Geocoder;
+      if (!GeocoderClass && typeof google.maps.importLibrary === 'function') {
+        const geocodingLib = await google.maps.importLibrary('geocoding');
+        GeocoderClass = geocodingLib.Geocoder;
       }
+
+      const geocoder = new GeocoderClass();
+      geocoder.geocode({ placeId: item.place_id }, (results: any, status: string) => {
+        if (status === 'OK' && results?.[0]?.geometry?.location) {
+          const placeLat = results[0].geometry.location.lat();
+          const placeLng = results[0].geometry.location.lng();
+
+          setLat(placeLat);
+          setLng(placeLng);
+          setSuggestions([]);
+          setSearchQuery('');
+          setLocationError('');
+
+          if (googleMapRef.current) {
+            googleMapRef.current.setCenter({ lat: placeLat, lng: placeLng });
+            googleMapRef.current.setZoom(17);
+          }
+        }
+      });
+    } catch (err) {
+      console.error('Place ID Geocode Error:', err);
     }
   };
 
-  // Google Geocoder Reverse Geocoding when Lat/Lng changes
-  useEffect(() => {
-    if (!googleMapsLoaded || typeof window === 'undefined') return;
-
-    let active = true;
-    const geocodeWithGoogle = async () => {
-      setIsGeocoding(true);
-      try {
-        const google = (window as any).google;
-        if (!google?.maps) return;
-
-        let GeocoderClass = google.maps.Geocoder;
-        if (!GeocoderClass && typeof google.maps.importLibrary === 'function') {
-          const geocodingLib = await google.maps.importLibrary("geocoding");
-          GeocoderClass = geocodingLib.Geocoder;
-        }
-
-        if (!active || !GeocoderClass) {
-          if (active) setIsGeocoding(false);
-          return;
-        }
-
-        const geocoder = new GeocoderClass();
-        geocoder.geocode({ location: { lat, lng } }, (results: any, status: any) => {
-          if (!active) return;
-          setIsGeocoding(false);
-
-          if (status === 'OK' && results?.[0]) {
-            const result = results[0];
-            const fullAddress = result.formatted_address;
-
-            let area = '';
-            let city = '';
-            let pincode = '';
-
-            result.address_components?.forEach((comp: any) => {
-              if (comp.types.includes('sublocality') || comp.types.includes('neighborhood') || comp.types.includes('route')) {
-                if (!area) area = comp.long_name;
-              }
-              if (comp.types.includes('locality')) {
-                city = comp.long_name;
-              }
-              if (comp.types.includes('postal_code')) {
-                pincode = comp.long_name;
-              }
-            });
-
-            setDetectedAddress({
-              area: area || result.address_components?.[0]?.long_name || 'Selected Location',
-              city: city || 'Hyderabad',
-              pincode: pincode || '500081',
-              fullAddress: fullAddress || `${area}, ${city}`,
-            });
-          }
-        });
-      } catch (err) {
-        console.error('Google Geocoder Error:', err);
-        if (active) setIsGeocoding(false);
-      }
-    };
-
-    const timer = setTimeout(geocodeWithGoogle, 400);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [lat, lng, googleMapsLoaded]);
-
-  const handleGPSClick = () => {
+  const handleDetectGPS = () => {
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
+      setLocationError('Geolocation is not supported by your browser.');
       return;
     }
 
     setIsDetectingGPS(true);
+    setLocationError('');
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const gpsLat = pos.coords.latitude;
-        const gpsLng = pos.coords.longitude;
-
-        setLat(gpsLat);
-        setLng(gpsLng);
-        setIsDetectingGPS(false);
-
+      (position) => {
+        const curLat = position.coords.latitude;
+        const curLng = position.coords.longitude;
+        setLat(curLat);
+        setLng(curLng);
         if (googleMapRef.current) {
-          googleMapRef.current.setCenter({ lat: gpsLat, lng: gpsLng });
-          googleMapRef.current.setZoom(17);
+          googleMapRef.current.setCenter({ lat: curLat, lng: curLng });
+          googleMapRef.current.setZoom(18);
         }
-      },
-      (err) => {
-        console.error("GPS Error:", err);
-        alert("Unable to fetch GPS location. Please check location permissions.");
         setIsDetectingGPS(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      (error) => {
+        console.error('GPS error:', error);
+        setIsDetectingGPS(false);
+        setLocationError('Unable to retrieve GPS location. Please enable location permissions.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  };
+
+  // Properly awaited Reverse Geocoding before transitioning to Step 2
+  const handleProceedToDetails = async () => {
+    setIsGeocoding(true);
+    setLocationError('');
+
+    try {
+      const google = (window as any).google;
+      if (!google?.maps) {
+        throw new Error('Google Maps is not loaded yet.');
+      }
+
+      let GeocoderClass = google.maps.Geocoder;
+      if (!GeocoderClass && typeof google.maps.importLibrary === 'function') {
+        const geocodingLib = await google.maps.importLibrary('geocoding');
+        GeocoderClass = geocodingLib.Geocoder;
+      }
+
+      const geocoder = new GeocoderClass();
+
+      // Wrap callback in Promise so we wait for real coordinates -> address resolution
+      const results: any[] = await new Promise((resolve, reject) => {
+        geocoder.geocode({ location: { lat, lng } }, (res: any, status: string) => {
+          if (status === 'OK' && res && res.length > 0) {
+            resolve(res);
+          } else {
+            reject(new Error(`Geocoding failed with status: ${status}`));
+          }
+        });
+      });
+
+      const primary = results[0];
+      const fullAddress = primary.formatted_address || '';
+
+      let area = '';
+      let city = '';
+      let pincode = '';
+      let state = '';
+
+      // Extract components accurately across all returned results if needed
+      for (const result of results) {
+        for (const comp of result.address_components || []) {
+          if (!area && (comp.types.includes('sublocality_level_1') || comp.types.includes('sublocality') || comp.types.includes('neighborhood'))) {
+            area = comp.long_name;
+          }
+          if (!city && comp.types.includes('locality')) {
+            city = comp.long_name;
+          }
+          if (!state && comp.types.includes('administrative_area_level_1')) {
+            state = comp.long_name;
+          }
+          if (!pincode && comp.types.includes('postal_code')) {
+            pincode = comp.long_name;
+          }
+        }
+        if (area && city && pincode && state) break;
+      }
+
+      // Enforce Telangana boundary check before proceeding
+      if (state && state.toLowerCase() !== 'telangana') {
+        setLocationError(`Delivery is currently available only in Telangana (Selected: ${state}).`);
+        return;
+      }
+
+      if (!city || !pincode) {
+        setLocationError('Could not detect a valid city/pincode for this pin. Please adjust the pin slightly.');
+        return;
+      }
+
+      setDetectedAddress({
+        area: area || city,
+        city,
+        pincode,
+        state,
+        fullAddress,
+        isVerified: true,
+      });
+
+      setPickerStep('details');
+    } catch (err) {
+      console.error('Reverse geocode error:', err);
+      setLocationError('Unable to verify pinned address. Please check your connection and try again.');
+    } finally {
+      setIsGeocoding(false);
+    }
   };
 
   const handleCustomLabelChange = (text: string) => {
@@ -313,48 +394,62 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
     setForm({ ...form, customLabel: text });
 
     if (existingLabels.some(l => l.toUpperCase().trim() === uppercaseText.trim())) {
-      setLabelError(`Label '${uppercaseText.trim()}' is already in use. Please enter a unique label.`);
+      setLabelError(`Label '${uppercaseText.trim()}' is already in use.`);
     } else {
       setLabelError('');
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSaveAddressFinal = async (e: React.FormEvent) => {
     e.preventDefault();
     setLabelError('');
+
+    if (!detectedAddress.isVerified || !detectedAddress.city || !detectedAddress.pincode) {
+      alert('Please confirm a valid location on the map first.');
+      setPickerStep('map');
+      return;
+    }
+
+    if (!form.fullName.trim()) {
+      alert('Please enter recipient full name');
+      return;
+    }
+
+    const cleanPhone = form.mobile.trim().replace(/\D/g, '');
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      alert('Please enter a valid 10-digit Indian mobile number');
+      return;
+    }
+
+    if (!form.floorHouseNo.trim()) {
+      alert('Please enter House / Flat / Block No.');
+      return;
+    }
 
     let targetLabel = form.addressType.toUpperCase();
     if (form.addressType === 'other') {
       const custom = form.customLabel.trim().toUpperCase();
-      if (!custom) return alert("Please enter a custom address label (e.g. PARENTS, FARMHOUSE).");
+      if (!custom) {
+        alert('Please enter a custom address label (e.g. PARENTS, OFFICE).');
+        return;
+      }
       targetLabel = custom;
     }
 
-    const isLabelAlreadyUsed = existingLabels.some(
-      l => l.toUpperCase().trim() === targetLabel
-    );
-
-    if (isLabelAlreadyUsed) {
-      setLabelError(`Label '${targetLabel}' is already used by a saved address. Please enter a unique label.`);
+    if (existingLabels.some(l => l.toUpperCase().trim() === targetLabel)) {
+      setLabelError(`Label '${targetLabel}' is already saved. Choose a unique label.`);
       return;
     }
 
-    if (!form.floorHouseNo) return alert("Please enter Flat / House No / Floor.");
-    if (!form.fullName || !form.mobile) return alert("Please enter Recipient Name & Phone.");
-
     setIsSubmitting(true);
     try {
-      const fullHouseBuilding = form.buildingName
-        ? `${form.floorHouseNo}, ${form.buildingName}`
-        : form.floorHouseNo;
-
       await onSave({
-        fullName: form.fullName,
-        mobile: form.mobile,
-        houseNo: fullHouseBuilding,
-        buildingName: form.buildingName,
+        fullName: form.fullName.trim(),
+        mobile: cleanPhone,
+        houseNo: form.floorHouseNo.trim(),
+        buildingName: form.buildingName.trim(),
         area: detectedAddress.area,
-        landmark: form.landmark,
+        landmark: form.landmark.trim(),
         city: detectedAddress.city,
         pincode: detectedAddress.pincode,
         latitude: lat,
@@ -363,7 +458,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
       });
     } catch (err) {
       console.error(err);
-      alert("Error saving address");
+      alert('Error saving address');
     } finally {
       setIsSubmitting(false);
     }
@@ -371,11 +466,9 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] bg-white flex flex-col overflow-hidden">
-
       {/* STEP 1: NATIVE GOOGLE MAP & PIN CONFIRMATION */}
       {pickerStep === 'map' ? (
         <div className="relative flex-1 flex flex-col w-full h-full overflow-hidden">
-
           {/* Top Header Bar */}
           <div className="px-4 py-3 bg-emerald-950 text-white flex items-center justify-between z-20 border-b border-amber-400/30">
             <div className="flex items-center gap-2">
@@ -384,7 +477,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
               </div>
               <div>
                 <h2 className="text-sm font-black uppercase text-amber-300 tracking-tight">Step 1: Search & Pin Location</h2>
-                <p className="text-[10px] text-emerald-200">Google Maps Geocoding & Pinning</p>
+                <p className="text-[10px] text-emerald-200">Telangana Delivery Area</p>
               </div>
             </div>
 
@@ -399,7 +492,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
               <Search size={16} className="absolute left-3.5 top-3 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search Google Maps for place, colony, building..."
+                placeholder="Search apartment, colony, street in Telangana..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-2xl py-2.5 pl-10 pr-10 text-xs font-bold outline-none transition-all"
@@ -413,19 +506,33 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
               ) : null}
             </div>
 
-            {/* Google Geocoder Search Suggestions Dropdown */}
+            {/* Autocomplete Dropdown */}
             {suggestions.length > 0 && (
-              <div className="absolute left-4 right-4 top-14 bg-white border border-amber-200 rounded-2xl shadow-2xl overflow-hidden z-50 divide-y divide-gray-100 max-h-60 overflow-y-auto">
-                {suggestions.map((item, i) => (
-                  <div
-                    key={i}
-                    onClick={() => handleSelectGooglePlace(item)}
-                    className="p-3.5 hover:bg-emerald-50 cursor-pointer flex items-center gap-3 transition-colors text-xs"
-                  >
-                    <MapPin size={16} className="text-amber-500 shrink-0" />
-                    <p className="font-bold text-gray-800 truncate">{item.formatted_address}</p>
-                  </div>
-                ))}
+              <div className="absolute left-4 right-4 top-14 bg-white border border-amber-200 rounded-2xl shadow-2xl overflow-hidden z-50 divide-y divide-dashed divide-gray-200 max-h-60 overflow-y-auto">
+                {suggestions.map((item, i) => {
+                  const mainTitle =
+                    item.structured_formatting?.main_text ||
+                    item.description?.split(',')[0] ||
+                    'Location';
+                  const subTitle =
+                    item.structured_formatting?.secondary_text ||
+                    item.description ||
+                    '';
+
+                  return (
+                    <div
+                      key={item.place_id || i}
+                      onClick={() => handleSelectGooglePlace(item)}
+                      className="p-3.5 hover:bg-emerald-50/60 cursor-pointer flex items-start gap-3 transition-colors text-xs"
+                    >
+                      <MapPin size={18} className="text-gray-700 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="font-extrabold text-gray-900 text-xs sm:text-sm truncate">{mainTitle}</p>
+                        <p className="text-[11px] text-gray-500 font-medium line-clamp-1 mt-0.5">{subTitle}</p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -434,13 +541,10 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           <div className="relative flex-1 w-full bg-gray-100 overflow-hidden min-h-[350px]">
             <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" style={{ minHeight: '350px', height: '100%' }} />
 
-            {/* Clean Native Location Pin Marker */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 -translate-y-8">
               <div className="bg-[#022c22] text-amber-300 font-bold text-[10px] px-3 py-1 rounded-full border border-amber-400/80 shadow-lg mb-1">
                 Pin Location
               </div>
-
-              {/* Clean Standard Location Pin SVG */}
               <div className="relative flex flex-col items-center">
                 <svg width="38" height="48" viewBox="0 0 38 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-lg">
                   <path d="M19 0C8.50659 0 0 8.50659 0 19C0 31.5 19 48 19 48C19 48 38 31.5 38 19C38 8.50659 29.4934 0 19 0Z" fill="#022c22" stroke="#f59e0b" strokeWidth="2" />
@@ -449,249 +553,219 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                 <div className="w-3 h-1.5 bg-black/40 rounded-full blur-[1px] -mt-1" />
               </div>
             </div>
-
-            {/* GPS Locate Me Button */}
-            <button
-              onClick={handleGPSClick}
-              disabled={isDetectingGPS}
-              className="absolute bottom-4 right-4 z-20 bg-white border border-amber-300 text-emerald-950 font-extrabold p-3 rounded-2xl shadow-xl flex items-center gap-2 hover:bg-emerald-50 active:scale-95 transition-all text-xs uppercase tracking-wider"
-            >
-              {isDetectingGPS ? <Loader2 size={16} className="animate-spin text-emerald-800" /> : <Navigation size={16} className="fill-amber-400 text-emerald-900" />}
-              <span>Use my current location</span>
-            </button>
           </div>
 
-          {/* Bottom Confirmation Bar */}
-          <div className="p-4 bg-white border-t border-amber-200 shadow-2xl z-30 space-y-3">
-            <div className="flex items-center gap-3 bg-emerald-50 p-3 rounded-2xl border border-emerald-200">
-              <div className="p-2 rounded-xl bg-emerald-800 text-amber-300 shrink-0">
-                <MapPin size={18} />
+          {/* Bottom Floating Card */}
+          <div className="p-4 bg-white border-t border-gray-200 z-20 space-y-3">
+            {locationError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{locationError}</span>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black text-emerald-950 uppercase truncate">{detectedAddress.area}</span>
-                  {isGeocoding && <Loader2 size={12} className="animate-spin text-amber-600 shrink-0" />}
-                </div>
-                <p className="text-[10px] text-gray-500 font-medium truncate">
-                  {detectedAddress.fullAddress}
+            )}
+
+            <button
+              type="button"
+              onClick={handleDetectGPS}
+              disabled={isDetectingGPS}
+              className="w-full bg-[#e5f5ef] hover:bg-[#d5efe5] text-[#004d3b] border border-[#bce2d3] font-black text-xs py-3 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-xs transition-all active:scale-[0.98]"
+            >
+              {isDetectingGPS ? <Loader2 size={16} className="animate-spin" /> : <Navigation size={16} className="fill-[#004d3b]" />}
+              USE MY CURRENT LOCATION (GPS)
+            </button>
+
+            <button
+              type="button"
+              onClick={handleProceedToDetails}
+              disabled={isGeocoding}
+              className="w-full bg-[#022c22] hover:bg-[#033c30] text-[#ffc400] font-black text-sm py-4 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] border border-amber-400/40 uppercase tracking-widest disabled:opacity-50"
+            >
+              {isGeocoding ? <Loader2 size={18} className="animate-spin" /> : <>Confirm Location & Proceed <ChevronRight size={16} /></>}
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* STEP 2: ADDRESS DETAILS FORM */
+        <div className="flex-1 flex flex-col w-full h-full bg-[#f8fafc] overflow-y-auto">
+          <div className="px-4 py-3 bg-emerald-950 text-white flex items-center justify-between z-20 border-b border-amber-400/30 sticky top-0">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPickerStep('map')} className="p-1 text-emerald-200 hover:text-white mr-1">
+                <ArrowLeft size={20} />
+              </button>
+              <div>
+                <h2 className="text-sm font-black uppercase text-amber-300 tracking-tight">Step 2: Enter Address Details</h2>
+                <p className="text-[10px] text-emerald-200 truncate max-w-[240px]">
+                  {detectedAddress.area}, {detectedAddress.city} - {detectedAddress.pincode}
                 </p>
               </div>
             </div>
-
-            <button
-              onClick={() => setPickerStep('details')}
-              className="w-full bg-emerald-800 hover:bg-emerald-900 text-amber-300 font-black py-4 rounded-2xl text-xs uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all"
-            >
-              <span>Confirm Location & Proceed</span> <ChevronRight size={16} />
-            </button>
-          </div>
-
-        </div>
-      ) : (
-        /* STEP 2: FILL HOUSE & RECIPIENT DETAILS */
-        <div className="relative flex-1 flex flex-col w-full h-full bg-gray-50 overflow-y-auto no-scrollbar">
-
-          {/* Top Header Bar */}
-          <div className="px-4 py-3 bg-emerald-950 text-white flex items-center justify-between z-20 border-b border-amber-400/30 sticky top-0">
-            <button
-              onClick={() => setPickerStep('map')}
-              className="flex items-center gap-1.5 text-xs font-black uppercase text-amber-300 hover:text-amber-200 transition-colors"
-            >
-              <ArrowLeft size={16} /> Back to Map
-            </button>
-
-            <span className="text-xs font-black uppercase tracking-wider text-amber-400">Step 2: Add Address Details</span>
 
             <button onClick={onCancel} className="p-2 text-emerald-200 hover:text-white rounded-full">
               <X size={20} />
             </button>
           </div>
 
-          <div className="max-w-xl mx-auto p-4 sm:p-6 w-full space-y-4">
-
-            {/* Confirmed Location Summary Card */}
-            <div className="p-4 rounded-2xl bg-white border border-amber-300 shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-800 text-amber-300 shrink-0">
-                  <MapPin size={20} />
-                </div>
+          <form onSubmit={handleSaveAddressFinal} className="p-5 sm:p-6 max-w-lg mx-auto w-full space-y-5">
+            <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex items-start justify-between gap-3 shadow-2xs">
+              <div className="flex items-start gap-3">
+                <MapPin size={20} className="text-[#004d3b] shrink-0 mt-0.5" />
                 <div>
-                  <span className="text-xs font-black text-emerald-950 uppercase block">{detectedAddress.area}</span>
-                  <p className="text-[10px] text-gray-500 font-medium truncate max-w-[200px] sm:max-w-[300px]">
-                    {detectedAddress.city} - {detectedAddress.pincode}
+                  <p className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">
+                    {detectedAddress.area} ({detectedAddress.pincode})
                   </p>
+                  <p className="text-xs font-bold text-gray-900 mt-0.5">{detectedAddress.fullAddress}</p>
                 </div>
               </div>
-
               <button
                 type="button"
                 onClick={() => setPickerStep('map')}
-                className="text-[10px] font-black uppercase text-emerald-800 hover:underline bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shrink-0"
+                className="text-[10px] font-black uppercase text-emerald-800 hover:underline bg-white px-2.5 py-1.5 rounded-xl border border-emerald-200 shrink-0"
               >
-                Change Pin
+                Change
               </button>
             </div>
 
-            {/* Form Sheet */}
-            <form onSubmit={handleSubmit} className="bg-white p-5 sm:p-6 rounded-[28px] border border-gray-200 shadow-sm space-y-4">
-
-              {/* Label Error Warning */}
-              {labelError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2 animate-in fade-in">
-                  <AlertCircle size={16} className="shrink-0" />
-                  <span>{labelError}</span>
-                </div>
-              )}
-
-              {/* Address Label Selector (HOME / WORK Greyed Out if Used) */}
-              <div>
-                <label className="text-[9px] font-black uppercase text-gray-400 block mb-1">Save Address Label</label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    disabled={isHomeUsed}
-                    onClick={() => {
-                      setForm({ ...form, addressType: 'home' });
-                      setLabelError('');
-                    }}
-                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider border flex items-center justify-center gap-1.5 transition-all ${
-                      form.addressType === 'home'
-                        ? 'bg-emerald-800 text-amber-300 border-amber-400 shadow-md'
-                        : isHomeUsed
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50 line-through'
-                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <Home size={12} /> HOME {isHomeUsed && '(Saved)'}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isWorkUsed}
-                    onClick={() => {
-                      setForm({ ...form, addressType: 'work' });
-                      setLabelError('');
-                    }}
-                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider border flex items-center justify-center gap-1.5 transition-all ${
-                      form.addressType === 'work'
-                        ? 'bg-emerald-800 text-amber-300 border-amber-400 shadow-md'
-                        : isWorkUsed
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50 line-through'
-                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <Briefcase size={12} /> WORK {isWorkUsed && '(Saved)'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setForm({ ...form, addressType: 'other' });
-                      setLabelError('');
-                    }}
-                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider border flex items-center justify-center gap-1.5 transition-all ${
-                      form.addressType === 'other'
-                        ? 'bg-emerald-800 text-amber-300 border-amber-400 shadow-md'
-                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <Building size={12} /> OTHER
-                  </button>
-                </div>
+            {labelError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{labelError}</span>
               </div>
+            )}
 
-              {/* Custom Label Input when OTHER is selected */}
-              {form.addressType === 'other' && (
-                <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-                  <label className="text-[9px] font-black uppercase text-gray-400 block mb-1">Custom Label Name (e.g. PARENTS, GYM, FARMHOUSE)</label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="Enter unique custom label (e.g. PARENTS)"
-                    value={form.customLabel}
-                    onChange={e => handleCustomLabelChange(e.target.value)}
-                    className="w-full bg-gray-50 border border-amber-300 rounded-xl p-3 text-xs font-black uppercase tracking-wider text-gray-900 outline-none focus:bg-white"
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400">Recipient Name *</label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="Full Name"
-                    value={form.fullName}
-                    onChange={e => setForm({ ...form, fullName: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-amber-400 focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400">Mobile Phone *</label>
-                  <input
-                    required
-                    type="tel"
-                    maxLength={10}
-                    placeholder="10-digit mobile"
-                    value={form.mobile}
-                    onChange={e => setForm({ ...form, mobile: e.target.value.replace(/\D/g, '') })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-amber-400 focus:bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400">Flat / House No / Floor *</label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="e.g. Flat 402, 4th Floor"
-                    value={form.floorHouseNo}
-                    onChange={e => setForm({ ...form, floorHouseNo: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-amber-400 focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400">Building / Apartment Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Sunshine Heights"
-                    value={form.buildingName}
-                    onChange={e => setForm({ ...form, buildingName: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-amber-400 focus:bg-white"
-                  />
-                </div>
-              </div>
+            <div className="space-y-4 bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
+              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-900">Contact & Address Info</h3>
 
               <div>
-                <label className="text-[9px] font-black uppercase text-gray-400">Landmark (Optional)</label>
+                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Full Name *</label>
                 <input
                   type="text"
-                  placeholder="e.g. Opposite Cyber Towers"
-                  value={form.landmark}
-                  onChange={e => setForm({ ...form, landmark: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-amber-400 focus:bg-white"
+                  placeholder="Recipient Full Name"
+                  required
+                  value={form.fullName}
+                  onChange={e => setForm({ ...form, fullName: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
                 />
               </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting || !!labelError}
-                className="w-full bg-emerald-800 hover:bg-emerald-900 text-amber-300 border border-amber-400/80 font-black py-4 rounded-2xl text-xs uppercase tracking-[0.2em] shadow-xl transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 mt-2"
-              >
-                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <><CheckCircle2 size={16} /> Save Address</>}
-              </button>
-            </form>
+              <div>
+                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Mobile Number (+91) *</label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="10-digit mobile number"
+                  required
+                  value={form.mobile}
+                  onChange={e => setForm({ ...form, mobile: e.target.value.replace(/\D/g, '') })}
+                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
+                />
+              </div>
 
-          </div>
+              <div>
+                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">House / Flat / Block No. *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Flat 402, Block B"
+                  required
+                  value={form.floorHouseNo}
+                  onChange={e => setForm({ ...form, floorHouseNo: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
+                />
+              </div>
 
+              <div>
+                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Apartment / Building Name (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Building or society name"
+                  value={form.buildingName}
+                  onChange={e => setForm({ ...form, buildingName: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Nearby Landmark (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Nearby landmark"
+                  value={form.landmark}
+                  onChange={e => setForm({ ...form, landmark: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold outline-none"
+                />
+              </div>
+
+              {/* Address Type Selector with duplicate protection */}
+              <div>
+                <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-2">Save As</label>
+                <div className="grid grid-cols-3 gap-2.5">
+                  <button
+                    type="button"
+                    disabled={isHomeUsed}
+                    onClick={() => { setForm({ ...form, addressType: 'home' }); setLabelError(''); }}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold uppercase flex items-center justify-center gap-2 transition-all ${
+                      form.addressType === 'home'
+                        ? 'bg-emerald-900 text-amber-300 border-amber-400 shadow-sm'
+                        : isHomeUsed
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50 line-through'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Home size={14} /> Home
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isWorkUsed}
+                    onClick={() => { setForm({ ...form, addressType: 'work' }); setLabelError(''); }}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold uppercase flex items-center justify-center gap-2 transition-all ${
+                      form.addressType === 'work'
+                        ? 'bg-emerald-900 text-amber-300 border-amber-400 shadow-sm'
+                        : isWorkUsed
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50 line-through'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Briefcase size={14} /> Work
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setForm({ ...form, addressType: 'other' }); setLabelError(''); }}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold uppercase flex items-center justify-center gap-2 transition-all ${
+                      form.addressType === 'other'
+                        ? 'bg-emerald-900 text-amber-300 border-amber-400 shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Building size={14} /> Other
+                  </button>
+                </div>
+              </div>
+
+              {form.addressType === 'other' && (
+                <div>
+                  <label className="text-[10px] font-extrabold uppercase text-gray-600 block mb-1">Custom Label Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. PARENTS, OFFICE"
+                    value={form.customLabel}
+                    onChange={e => handleCustomLabelChange(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-3 px-3.5 text-xs font-bold uppercase outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting || !!labelError}
+              className="w-full bg-[#ffc400] hover:bg-[#f5b800] text-emerald-950 font-black text-sm py-4 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] border border-amber-300 uppercase tracking-widest disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : 'Save Address & Proceed'}
+            </button>
+          </form>
         </div>
       )}
-
     </div>
   );
 };

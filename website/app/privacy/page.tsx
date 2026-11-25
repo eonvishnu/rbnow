@@ -75,14 +75,14 @@ export default function PrivacyPolicy() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div className="space-y-1">
                 <p className="font-bold text-gray-700">Customer Support:</p>
-                <p className="flex items-center gap-1.5 text-gray-900"><Mail size={13} className="text-emerald-800" /> rbnow.in@gmail.com</p>
+                <p className="flex items-center gap-1.5 text-gray-900"><Mail size={13} className="text-emerald-800" /> care@rbnow.in</p>
                 <p className="flex items-center gap-1.5 text-gray-900"><Phone size={13} className="text-emerald-800" /> 6304076069</p>
               </div>
 
               <div className="space-y-1">
                 <p className="font-bold text-gray-700">Grievance Officer:</p>
                 <p className="font-bold text-gray-900">Mustafa Hussain</p>
-                <p className="flex items-center gap-1.5 text-gray-900"><Mail size={13} className="text-emerald-800" /> rbnow.in@gmail.com</p>
+                <p className="flex items-center gap-1.5 text-gray-900"><Mail size={13} className="text-emerald-800" /> care@rbnow.in</p>
               </div>
             </div>
 

@@ -124,7 +124,7 @@ export default function RefundPolicyPage() {
               <div className="space-y-1">
                 <p className="font-bold text-gray-700">Grievance Officer:</p>
                 <p className="font-bold text-gray-900">Mustafa Hussain</p>
-                <p className="flex items-center gap-1.5 text-gray-900"><Mail size={13} className="text-emerald-800" /> rbnow.in@gmail.com</p>
+                <p className="flex items-center gap-1.5 text-gray-900"><Mail size={13} className="text-emerald-800" /> care@rbnow.in</p>
               </div>
             </div>
 

@@ -8,6 +8,7 @@ import {
 export async function listCustomerProfiles() {
   const { data, error } = await supabase.from('profiles')
     .select('id, display_name, email, phone_number, created_at, role')
+    .eq('role', 'customer')
     .order('created_at', { ascending: false });
   if (error) {
     console.error('listCustomerProfiles error:', error, JSON.stringify(error));
@@ -22,6 +23,7 @@ export async function listCustomerProfilesPaginated(page: number = 1, pageSize: 
 
   let query = supabase.from('profiles')
     .select('id, display_name, email, phone_number, created_at, role', { count: 'exact' })
+    .eq('role', 'customer')
     .order('created_at', { ascending: false })
     .range(from, to);
 

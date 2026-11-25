@@ -92,15 +92,21 @@ const DEFAULT_GATEWAY_ROSTER: GatewayConfig[] = [
 ];
 
 export default function StoreSettingsPage() {
-  const [activeTab, setActiveTab] = useState<'payments' | 'store' | 'delivery'>('payments');
+  const [activeTab, setActiveTab] = useState<'payments' | 'store' | 'delivery'>('store');
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const flash = React.useCallback((type: 'success' | 'error', text: string) => {
+    setToast({ type, text });
+    window.setTimeout(() => setToast(null), 3500);
+  }, []);
 
   // Store General Info & Location
   const [isStoreOpen, setIsStoreOpen] = useState(true);
   const [storeName, setStoreName] = useState('Royal Bengal');
   const [storeAddress, setStoreAddress] = useState('Madhapur, Hyderabad');
-  const [storeLatitude, setStoreLatitude] = useState(17.351452);
-  const [storeLongitude, setStoreLongitude] = useState(78.391039);
+  const [storeLatitude, setStoreLatitude] = useState(17.389751719625146);
+  const [storeLongitude, setStoreLongitude] = useState(78.42299024706544);
 
   // Payment Gateways Roster
   const [gateways, setGateways] = useState<GatewayConfig[]>([]);
@@ -130,8 +136,8 @@ export default function StoreSettingsPage() {
 
   // Delivery Settings & Rule Engine State (Preserving User Presets)
   const [deliverySettings, setDeliverySettings] = useState<DeliverySettings>({
-    storeLatitude: 17.351452,
-    storeLongitude: 78.391039,
+    storeLatitude: 17.389751719625146,
+    storeLongitude: 78.42299024706544,
     deliveryPricingMode: 'rules',
   });
   const [deliveryRules, setDeliveryRules] = useState<DeliveryFeeRule[]>([]);
@@ -271,11 +277,12 @@ export default function StoreSettingsPage() {
         longitude: storeLongitude,
       });
 
-      alert("✅ Store Settings & Location saved live to Supabase PostgreSQL!");
+      flash('success', 'Store settings & location saved successfully.');
       await fetchAllSettings();
     } catch (error) {
-      console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to save settings");
+      console.error('Store settings save error:', error);
+      const msg = error instanceof Error ? error.message : (typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error));
+      flash('error', `Failed to save settings: ${msg}`);
     } finally {
       setSavingSettings(false);
     }
@@ -513,7 +520,7 @@ export default function StoreSettingsPage() {
         console.warn('Legacy rules sync skipped:', e);
       }
 
-      alert('✅ Delivery rules & pricing updated live on Supabase!');
+      flash('success', 'Delivery rules & pricing updated successfully.');
       try {
         setDeliveryRules(await fetchDeliveryFeeRulesList());
       } catch (e) {
@@ -521,7 +528,7 @@ export default function StoreSettingsPage() {
       }
     } catch (err: unknown) {
       console.error('Error saving delivery configuration:', err);
-      alert('Failed to save delivery rules: ' + extractErrorMessage(err));
+      flash('error', 'Failed to save delivery rules: ' + extractErrorMessage(err));
     } finally {
       setSavingDeliverySettings(false);
     }
@@ -571,7 +578,7 @@ export default function StoreSettingsPage() {
 
       if (res.success) {
         setActiveConnectedId(gw.id);
-        alert(`✅ ${gw.name} is now the active payment gateway for customer checkout!`);
+        flash('success', `${gw.name} is now the active payment gateway.`);
         await fetchAllSettings();
       } else {
         setActiveConnectedId(gw.id);
@@ -579,11 +586,11 @@ export default function StoreSettingsPage() {
           ...g,
           status: g.id === gw.id ? 'connected' : (g.status === 'connected' ? 'not_connected' : g.status)
         })));
-        alert(`Updated active payment gateway to ${gw.name}.`);
+        flash('success', `Updated active payment gateway to ${gw.name}.`);
       }
     } catch (err) {
       console.error('Error activating gateway:', err);
-      alert('Failed to activate gateway.');
+      flash('error', 'Failed to activate gateway.');
     } finally {
       setLoading(false);
     }
@@ -683,7 +690,7 @@ export default function StoreSettingsPage() {
 
   const handleRunConnectionTest = async () => {
     if (!activeConnectedGw || !activeConnectedGw.keyId) {
-      return alert("Connect a payment gateway before running a connection test.");
+      return flash('error', 'Connect a payment gateway before running a connection test.');
     }
 
     setTestingConnection(true);
@@ -694,10 +701,10 @@ export default function StoreSettingsPage() {
         secretKey: activeConnectedGw.secretKey,
       });
 
-      alert(result.message);
+      flash('success', result.message);
     } catch (err: unknown) {
       console.error('Connection test error:', err);
-      alert(`Connection Test Error: ${extractErrorMessage(err)}`);
+      flash('error', `Connection Test Error: ${extractErrorMessage(err)}`);
     } finally {
       setTestingConnection(false);
     }
@@ -714,6 +721,20 @@ export default function StoreSettingsPage() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto text-xs font-sans text-[#303030]">
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-5 left-1/2 -translate-x-1/2 z-[120] max-w-[90vw] px-4 py-3 rounded-xl text-xs sm:text-[13px] font-semibold shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-3 duration-200 ${
+            toast.type === 'error'
+              ? 'bg-[#8e0b21] text-white'
+              : 'bg-[#006B50] text-white'
+          }`}
+        >
+          {toast.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+          <span>{toast.text}</span>
+        </div>
+      )}
 
       {/* HORIZONTAL SETTINGS TAB NAVIGATION */}
       <div className="bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm flex flex-wrap gap-1">

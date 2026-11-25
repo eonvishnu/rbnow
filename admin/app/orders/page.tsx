@@ -94,7 +94,7 @@ const paymentStatusValue = (s?: string | null) =>
 const paymentStatusLabel = (s?: string | null) => {
   const v = paymentStatusValue(s);
 
-  if (['captured', 'success', 'paid'].includes(v)) return 'Paid / Captured';
+  if (['captured', 'success', 'paid'].includes(v)) return 'Paid';
   if (['pending', 'authorized', 'created'].includes(v)) return 'Pending';
   if (v === 'failed') return 'Failed';
   if (v === 'refunded') return 'Refunded';
@@ -105,21 +105,7 @@ const paymentStatusLabel = (s?: string | null) => {
 };
 
 const paymentStatusTone = (s?: string | null) => {
-  const v = paymentStatusValue(s);
-
-  if (['captured', 'success', 'paid'].includes(v)) {
-    return 'bg-[#cdfed4] text-[#014b40]';
-  }
-
-  if (['pending', 'authorized', 'created'].includes(v)) {
-    return 'bg-[#fff0d6] text-[#795000]';
-  }
-
-  if (v === 'refunded') return 'bg-[#e7e9ff] text-[#373b83]';
-
-  if (v === 'unverified') return 'bg-[#eeeeee] text-[#555555]';
-
-  return 'bg-[#fed1d7] text-[#8e0b21]';
+  return 'bg-[#f3f4f6] text-[#374151]';
 };
 
 const FULFILL = [
@@ -176,7 +162,8 @@ const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(Number(n) || 0);
 
 const fmtDate = (d: any) =>
@@ -803,6 +790,7 @@ export default function AdminOrders() {
     return `
       <section class="page">
         <header class="header">
+          <img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(o.id)}" alt="Order QR" />
           <div class="brand">ROYAL BENGAL</div>
           <div class="subtitle">Fresh from Bengal. Delivered with care.</div>
           <div class="invoice-title">ORDER #${esc(o.orderId)}</div>
@@ -917,10 +905,22 @@ export default function AdminOrders() {
               break-after: page;
             }
             .header {
+              position: relative;
               text-align: center;
               border-bottom: 2px solid #006b50;
               padding-bottom: 16px;
               margin-bottom: 20px;
+            }
+            .qr-code {
+              position: absolute;
+              top: 0;
+              right: 0;
+              width: 58px;
+              height: 58px;
+              border-radius: 6px;
+              border: 1px solid #e3eae6;
+              padding: 2px;
+              background: #fff;
             }
             .brand {
               font-family: Georgia, serif;
@@ -1898,26 +1898,26 @@ export default function AdminOrders() {
 
           {/* DESKTOP TABLE */}
           <div className="hidden md:block overflow-x-auto mt-3">
-            <table className="w-full text-left text-[13px]">
+            <table className="w-full text-left text-[12.5px] tabular-nums">
               <thead>
-                <tr className="bg-[#f7faf8] text-[#64736c] border-y border-gray-200/80">
-                  <th className="w-10 pl-4 py-3">
+                <tr className="bg-[#f7faf8] text-[#64736c] border-y border-gray-200/80 font-medium">
+                  <th className="w-10 pl-4 py-1.5">
                     <Check3
                       checked={allShownSelected}
                       onChange={toggleAll}
                       label="Select all visible orders"
                     />
                   </th>
-                  <th className="font-semibold px-3 py-3">Order</th>
-                  <th className="font-semibold px-3 py-3">Date</th>
+                  <th className="px-3 py-1.5 font-semibold">Order</th>
+                  <th className="px-3 py-1.5 font-semibold">Date</th>
+                  <th className="px-3 py-1.5 font-semibold">Customer</th>
+                  <th className="px-3 py-1.5 font-semibold">Payment</th>
+                  <th className="px-3 py-1.5 font-semibold">Status</th>
+                  <th className="px-3 py-1.5 font-semibold">Items</th>
                   {fulfillmentReady && (
-                    <th className="font-semibold px-3 py-3">Delivery</th>
+                    <th className="px-3 py-1.5 font-semibold">Delivery</th>
                   )}
-                  <th className="font-semibold px-3 py-3">Customer</th>
-                  <th className="font-semibold px-3 py-3">Payment</th>
-                  <th className="font-semibold px-3 py-3">Status</th>
-                  <th className="font-semibold px-3 py-3">Items</th>
-                  <th className="font-semibold pl-3 pr-4 py-3 text-right">
+                  <th className="pl-3 pr-4 py-1.5 text-right font-semibold">
                     Total
                   </th>
                 </tr>
@@ -1976,7 +1976,7 @@ export default function AdminOrders() {
                       }`}
                     >
                       <td
-                        className="pl-4 py-3"
+                        className="pl-4 py-1.5"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Check3
@@ -1986,44 +1986,31 @@ export default function AdminOrders() {
                         />
                       </td>
 
-                      <td className="px-3 py-3 font-semibold text-[#17211d]">
+                      <td className="px-3 py-1.5 font-semibold text-[#17211d]">
                         #{o.orderId}
                       </td>
 
-                      <td className="px-3 py-3 text-[#64736c] whitespace-nowrap">
+                      <td className="px-3 py-1.5 text-[#64736c] whitespace-nowrap">
                         {fmtDate(o.createdAt)}
                       </td>
 
-                      {fulfillmentReady && (
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          <div className="text-[#303030]">
-                            {fmtDay(orderDelivery(o))}
-                          </div>
-                          <div className="flex gap-1 mt-1 flex-wrap">
-                            {renderFlags(o)}
-                          </div>
-                        </td>
-                      )}
-
-                      <td className="px-3 py-3">
-                        <div className="text-[#17211d] font-semibold">
+                      <td className="px-3 py-1.5">
+                        <div className="text-[#17211d] font-semibold truncate">
                           {customerName(o)}
-                        </div>
-                        <div className="text-xs text-[#75817b] mt-0.5">
-                          {o.shipping?.phone || o.userPhone || '—'}
                         </div>
                       </td>
 
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-1.5">
                         <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${paymentStatusTone(o.paymentStatus)}`}
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${paymentStatusTone(o.paymentStatus)}`}
                         >
+                          <span className="w-1.5 h-1.5 rounded-full bg-current opacity-75" />
                           {paymentStatusLabel(o.paymentStatus)}
                         </span>
                       </td>
 
                       <td
-                        className="px-3 py-3"
+                        className="px-3 py-1.5"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <StatusSelect
@@ -2033,12 +2020,23 @@ export default function AdminOrders() {
                         />
                       </td>
 
-                      <td className="px-3 py-3 text-[#64736c] tabular-nums">
+                      <td className="px-3 py-1.5 text-[#64736c] tabular-nums">
                         {o.items.length}{' '}
                         {o.items.length === 1 ? 'item' : 'items'}
                       </td>
 
-                      <td className="pl-3 pr-4 py-3 text-right font-semibold text-[#17211d] tabular-nums">
+                      {fulfillmentReady && (
+                        <td className="px-3 py-1.5 whitespace-nowrap">
+                          <div className="text-[#303030]">
+                            {fmtDay(orderDelivery(o))}
+                          </div>
+                          <div className="flex gap-1 mt-0.5 flex-wrap">
+                            {renderFlags(o)}
+                          </div>
+                        </td>
+                      )}
+
+                      <td className="pl-3 pr-4 py-1.5 text-right font-semibold text-[#17211d] tabular-nums">
                         {formatCurrency(o.total)}
                       </td>
                     </tr>
@@ -2763,10 +2761,10 @@ function StatusSelect({
         onChange={(e) => onChange(e.target.value)}
         onClick={(e) => e.stopPropagation()}
         aria-label={`Status for order ${order.orderId}`}
-        className={`appearance-none cursor-pointer outline-none font-semibold disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-[#006B50] ${
+        className={`appearance-none cursor-pointer outline-none font-semibold disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-[#006B50] transition-colors ${
           block
-            ? 'w-full min-h-11 sm:min-h-10 pl-3 pr-9 rounded-lg text-sm shadow-[0_0_0_1px_rgba(0,107,80,0.2)] bg-white text-[#303030]'
-            : `min-h-9 pl-2.5 pr-7 rounded-full text-[11px] ${
+            ? 'w-full min-h-11 sm:min-h-10 px-3 rounded-lg text-sm shadow-[0_0_0_1px_rgba(0,107,80,0.2)] bg-white text-[#303030]'
+            : `px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                 STATUS_TONE[order.status] || 'bg-[#eeeeee] text-[#444444]'
               }`
         }`}
@@ -2784,20 +2782,10 @@ function StatusSelect({
         ))}
       </select>
 
-      {busy ? (
-        <Loader2
-          size={13}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin pointer-events-none"
-        />
-      ) : (
-        <ChevronDown
-          size={block ? 15 : 12}
-          className={`absolute top-1/2 -translate-y-1/2 pointer-events-none ${
-            block
-              ? 'right-3 text-[#64736c]'
-              : 'right-2.5 opacity-70'
-          }`}
-        />
+      {busy && (
+        <span className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none">
+          <Loader2 size={12} className="animate-spin text-current" />
+        </span>
       )}
     </div>
   );

@@ -9,6 +9,7 @@ import {
 export async function listDashboardOrders() {
   const { data, error } = await supabase.from('orders')
     .select('id, order_number, total, status, order_source, created_at, customer_name, customer_phone, delivery_address, order_items(quantity)')
+    .neq('status', 'pending_payment')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return dashboardOrderRowsSchema.parse(data);

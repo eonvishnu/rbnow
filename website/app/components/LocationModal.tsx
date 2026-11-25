@@ -24,30 +24,79 @@ export const LocationModal = () => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
 
-  // Real-time Autocomplete Location Search
+  // Load Google Maps API Script dynamically with places library
   useEffect(() => {
-    if (!searchQuery || searchQuery.trim().length < 3) {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyDwr-cKcQ4nQFEVWwk7UI3cdRbEdLIcc4g';
+    if (!apiKey) return;
+
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.places) {
+      setGoogleMapsLoaded(true);
+      return;
+    }
+
+    (window as any).gmapsModalCallback = () => {
+      setGoogleMapsLoaded(true);
+    };
+
+    const scriptId = 'google-maps-js-modal-script';
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=gmapsModalCallback`;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  // Real-time Places Autocomplete Service (Zepto style)
+  useEffect(() => {
+    if (!googleMapsLoaded || !searchQuery || searchQuery.trim().length < 3) {
       setSearchResults([]);
       return;
     }
 
-    const timer = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyDwr-cKcQ4nQFEVWwk7UI3cdRbEdLIcc4g';
-        const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchQuery)}&components=country:IN&key=${apiKey}`);
-        const data = await res.json();
-        setSearchResults(data.results || []);
-      } catch (err) {
-        console.error("Location search error:", err);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 350);
+    let active = true;
+    setIsSearching(true);
 
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+    try {
+      const google = (window as any).google;
+      if (!google?.maps?.places) {
+        setIsSearching(false);
+        return;
+      }
+
+      const service = new google.maps.places.AutocompleteService();
+      service.getPlacePredictions(
+        {
+          input: searchQuery,
+          componentRestrictions: { country: 'in' },
+          locationBias: {
+            center: { lat: location.lat || 17.3850, lng: location.lng || 78.4867 },
+            radius: 50000,
+          },
+        },
+        (predictions: any, status: any) => {
+          if (!active) return;
+          setIsSearching(false);
+          if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
+            setSearchResults(predictions);
+          } else {
+            setSearchResults([]);
+          }
+        }
+      );
+    } catch (err) {
+      if (active) setIsSearching(false);
+      console.error('AutocompleteService error:', err);
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [searchQuery, googleMapsLoaded, location.lat, location.lng]);
 
   if (!isModalOpen) return null;
 
@@ -58,41 +107,48 @@ export const LocationModal = () => {
     }
   };
 
-  const handleSelectSearchResult = (item: any) => {
-    if (item.geometry && item.geometry.location) {
-      const lat = item.geometry.location.lat;
-      const lng = item.geometry.location.lng;
-      const fullAddress = item.formatted_address;
+  const handleSelectPrediction = (prediction: any) => {
+    const google = (window as any).google;
+    if (!google?.maps) return;
 
-      let area = '';
-      let city = '';
-      let pincode = '';
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ placeId: prediction.place_id }, (results: any, status: any) => {
+      if (status === 'OK' && results?.[0]) {
+        const item = results[0];
+        const lat = item.geometry.location.lat();
+        const lng = item.geometry.location.lng();
+        const fullAddress = item.formatted_address;
 
-      item.address_components?.forEach((comp: any) => {
-        if (comp.types.includes('sublocality') || comp.types.includes('neighborhood') || comp.types.includes('route')) {
-          if (!area) area = comp.long_name;
-        }
-        if (comp.types.includes('locality')) {
-          city = comp.long_name;
-        }
-        if (comp.types.includes('postal_code')) {
-          pincode = comp.long_name;
-        }
-      });
+        let area = '';
+        let city = '';
+        let pincode = '';
 
-      const newLoc: LocationData = {
-        label: area || 'Selected Location',
-        address: fullAddress,
-        area: area || 'Selected Area',
-        city: city || 'Hyderabad',
-        pincode: pincode || '500081',
-        lat,
-        lng,
-      };
+        item.address_components?.forEach((comp: any) => {
+          if (comp.types.includes('sublocality') || comp.types.includes('neighborhood') || comp.types.includes('route')) {
+            if (!area) area = comp.long_name;
+          }
+          if (comp.types.includes('locality')) {
+            city = comp.long_name;
+          }
+          if (comp.types.includes('postal_code')) {
+            pincode = comp.long_name;
+          }
+        });
 
-      setLocation(newLoc);
-      setIsModalOpen(false);
-    }
+        const newLoc: LocationData = {
+          label: area || prediction.structured_formatting?.main_text || 'Selected Location',
+          address: fullAddress,
+          area: area || prediction.structured_formatting?.secondary_text || 'Selected Area',
+          city: city || 'Hyderabad',
+          pincode: pincode || '500081',
+          lat,
+          lng,
+        };
+
+        setLocation(newLoc);
+        setIsModalOpen(false);
+      }
+    });
   };
 
   const handleSaveFromMap = async (addressData: {
@@ -229,7 +285,7 @@ export const LocationModal = () => {
             <Search size={16} className="absolute left-4 top-4.5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search colony, street, landmark..."
+              placeholder="Search apartment, colony, landmark (e.g. Mithila nivasti)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 focus:border-[#ffc400] focus:bg-white rounded-2xl py-3 pl-10 pr-10 text-xs font-bold outline-none transition-all placeholder:font-medium placeholder:text-gray-400"
@@ -243,21 +299,29 @@ export const LocationModal = () => {
             ) : null}
           </div>
 
-          {/* Search Results */}
+          {/* Search Results matching Zepto reference screenshot */}
           {searchResults.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Search Results</h3>
-              <div className="space-y-1.5 border border-amber-200/80 rounded-2xl overflow-hidden divide-y divide-gray-100">
-                {searchResults.map((item, i) => (
-                  <div
-                    key={i}
-                    onClick={() => handleSelectSearchResult(item)}
-                    className="p-3.5 hover:bg-emerald-50 cursor-pointer flex items-center gap-3 transition-colors text-xs"
-                  >
-                    <MapPin size={16} className="text-[#ffc400] shrink-0 fill-[#ffc400]/40" />
-                    <p className="font-bold text-gray-800 truncate">{item.formatted_address}</p>
-                  </div>
-                ))}
+              <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm divide-y divide-dashed divide-gray-200">
+                {searchResults.map((item, i) => {
+                  const mainTitle = item.structured_formatting?.main_text || item.description?.split(',')[0] || 'Location';
+                  const subTitle = item.structured_formatting?.secondary_text || item.description || '';
+
+                  return (
+                    <div
+                      key={i}
+                      onClick={() => handleSelectPrediction(item)}
+                      className="p-3.5 hover:bg-emerald-50/60 cursor-pointer flex items-start gap-3 transition-colors text-xs"
+                    >
+                      <MapPin size={18} className="text-gray-700 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="font-extrabold text-gray-900 text-xs sm:text-sm truncate">{mainTitle}</p>
+                        <p className="text-[11px] text-gray-500 font-medium line-clamp-1 mt-0.5">{subTitle}</p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

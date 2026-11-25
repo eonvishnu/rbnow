@@ -16,14 +16,15 @@ export async function upsertStoreSettingsRow(input: {
   latitude: number;
   longitude: number;
 }) {
-  const { error } = await supabase.from('store_settings').upsert({
-    id: 'default',
+  const { error } = await supabase.from('store_settings').update({
     is_store_open: input.isStoreOpen,
     store_name: input.storeName,
     store_address: input.storeAddress,
     store_latitude: input.latitude,
     store_longitude: input.longitude,
     updated_at: new Date().toISOString(),
-  });
-  if (error) throw error;
+  }).eq('id', 'default');
+  if (error) {
+    throw new Error(error.message || error.details || JSON.stringify(error));
+  }
 }

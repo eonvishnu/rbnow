@@ -177,7 +177,23 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.removeItem('royal_bengal_cart');
   };
 
-  // 6. Global Totals
+  // 6. Remove Purchased Items (after successful checkout)
+  const removePurchasedItems = (items: Array<{ id: string; qty: number }>) => {
+    setCart((prev) => {
+      let updatedCart = [...prev];
+      items.forEach((purchased) => {
+        for (let i = 0; i < purchased.qty; i++) {
+          const index = updatedCart.findIndex(item => item.id === purchased.id);
+          if (index > -1) {
+            updatedCart.splice(index, 1);
+          }
+        }
+      });
+      return updatedCart;
+    });
+  };
+
+  // 7. Global Totals
   const totalAmount = cart.reduce((sum, item) => sum + (item.price || 0), 0);
 
   return (
@@ -186,7 +202,8 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
       activeCartId,
       addToCart,
       removeFromCart, 
-      clearCart, 
+      clearCart,
+      removePurchasedItems,
       totalAmount 
     }}>
       {children}
