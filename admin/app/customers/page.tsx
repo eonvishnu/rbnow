@@ -215,16 +215,13 @@ export default function CustomersPage() {
                 filtered.map((c) => (
                   <tr key={c.id} onClick={() => setSelected(c)} className="hover:bg-[#fafafa] cursor-pointer transition-colors">
                     <td className="pl-4 sm:pl-5 pr-3 py-2">
-                      <div className="flex items-center gap-3">
-                        <Avatar name={c.displayName} />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-semibold text-[#1a1a1a] truncate">{c.displayName}</span>
-                            {c.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
-                            {c.isNew && <Pill tone="bg-[#a4e8f2] text-[#00424d]">New</Pill>}
-                            {c.isAtRisk && <Pill tone="bg-[#fed1d7] text-[#8e0b21]">At risk</Pill>}
-                            {isStaff(c.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(c.role)}</Pill>}
-                          </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-[#1a1a1a] truncate">{c.displayName}</span>
+                          {c.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
+                          {c.isNew && <Pill tone="bg-[#a4e8f2] text-[#00424d]">New</Pill>}
+                          {c.isAtRisk && <Pill tone="bg-[#fed1d7] text-[#8e0b21]">At risk</Pill>}
+                          {isStaff(c.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(c.role)}</Pill>}
                         </div>
                       </div>
                     </td>
@@ -274,16 +271,13 @@ export default function CustomersPage() {
 
             <div className="flex-1 overflow-y-auto p-5 space-y-4 text-[13px]">
               <Card className="p-4">
-                <div className="flex items-center gap-3">
-                  <Avatar name={selected.displayName} size="lg" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <h3 className="text-base font-semibold text-[#1a1a1a]">{selected.displayName}</h3>
-                      {selected.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
-                      {isStaff(selected.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(selected.role)}</Pill>}
-                    </div>
-                    <p className="text-xs text-[#616161]">Customer since {fmtDate(selected.createdAt)}</p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h3 className="text-base font-semibold text-[#1a1a1a]">{selected.displayName}</h3>
+                    {selected.isVip && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">VIP</Pill>}
+                    {isStaff(selected.role) && <Pill tone="bg-[#e3e3e3] text-[#303030]">{pretty(selected.role)}</Pill>}
                   </div>
+                  <p className="text-xs text-[#616161] mt-0.5">Customer since {fmtDate(selected.createdAt)}</p>
                 </div>
                 <div className="mt-4 space-y-2 text-[#303030]">
                   <p className="flex items-center gap-2"><Phone size={14} className="text-[#8a8a8a]" />{selected.phoneNumber || 'No phone on file'}</p>
