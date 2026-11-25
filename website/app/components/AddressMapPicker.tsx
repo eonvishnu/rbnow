@@ -139,34 +139,40 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   useEffect(() => {
     if (!googleMapsLoaded || typeof window === 'undefined' || !mapContainerRef.current || pickerStep !== 'map') return;
 
+    let mapInstance: any = null;
+
     try {
       const google = (window as any).google;
       if (!google?.maps?.Map) return;
 
-      if (!googleMapRef.current) {
-        const map = new google.maps.Map(mapContainerRef.current, {
-          center: { lat, lng },
-          zoom: 17,
-          disableDefaultUI: true,
-          zoomControl: false,
-          gestureHandling: 'greedy',
-          keyboardShortcuts: false,
-        });
+      mapInstance = new google.maps.Map(mapContainerRef.current, {
+        center: { lat, lng },
+        zoom: 17,
+        disableDefaultUI: true,
+        zoomControl: false,
+        gestureHandling: 'greedy',
+        keyboardShortcuts: false,
+      });
 
-        map.addListener('idle', () => {
-          const center = map.getCenter();
-          if (center) {
-            setLat(center.lat());
-            setLng(center.lng());
-            setDetectedAddress(prev => ({ ...prev, isVerified: false }));
-            setLocationError('');
-          }
-        });
+      mapInstance.addListener('idle', () => {
+        const center = mapInstance.getCenter();
+        if (center) {
+          setLat(center.lat());
+          setLng(center.lng());
+          setDetectedAddress(prev => ({ ...prev, isVerified: false }));
+          setLocationError('');
+        }
+      });
 
-        googleMapRef.current = map;
-      } else {
-        googleMapRef.current.setCenter({ lat, lng });
-      }
+      googleMapRef.current = mapInstance;
+
+      // Trigger resize after mount to ensure tiles render properly when returning from Step 2 ("Change pin")
+      setTimeout(() => {
+        if (mapInstance && google?.maps?.event) {
+          google.maps.event.trigger(mapInstance, 'resize');
+          mapInstance.setCenter({ lat, lng });
+        }
+      }, 50);
     } catch (err) {
       console.error('Google Map init error:', err);
     }

@@ -17,7 +17,7 @@ export default function UpsellManagerPage() {
     try {
       const [upsellsRes, prodsRes] = await Promise.all([
         supabase.from('cart_upsells').select('id, title, display_order, is_active, products(name, image_url), product_variants(id, unit, price)').order('display_order'),
-        supabase.from('products').select('id, name, product_variants(id, unit, price)').order('name'),
+        supabase.from('products').select('id, name, product_variants(id, unit, price)').eq('is_available', true).order('name'),
       ]);
 
       if (upsellsRes.data) setUpsells(upsellsRes.data);

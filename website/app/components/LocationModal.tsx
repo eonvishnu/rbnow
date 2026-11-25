@@ -44,7 +44,7 @@ export const LocationModal = () => {
     if (!document.getElementById(scriptId)) {
       const script = document.createElement('script');
       script.id = scriptId;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=gmapsModalCallback`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async&callback=gmapsModalCallback`;
       script.async = true;
       script.defer = true;
       document.head.appendChild(script);

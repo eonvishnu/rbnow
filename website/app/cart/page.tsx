@@ -512,6 +512,14 @@ export default function CartPage() {
       return;
     }
 
+    if (!location.houseNumber || location.houseNumber.trim() === '') {
+      setCheckoutError('Please add your House / Flat / Block No. to your delivery address before placing your order.');
+      setIsModalOpen(true);
+      checkoutInProgressRef.current = false;
+      setCheckoutState('cart_idle');
+      return;
+    }
+
     checkoutInProgressRef.current = true;
     setCheckoutState('creating_order');
     const checkoutHistoryKey = `royal_bengal_checkout_history_${user.id}`;
@@ -798,14 +806,6 @@ export default function CartPage() {
 
       <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
 
-        {/* Visible Checkout Error Banner */}
-        {checkoutError && (
-          <div className="p-4 bg-[#FFF2F2] border border-[#FFCDD2] rounded-2xl flex items-center gap-3 text-xs font-bold text-[#D32F2F] shadow-sm">
-            <AlertCircle size={20} className="shrink-0" />
-            <span>{checkoutError}</span>
-          </div>
-        )}
-
         {/* Dedicated Payment Result Section (Modal Dismissal / Failure) */}
         {(checkoutState === 'payment_abandoned' || checkoutState === 'payment_failed') && (
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E3EAE6] space-y-4 shadow-sm">
@@ -1067,6 +1067,14 @@ export default function CartPage() {
             </div>
           )}
         </div>
+
+        {/* Visible Checkout Error Banner */}
+        {checkoutError && (
+          <div className="p-4 bg-[#FFF2F2] border border-[#FFCDD2] rounded-2xl flex items-center gap-3 text-xs font-bold text-[#D32F2F] shadow-sm animate-in fade-in">
+            <AlertCircle size={20} className="shrink-0" />
+            <span>{checkoutError}</span>
+          </div>
+        )}
 
         {/* COUPON & BILLING SUMMARY */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
