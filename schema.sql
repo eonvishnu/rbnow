@@ -1857,6 +1857,57 @@ END;
 $function$;
 
 -- set_updated_at
+CREATE OR REPLACE FUNCTION public.adjust_customer_wallet(
+  p_wallet_id UUID,
+  p_user_id UUID,
+  p_amount NUMERIC(12,2),
+  p_type TEXT,
+  p_description TEXT,
+  p_performed_by UUID
+)
+RETURNS NUMERIC(12,2)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_current_balance NUMERIC(12,2);
+  v_new_balance NUMERIC(12,2);
+BEGIN
+  -- Lock wallet row for update to prevent concurrent race conditions
+  SELECT balance INTO v_current_balance
+  FROM public.customer_wallets
+  WHERE id = p_wallet_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Wallet not found';
+  END IF;
+
+  IF p_type = 'credit' THEN
+    v_new_balance := v_current_balance + p_amount;
+  ELSIF p_type = 'debit' THEN
+    IF v_current_balance < p_amount THEN
+      RAISE EXCEPTION 'Insufficient wallet balance for debit';
+    END IF;
+    v_new_balance := v_current_balance - p_amount;
+  ELSE
+    RAISE EXCEPTION 'Invalid transaction type: %', p_type;
+  END IF;
+
+  -- Update balance
+  UPDATE public.customer_wallets
+  SET balance = v_new_balance, updated_at = now()
+  WHERE id = p_wallet_id;
+
+  -- Insert transaction log with performed_by tracking
+  INSERT INTO public.wallet_transactions (wallet_id, user_id, amount, type, description, performed_by)
+  VALUES (p_wallet_id, p_user_id, p_amount, p_type, p_description, p_performed_by);
+
+  RETURN v_new_balance;
+END;
+$$;
+
+-- set_updated_at
 CREATE OR REPLACE FUNCTION public.set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
