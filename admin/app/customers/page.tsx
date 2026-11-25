@@ -139,7 +139,8 @@ export default function CustomersPage() {
     name: '',
     phone: '',
     house_no: '',
-    address: '',
+    area: '',
+    landmark: '',
     city: 'Hyderabad',
     pincode: '',
     address_type: 'home',
@@ -198,7 +199,8 @@ export default function CustomersPage() {
         name: addressForm.name.trim(),
         phone: addressForm.phone.trim(),
         house_no: addressForm.house_no.trim(),
-        address: addressForm.address.trim(),
+        area: addressForm.area.trim(),
+        landmark: addressForm.landmark.trim(),
         city: addressForm.city.trim(),
         pincode: addressForm.pincode.trim(),
         address_type: addressForm.address_type,
@@ -848,7 +850,8 @@ export default function CustomersPage() {
                               name: selected.displayName || '',
                               phone: selected.phoneNumber || '',
                               house_no: '',
-                              address: '',
+                              area: '',
+                              landmark: '',
                               city: 'Hyderabad',
                               pincode: '',
                               address_type: 'home',
@@ -880,7 +883,8 @@ export default function CustomersPage() {
                                         name: addr.name || '',
                                         phone: addr.phone || '',
                                         house_no: addr.house_no || '',
-                                        address: addr.address || addr.area || '',
+                                        area: addr.area || '',
+                                        landmark: addr.landmark || '',
                                         city: addr.city || 'Hyderabad',
                                         pincode: addr.pincode || '',
                                         address_type: addr.address_type || 'home',
@@ -976,59 +980,59 @@ export default function CustomersPage() {
 
       {/* Modal for adding/editing saved address */}
       {showAddressModal && selected && (
-        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white text-gray-900 w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border border-gray-200 space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-4">
-              <h3 className="text-base font-black uppercase tracking-tight text-gray-900 flex items-center gap-2">
-                <MapPin className="text-emerald-700" size={20} /> {editingAddress ? 'Edit Saved Address' : 'Add New Address'} — {selected.displayName}
+        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white text-[#303030] w-full max-w-md rounded-xl p-5 shadow-xl border border-gray-200 space-y-4 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-sm font-semibold text-[#1a1a1a] flex items-center gap-2">
+                <MapPin className="text-[#006B50]" size={16} /> {editingAddress ? 'Edit address' : 'Add address'} — {selected.displayName}
               </h3>
-              <button onClick={() => setShowAddressModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer">✕</button>
+              <button onClick={() => setShowAddressModal(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg cursor-pointer"><X size={16} /></button>
             </div>
 
-            <form onSubmit={handleSaveAddress} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <form onSubmit={handleSaveAddress} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Recipient Name *</label>
+                  <label className="font-medium text-[#616161] block mb-1">Recipient Name *</label>
                   <input
                     required
                     type="text"
                     placeholder="e.g. Rahul Sharma"
                     value={addressForm.name}
                     onChange={e => setAddressForm({ ...addressForm, name: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                    className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Phone Number *</label>
+                  <label className="font-medium text-[#616161] block mb-1">Phone *</label>
                   <input
                     required
                     type="tel"
                     placeholder="9876543210"
                     value={addressForm.phone}
                     onChange={e => setAddressForm({ ...addressForm, phone: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                    className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">House / Flat No. *</label>
+                  <label className="font-medium text-[#616161] block mb-1">House / Flat No. *</label>
                   <input
                     required
                     type="text"
-                    placeholder="e.g. Flat 402, Block B"
+                    placeholder="Flat 402, Block B"
                     value={addressForm.house_no}
                     onChange={e => setAddressForm({ ...addressForm, house_no: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                    className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Address Type</label>
+                  <label className="font-medium text-[#616161] block mb-1">Type</label>
                   <select
                     value={addressForm.address_type}
                     onChange={e => setAddressForm({ ...addressForm, address_type: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white cursor-pointer uppercase"
+                    className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none cursor-pointer capitalize"
                   >
                     <option value="home">Home</option>
                     <option value="work">Work</option>
@@ -1038,30 +1042,41 @@ export default function CustomersPage() {
               </div>
 
               <div>
-                <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Street Address / Area *</label>
+                <label className="font-medium text-[#616161] block mb-1">Street / Area *</label>
                 <input
                   required
                   type="text"
-                  placeholder="e.g. Banjara Hills, Road No. 12"
-                  value={addressForm.address}
-                  onChange={e => setAddressForm({ ...addressForm, address: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                  placeholder="Banjara Hills, Road No. 12"
+                  value={addressForm.area}
+                  onChange={e => setAddressForm({ ...addressForm, area: e.target.value })}
+                  className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <label className="font-medium text-[#616161] block mb-1">Landmark (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Near Apollo Hospital"
+                  value={addressForm.landmark}
+                  onChange={e => setAddressForm({ ...addressForm, landmark: e.target.value })}
+                  className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">City *</label>
+                  <label className="font-medium text-[#616161] block mb-1">City *</label>
                   <input
                     required
                     type="text"
                     value={addressForm.city}
                     onChange={e => setAddressForm({ ...addressForm, city: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                    className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">6-Digit Pincode *</label>
+                  <label className="font-medium text-[#616161] block mb-1">Pincode *</label>
                   <input
                     required
                     maxLength={6}
@@ -1069,49 +1084,49 @@ export default function CustomersPage() {
                     placeholder="500034"
                     value={addressForm.pincode}
                     onChange={e => setAddressForm({ ...addressForm, pincode: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700 focus:bg-white"
+                    className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Latitude</label>
+                  <label className="font-medium text-[#616161] block mb-1">Latitude</label>
                   <input
                     type="number"
                     step="any"
                     value={addressForm.latitude}
                     onChange={e => setAddressForm({ ...addressForm, latitude: Number(e.target.value) })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none"
+                    className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-600 block mb-1">Longitude</label>
+                  <label className="font-medium text-[#616161] block mb-1">Longitude</label>
                   <input
                     type="number"
                     step="any"
                     value={addressForm.longitude}
                     onChange={e => setAddressForm({ ...addressForm, longitude: Number(e.target.value) })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none"
+                    className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddressModal(false)}
-                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-[#303030] font-medium py-2 rounded-lg text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={addressSubmitting}
-                  className="flex-1 bg-emerald-800 hover:bg-emerald-900 text-amber-300 font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="flex-1 bg-[#303030] hover:bg-[#1a1a1a] text-white font-medium py-2 rounded-lg text-xs transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  {addressSubmitting ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
-                  <span>{editingAddress ? 'Update Address' : 'Save Address'}</span>
+                  {addressSubmitting ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}
+                  <span>{editingAddress ? 'Update address' : 'Save address'}</span>
                 </button>
               </div>
             </form>
