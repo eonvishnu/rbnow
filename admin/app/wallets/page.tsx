@@ -87,33 +87,19 @@ export default function AdminWalletsPage() {
     setMsg(null);
 
     try {
-      const newBal = txType === 'credit'
-        ? Number(selectedWallet.balance) + amt
-        : Number(selectedWallet.balance) - amt;
-
-      const { error: updateErr } = await supabase
-        .from('customer_wallets')
-        .update({ balance: newBal, updated_at: new Date().toISOString() })
-        .eq('id', selectedWallet.id);
-
-      if (updateErr) throw updateErr;
-
       const { data: { user: adminUser } } = await supabase.auth.getUser();
-
       const description = creditReason.trim() || (txType === 'credit' ? 'Admin Credited Store Credit' : 'Admin Debited Store Credit');
 
-      const { error: txErr } = await supabase
-        .from('wallet_transactions')
-        .insert({
-          wallet_id: selectedWallet.id,
-          user_id: selectedWallet.user_id,
-          amount: amt,
-          type: txType,
-          description,
-          performed_by: adminUser?.id || null,
-        });
+      const { data: newBalance, error: rpcErr } = await supabase.rpc('adjust_customer_wallet', {
+        p_wallet_id: selectedWallet.id,
+        p_user_id: selectedWallet.user_id,
+        p_amount: amt,
+        p_type: txType,
+        p_description: description,
+        p_performed_by: adminUser?.id || null,
+      });
 
-      if (txErr) throw txErr;
+      if (rpcErr) throw rpcErr;
 
       setMsg({
         success: true,
