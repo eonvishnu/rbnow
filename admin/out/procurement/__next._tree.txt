@@ -1,4 +1,4 @@
-:HL["/_next/static/chunks/01medzocu68y_.css","style"]
+:HL["/_next/static/chunks/0xmw8_df6hkkq.css","style"]
 2:[["children",{"s":"__PAGE__","h":160}]]
 1:[["children",{"s":"procurement","h":96,"c":"$Q2"}]]
-0:{"b":"tIC5TLkQVaEisgMUpOhav","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"ezJLYrT8BWgej9bP40IOQ","t":{"t":{"s":"","h":80,"c":"$Q1"}}}

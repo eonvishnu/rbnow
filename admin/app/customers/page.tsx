@@ -49,7 +49,7 @@ export default function CustomersPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   // Wallet expansion drawer state & actions
-  const [drawerTab, setDrawerTab] = useState<'overview' | 'wallet'>('overview');
+  const [drawerTab, setDrawerTab] = useState<'overview' | 'wallet' | 'addresses' | 'orders'>('overview');
   const [copiedId, setCopiedId] = useState(false);
   const [txType, setTxType] = useState<'credit' | 'debit'>('credit');
   const [walletAmount, setWalletAmount] = useState('');
@@ -384,21 +384,21 @@ export default function CustomersPage() {
         )}
       </Card>
 
-      {/* DETAIL DRAWER (Expandable Side-by-Side Panel for Wallet Management) */}
+      {/* DETAIL DRAWER (Expandable Side-by-Side Panel) */}
       {selected && (
         <>
           <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => setSelected(null)} />
-          <aside className={`fixed inset-y-0 right-0 w-full ${drawerTab === 'wallet' ? 'max-w-4xl' : 'max-w-lg'} bg-[#f1f1f1] shadow-2xl z-[70] flex flex-col transition-all duration-300 ease-in-out`}>
+          <aside className={`fixed inset-y-0 right-0 w-full ${drawerTab !== 'overview' ? 'max-w-4xl' : 'max-w-lg'} bg-[#f1f1f1] shadow-2xl z-[70] flex flex-col transition-all duration-300 ease-in-out`}>
             <div className="h-14 px-5 bg-white border-b border-gray-200 flex items-center justify-between shrink-0">
               <h2 className="text-sm font-semibold text-[#1a1a1a]">
-                Customer details {drawerTab === 'wallet' && <span className="text-[#006B50] font-bold">— Wallet Management Active</span>}
+                Customer details {drawerTab !== 'overview' && <span className="text-[#006B50] font-bold">— {drawerTab === 'wallet' ? 'Wallet Management' : drawerTab === 'addresses' ? 'Saved Addresses' : 'Order History'} Active</span>}
               </h2>
               <button onClick={() => setSelected(null)} className="p-2 -mr-2 rounded-lg hover:bg-gray-100 cursor-pointer" aria-label="Close"><X size={18} /></button>
             </div>
 
-            <div className={`flex-1 overflow-hidden p-5 ${drawerTab === 'wallet' ? 'grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch' : 'overflow-y-auto space-y-4'} text-[13px] transition-all`}>
+            <div className={`flex-1 overflow-hidden p-5 ${drawerTab !== 'overview' ? 'grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch' : 'overflow-y-auto space-y-4'} text-[13px] transition-all`}>
               {/* Left Column: Customer Details (always visible) */}
-              <div className={`space-y-4 ${drawerTab === 'wallet' ? 'h-full overflow-y-auto pr-1' : ''}`}>
+              <div className={`space-y-4 ${drawerTab !== 'overview' ? 'h-full overflow-y-auto pr-1' : ''}`}>
                 <Card className="p-4">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -419,6 +419,7 @@ export default function CustomersPage() {
                   <MiniStat label="Avg. order" value={formatCurrency(selected.orderCount ? selected.totalSpent / selected.orderCount : 0)} />
                 </Card>
 
+                {/* Store Credit Summary Card */}
                 <Card className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Wallet size={16} className="text-[#006B50]" />
@@ -441,69 +442,48 @@ export default function CustomersPage() {
                   </button>
                 </Card>
 
-                <Card className="overflow-hidden">
-                  <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
-                    <MapPin size={15} className="text-[#616161]" />
-                    <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
+                {/* Saved Addresses Summary Card */}
+                <Card className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MapPin size={16} className="text-[#006B50]" />
+                    <div>
+                      <span className="font-semibold text-[#1a1a1a] block">Saved Addresses</span>
+                      <span className="text-xs font-bold text-gray-600">{customerAddresses.length} addresses on file</span>
+                    </div>
                   </div>
-                  <div className="p-4 space-y-3">
-                    {ordersLoading ? (
-                      <div className="h-4 bg-gray-100 rounded animate-pulse" />
-                    ) : customerAddresses.length === 0 ? (
-                      <p className="text-center text-[#616161]">No saved addresses found.</p>
-                    ) : (
-                      customerAddresses.map((addr: any) => (
-                        <div key={addr.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
-                            <span className="text-[10px] text-gray-400">{addr.pincode}</span>
-                          </div>
-                          <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
-                          {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <button
+                    onClick={() => setDrawerTab('addresses')}
+                    className="px-3 py-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    View addresses
+                  </button>
                 </Card>
 
-                <Card className="overflow-hidden">
-                  <div className="px-4 py-3 flex items-center gap-2">
-                    <ShoppingBag size={15} className="text-[#616161]" />
-                    <h3 className="text-sm font-semibold text-[#1a1a1a]">Order history</h3>
+                {/* Order History Summary Card */}
+                <Card className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShoppingBag size={16} className="text-[#006B50]" />
+                    <div>
+                      <span className="font-semibold text-[#1a1a1a] block">Order History</span>
+                      <span className="text-xs font-bold text-gray-600">{customerOrders.length} orders placed</span>
+                    </div>
                   </div>
-                  <div className="divide-y divide-gray-100 border-t border-gray-100">
-                    {ordersLoading ? (
-                      <div className="p-4"><div className="h-4 bg-gray-100 rounded animate-pulse" /></div>
-                    ) : customerOrders.length === 0 ? (
-                      <p className="p-6 text-center text-[#616161]">No orders placed yet.</p>
-                    ) : (
-                      customerOrders.map((o) => (
-                        <div key={o.id} className="p-4 space-y-1.5 text-xs">
-                          <div className="flex items-center justify-between font-bold">
-                            <span className="text-[#1a1a1a]">RB-{o.order_number || o.id.slice(0, 6).toUpperCase()}</span>
-                            <span className="text-emerald-900 font-black">{formatCurrency(Number(o.total || 0))}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-gray-500 text-[11px]">
-                            <span>{new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                            <span className="capitalize bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-bold">{o.status?.replace(/_/g, ' ')}</span>
-                          </div>
-                          {o.order_items && o.order_items.length > 0 && (
-                            <p className="text-[11px] text-gray-600 truncate">
-                              {o.order_items.map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')}
-                            </p>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <button
+                    onClick={() => setDrawerTab('orders')}
+                    className="px-3 py-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    View orders
+                  </button>
                 </Card>
               </div>
 
-              {/* Right Column: Wallet Management & Transactions (extends side-by-side when drawerTab === 'wallet') */}
-              {drawerTab === 'wallet' && (
+              {/* Right Column: Expanded Management Panel (Wallet, Addresses, or Orders) */}
+              {drawerTab !== 'overview' && (
                 <div className="space-y-4 h-full overflow-y-auto pr-1 animate-in fade-in duration-200">
                   <div className="flex items-center justify-between bg-white p-3 rounded-xl shadow-2xs">
-                    <span className="font-semibold text-[#1a1a1a]">Wallet Management</span>
+                    <span className="font-semibold text-[#1a1a1a] capitalize">
+                      {drawerTab === 'wallet' ? 'Wallet Management' : drawerTab === 'addresses' ? 'Saved Addresses' : 'Order History'}
+                    </span>
                     <button
                       onClick={() => setDrawerTab('overview')}
                       className="text-xs font-bold text-[#006B50] hover:underline cursor-pointer"
@@ -512,135 +492,200 @@ export default function CustomersPage() {
                     </button>
                   </div>
 
-                  {/* Balance & ID Card */}
-                  <Card className="p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-[#616161]">Wallet Balance</p>
-                        <p className="text-2xl font-semibold text-[#1a1a1a] mt-1 tabular-nums">{formatCurrency(customerWallet)}</p>
-                      </div>
-                      <div className="w-10 h-10 rounded-xl bg-gray-100 text-[#303030] flex items-center justify-center font-bold">
-                        <Wallet size={20} />
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-                      <div className="min-w-0">
-                        <p className="text-xs text-[#616161]">Wallet ID</p>
-                        <p className="font-mono text-[#1a1a1a] truncate max-w-[200px] mt-0.5">{customerWalletRecord?.id || 'Generating...'}</p>
-                      </div>
-                      {customerWalletRecord?.id && (
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(customerWalletRecord.id);
-                            setCopiedId(true);
-                            setTimeout(() => setCopiedId(false), 2000);
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-white text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 font-medium text-xs tracking-wider shrink-0 cursor-pointer"
-                        >
-                          {copiedId ? 'Copied!' : 'Copy ID'}
-                        </button>
-                      )}
-                    </div>
-                  </Card>
-
-                  {/* Credit / Debit Form */}
-                  <Card className="p-5 space-y-4">
-                    <h3 className="text-sm font-semibold text-[#1a1a1a]">Adjust store credit</h3>
-                    <form onSubmit={handleWalletAdjustment} className="space-y-4">
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold uppercase text-gray-600">Action Type</label>
-                        <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
-                          <button
-                            type="button"
-                            onClick={() => setTxType('credit')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                              txType === 'credit' ? 'bg-emerald-800 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                            }`}
-                          >
-                            <ArrowDownLeft size={13} /> Add Credit (+)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setTxType('debit')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                              txType === 'debit' ? 'bg-rose-700 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                            }`}
-                          >
-                            <ArrowUpRight size={13} /> Deduct Credit (-)
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold uppercase text-gray-600">Amount (₹)</label>
-                        <input
-                          required
-                          type="number"
-                          placeholder="e.g. 500"
-                          value={walletAmount}
-                          onChange={e => setWalletAmount(e.target.value)}
-                          className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs font-semibold text-gray-900 outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold uppercase text-gray-600">Reason / Description</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Refund, Promotional cashback"
-                          value={walletReason}
-                          onChange={e => setWalletReason(e.target.value)}
-                          className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs font-semibold text-gray-900 outline-none"
-                        />
-                      </div>
-
-                      {walletMsg && (
-                        <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${walletMsg.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
-                          {walletMsg.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
-                          <span>{walletMsg.text}</span>
-                        </div>
-                      )}
-
-                      <button
-                        type="submit"
-                        disabled={walletSubmitting || !walletAmount}
-                        className={`w-full font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
-                          txType === 'credit' ? 'bg-emerald-800 hover:bg-emerald-900 text-amber-300' : 'bg-rose-700 hover:bg-rose-800 text-white'
-                        }`}
-                      >
-                        {walletSubmitting ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
-                        <span>{txType === 'credit' ? 'Confirm Credit' : 'Confirm Debit'}</span>
-                      </button>
-                    </form>
-                  </Card>
-
-                  {/* Wallet Transactions Below */}
-                  <Card className="overflow-hidden">
-                    <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
-                      <Wallet size={15} className="text-[#616161]" />
-                      <h3 className="text-sm font-semibold text-[#1a1a1a]">Transaction history ({customerTransactions.length})</h3>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      {ordersLoading ? (
-                        <div className="h-4 bg-gray-100 rounded animate-pulse" />
-                      ) : customerTransactions.length === 0 ? (
-                        <p className="text-center text-[#616161] py-4">No wallet transactions recorded.</p>
-                      ) : (
-                        customerTransactions.map((tx: any) => (
-                          <div key={tx.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100 flex items-start justify-between gap-2">
-                            <div>
-                              <p className="font-bold text-[#1a1a1a]">{tx.description}</p>
-                              <p className="text-[10px] text-gray-400">{new Date(tx.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
-                            </div>
-                            <span className={`font-black shrink-0 ${tx.type === 'credit' ? 'text-emerald-800' : 'text-rose-600'}`}>
-                              {tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount))}
-                            </span>
+                  {drawerTab === 'wallet' && (
+                    <>
+                      {/* Balance & ID Card */}
+                      <Card className="p-5 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-[#616161]">Wallet Balance</p>
+                            <p className="text-2xl font-semibold text-[#1a1a1a] mt-1 tabular-nums">{formatCurrency(customerWallet)}</p>
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </Card>
+                          <div className="w-10 h-10 rounded-xl bg-gray-100 text-[#303030] flex items-center justify-center font-bold">
+                            <Wallet size={20} />
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                          <div className="min-w-0">
+                            <p className="text-xs text-[#616161]">Wallet ID</p>
+                            <p className="font-mono text-[#1a1a1a] truncate max-w-[200px] mt-0.5">{customerWalletRecord?.id || 'Generating...'}</p>
+                          </div>
+                          {customerWalletRecord?.id && (
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(customerWalletRecord.id);
+                                setCopiedId(true);
+                                setTimeout(() => setCopiedId(false), 2000);
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-white text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 font-medium text-xs tracking-wider shrink-0 cursor-pointer"
+                            >
+                              {copiedId ? 'Copied!' : 'Copy ID'}
+                            </button>
+                          )}
+                        </div>
+                      </Card>
+
+                      {/* Credit / Debit Form */}
+                      <Card className="p-5 space-y-4">
+                        <h3 className="text-sm font-semibold text-[#1a1a1a]">Adjust store credit</h3>
+                        <form onSubmit={handleWalletAdjustment} className="space-y-4">
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold uppercase text-gray-600">Action Type</label>
+                            <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
+                              <button
+                                type="button"
+                                onClick={() => setTxType('credit')}
+                                className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                  txType === 'credit' ? 'bg-emerald-800 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                              >
+                                <ArrowDownLeft size={13} /> Add Credit (+)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setTxType('debit')}
+                                className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                  txType === 'debit' ? 'bg-rose-700 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                              >
+                                <ArrowUpRight size={13} /> Deduct Credit (-)
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold uppercase text-gray-600">Amount (₹)</label>
+                            <input
+                              required
+                              type="number"
+                              placeholder="e.g. 500"
+                              value={walletAmount}
+                              onChange={e => setWalletAmount(e.target.value)}
+                              className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs font-semibold text-gray-900 outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold uppercase text-gray-600">Reason / Description</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Refund, Promotional cashback"
+                              value={walletReason}
+                              onChange={e => setWalletReason(e.target.value)}
+                              className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs font-semibold text-gray-900 outline-none"
+                            />
+                          </div>
+
+                          {walletMsg && (
+                            <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${walletMsg.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+                              {walletMsg.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
+                              <span>{walletMsg.text}</span>
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={walletSubmitting || !walletAmount}
+                            className={`w-full font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
+                              txType === 'credit' ? 'bg-emerald-800 hover:bg-emerald-900 text-amber-300' : 'bg-rose-700 hover:bg-rose-800 text-white'
+                            }`}
+                          >
+                            {walletSubmitting ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
+                            <span>{txType === 'credit' ? 'Confirm Credit' : 'Confirm Debit'}</span>
+                          </button>
+                        </form>
+                      </Card>
+
+                      {/* Wallet Transactions Below */}
+                      <Card className="overflow-hidden">
+                        <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
+                          <Wallet size={15} className="text-[#616161]" />
+                          <h3 className="text-sm font-semibold text-[#1a1a1a]">Transaction history ({customerTransactions.length})</h3>
+                        </div>
+                        <div className="p-4 space-y-3">
+                          {ordersLoading ? (
+                            <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                          ) : customerTransactions.length === 0 ? (
+                            <p className="text-center text-[#616161] py-4">No wallet transactions recorded.</p>
+                          ) : (
+                            customerTransactions.map((tx: any) => (
+                              <div key={tx.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100 flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-bold text-[#1a1a1a]">{tx.description}</p>
+                                  <p className="text-[10px] text-gray-400">{new Date(tx.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                                </div>
+                                <span className={`font-black shrink-0 ${tx.type === 'credit' ? 'text-emerald-800' : 'text-rose-600'}`}>
+                                  {tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount))}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </Card>
+                    </>
+                  )}
+
+                  {drawerTab === 'addresses' && (
+                    <Card className="overflow-hidden">
+                      <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
+                        <MapPin size={15} className="text-[#616161]" />
+                        <h3 className="text-sm font-semibold text-[#1a1a1a]">Saved Addresses ({customerAddresses.length})</h3>
+                      </div>
+                      <div className="p-4 space-y-3">
+                        {ordersLoading ? (
+                          <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                        ) : customerAddresses.length === 0 ? (
+                          <p className="text-center text-[#616161]">No saved addresses found.</p>
+                        ) : (
+                          customerAddresses.map((addr: any) => (
+                            <div key={addr.id} className="text-xs space-y-0.5 pb-2.5 last:pb-0 border-b last:border-b-0 border-gray-100">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold uppercase text-[#1a1a1a]">{addr.address_type || addr.label || 'Address'}</span>
+                                <span className="text-[10px] text-gray-400">{addr.pincode}</span>
+                              </div>
+                              <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
+                              {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </Card>
+                  )}
+
+                  {drawerTab === 'orders' && (
+                    <Card className="overflow-hidden">
+                      <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100">
+                        <ShoppingBag size={15} className="text-[#616161]" />
+                        <h3 className="text-sm font-semibold text-[#1a1a1a]">Order history ({customerOrders.length})</h3>
+                      </div>
+                      <div className="divide-y divide-gray-100 border-t border-gray-100 max-h-96 overflow-y-auto">
+                        {ordersLoading ? (
+                          <div className="p-4"><div className="h-4 bg-gray-100 rounded animate-pulse" /></div>
+                        ) : customerOrders.length === 0 ? (
+                          <p className="p-6 text-center text-[#616161]">No orders placed yet.</p>
+                        ) : (
+                          customerOrders.map((o) => (
+                            <div key={o.id} className="p-4 space-y-1.5 text-xs">
+                              <div className="flex items-center justify-between font-bold">
+                                <span className="text-[#1a1a1a]">RB-{o.order_number || o.id.slice(0, 6).toUpperCase()}</span>
+                                <span className="text-emerald-900 font-black">{formatCurrency(Number(o.total || 0))}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-gray-500 text-[11px]">
+                                <span>{new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                <span className="capitalize bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-bold">{o.status?.replace(/_/g, ' ')}</span>
+                              </div>
+                              {o.order_items && o.order_items.length > 0 && (
+                                <p className="text-[11px] text-gray-600 truncate">
+                                  {o.order_items.map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </Card>
+                  )}
                 </div>
               )}
             </div>
