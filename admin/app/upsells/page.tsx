@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Sparkles, Plus, Trash2, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
 
 export default function UpsellManagerPage() {
   const [upsells, setUpsells] = useState<any[]>([]);
@@ -11,7 +11,12 @@ export default function UpsellManagerPage() {
   const [title, setTitle] = useState('');
   const [displayOrder, setDisplayOrder] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<{ success: boolean; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+  const flash = (type: 'error' | 'success', text: string) => {
+    setNotice({ type, text });
+    setTimeout(() => setNotice(null), 3500);
+  };
 
   const fetchData = async () => {
     try {
@@ -35,12 +40,11 @@ export default function UpsellManagerPage() {
   const handleAddUpsell = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedVariantId) {
-      setMsg({ success: false, text: 'Please select a product variant.' });
+      flash('error', 'Please select a product variant.');
       return;
     }
 
     setLoading(true);
-    setMsg(null);
 
     try {
       let foundProductId = null;
@@ -62,22 +66,23 @@ export default function UpsellManagerPage() {
 
       if (error) throw error;
 
-      setMsg({ success: true, text: 'Cart upsell added successfully!' });
+      flash('success', 'Cart upsell added successfully.');
       setTitle('');
       setSelectedVariantId('');
       fetchData();
     } catch (err: any) {
       console.error(err);
-      setMsg({ success: false, text: err.message || 'Failed to add cart upsell.' });
+      flash('error', err.message || 'Failed to add cart upsell.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to remove this cart upsell?')) {
+    if (confirm('Remove this cart upsell?')) {
       try {
         await supabase.from('cart_upsells').delete().eq('id', id);
+        flash('success', 'Cart upsell removed.');
         fetchData();
       } catch (e) {
         console.error(e);
@@ -86,36 +91,41 @@ export default function UpsellManagerPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8 bg-gray-50/50 min-h-screen">
-      {/* Page Header */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-800 text-[10px] font-black uppercase px-3 py-1 rounded-full mb-2">
-            <Sparkles size={13} /> CART CONVERSION & UPSELLS
-          </div>
-          <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">Cart Upsell Recommendations</h1>
-          <p className="text-xs sm:text-sm text-gray-500 font-medium">Configure frequently bought together items and add-ons displayed in the customer cart.</p>
-        </div>
+    <div className="space-y-6 text-xs font-sans text-[#303030]">
+      {/* HEADER */}
+      <div>
+        <h1 className="text-xl font-semibold text-[#1a1a1a]">Cart Upsells</h1>
+        <p className="text-[13px] text-[#616161] mt-0.5">Manage frequently bought together items and add-ons displayed in the customer cart.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* TOAST */}
+      {notice && (
+        <div
+          role="status"
+          className={`rounded-lg px-3 py-2 text-[13px] font-medium ${
+            notice.type === 'error' ? 'bg-[#fed1d7] text-[#8e0b21]' : 'bg-[#cdfed4] text-[#014b40]'
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Form Column */}
         <div className="lg:col-span-1">
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 sticky top-6">
-            <h2 className="text-sm font-black uppercase tracking-wider text-gray-900 mb-6 flex items-center gap-2">
-              <Plus size={16} className="text-emerald-600" /> Add Upsell Item
-            </h2>
+          <div className="bg-white rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] space-y-4">
+            <h2 className="text-sm font-semibold text-[#1a1a1a]">Add upsell item</h2>
 
-            <form onSubmit={handleAddUpsell} className="space-y-5">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-gray-600">Select Product Variant</label>
+            <form onSubmit={handleAddUpsell} className="space-y-4">
+              <div className="space-y-1">
+                <label className="font-medium text-[#616161] block">Product &amp; variant</label>
                 <select
                   required
                   value={selectedVariantId}
                   onChange={(e) => setSelectedVariantId(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-600 focus:bg-white transition-all cursor-pointer"
+                  className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none cursor-pointer"
                 >
-                  <option value="">-- Choose Product & Variant --</option>
+                  <option value="">Select product variant</option>
                   {products.map((p) =>
                     (p.product_variants || []).map((v: any) => (
                       <option key={v.id} value={v.id}>
@@ -126,41 +136,34 @@ export default function UpsellManagerPage() {
                 </select>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-gray-600">Custom Title (Optional)</label>
+              <div className="space-y-1">
+                <label className="font-medium text-[#616161] block">Custom title (Optional)</label>
                 <input
                   type="text"
                   placeholder="e.g. Frequently Bought Together"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-600 focus:bg-white transition-all"
+                  className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-gray-600">Display Order</label>
+              <div className="space-y-1">
+                <label className="font-medium text-[#616161] block">Display order</label>
                 <input
                   type="number"
                   value={displayOrder}
                   onChange={(e) => setDisplayOrder(Number(e.target.value))}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-600 focus:bg-white transition-all"
+                  className="w-full bg-[#f7f7f7] border border-gray-200 rounded-lg p-2.5 text-xs text-[#1a1a1a] outline-none font-semibold"
                 />
               </div>
-
-              {msg && (
-                <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${msg.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
-                  {msg.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
-                  <span>{msg.text}</span>
-                </div>
-              )}
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-emerald-800 hover:bg-emerald-900 text-amber-300 font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full bg-[#303030] hover:bg-[#1a1a1a] text-white h-9 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-2 transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
               >
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                <span>Save Upsell Item</span>
+                {loading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={15} />}
+                <span>Add upsell</span>
               </button>
             </form>
           </div>
@@ -168,14 +171,14 @@ export default function UpsellManagerPage() {
 
         {/* List Column */}
         <div className="lg:col-span-2">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-sm font-black uppercase tracking-wider text-gray-900">Active Cart Recommendations ({upsells.length})</h2>
+          <div className="bg-white rounded-xl shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-[#1a1a1a]">Active recommendations ({upsells.length})</h2>
             </div>
 
             {upsells.length === 0 ? (
-              <div className="p-12 text-center text-gray-400 text-xs font-bold uppercase tracking-wider">
-                No active cart upsells configured yet.
+              <div className="py-14 text-center text-[#616161]">
+                No cart upsells configured yet.
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
@@ -183,26 +186,26 @@ export default function UpsellManagerPage() {
                   const prod = u.products;
                   const variant = u.product_variants;
                   return (
-                    <div key={u.id} className="p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-gray-50/50 transition-colors">
-                      <div className="flex items-center gap-3.5">
+                    <div key={u.id} className="p-4 flex items-center justify-between gap-4 hover:bg-[#fafafa] transition-colors">
+                      <div className="flex items-center gap-3">
                         <img
                           src={prod?.image_url || 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=300&q=80'}
-                          className="w-12 h-12 rounded-xl object-cover border border-gray-200"
+                          className="w-10 h-10 rounded-lg object-cover border border-gray-200 shrink-0"
                           alt={prod?.name || 'Product'}
                         />
                         <div>
-                          <p className="text-sm font-black text-gray-900">{prod?.name || 'Product'}</p>
-                          <p className="text-xs text-emerald-700 font-bold">
+                          <p className="font-semibold text-[#1a1a1a] text-[13px]">{prod?.name || 'Product'}</p>
+                          <p className="text-xs text-[#616161]">
                             {variant?.unit || 'pack'} · ₹{variant?.price || 0}
                           </p>
-                          {u.title && <span className="inline-block mt-1 bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-0.5 rounded-md">{u.title}</span>}
+                          {u.title && <span className="inline-block mt-1 bg-gray-100 text-[#303030] text-[11px] font-medium px-2 py-0.5 rounded">{u.title}</span>}
                         </div>
                       </div>
 
                       <button
                         onClick={() => handleDelete(u.id)}
-                        className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
-                        title="Remove Upsell"
+                        className="p-2 text-[#8a8a8a] hover:text-[#8e0b21] hover:bg-[#fed1d7]/50 rounded-lg transition-colors cursor-pointer"
+                        title="Remove"
                       >
                         <Trash2 size={16} />
                       </button>
