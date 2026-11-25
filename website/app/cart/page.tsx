@@ -1002,8 +1002,8 @@ export default function CartPage() {
                 const expectedDate = item.expectedDispatchDate || meta.expected_dispatch_date || item.raw?.expected_dispatch_date;
 
                 return (
-                  <div key={item.id} className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3.5 min-w-0">
+                  <div key={item.id} className="py-3.5 first:pt-0 last:pb-0 flex items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
                       <img
                         className="w-14 h-14 rounded-xl object-cover border border-[#E3EAE6] shrink-0"
                         alt={item.name}
