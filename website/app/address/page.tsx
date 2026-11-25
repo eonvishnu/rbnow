@@ -152,24 +152,6 @@ export default function AddressesPage() {
         {!showMapPicker ? (
             <div className="space-y-4">
 
-                {/* Big Zepto-style Map Add Button */}
-                <div className="bg-gradient-to-r from-emerald-950 to-emerald-900 border-2 border-amber-400/80 rounded-[28px] p-6 text-white shadow-xl flex items-center justify-between">
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-black uppercase tracking-widest bg-amber-400 text-emerald-950 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
-                      <Sparkles size={10} /> Express Pinning
-                    </span>
-                    <h2 className="text-lg font-black uppercase text-amber-300 tracking-tight">Select Location on Map</h2>
-                    <p className="text-xs text-emerald-200 font-medium">Search place & set exact delivery pin</p>
-                  </div>
-
-                  <button
-                    onClick={() => setShowMapPicker(true)}
-                    className="bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black px-5 py-3.5 rounded-2xl text-xs uppercase tracking-wider shadow-lg flex items-center gap-2 transition-all active:scale-95 shrink-0"
-                  >
-                    <Map size={16} /> Open Map
-                  </button>
-                </div>
-
                 {addresses.length === 0 ? (
                     <div className="text-center py-16 bg-white border border-gray-200 rounded-[32px] p-8 shadow-sm">
                         <div className="w-20 h-20 bg-emerald-50 rounded-3xl border border-emerald-100 flex items-center justify-center mx-auto mb-6">
