@@ -351,10 +351,20 @@ export default function CustomersPage() {
                     <p className="p-6 text-center text-[#616161]">No orders placed yet.</p>
                   ) : (
                     customerOrders.map((o) => (
-                      <div key={o.id} className="p-4 space-y-2">
-                        <div className="flex items-start justify-between gap-3">
-                          (`/orders`)
+                      <div key={o.id} className="p-4 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="text-[#1a1a1a]">RB-{o.order_number || o.id.slice(0, 6).toUpperCase()}</span>
+                          <span className="text-emerald-900 font-black">{formatCurrency(Number(o.total || 0))}</span>
                         </div>
+                        <div className="flex items-center justify-between text-gray-500 text-[11px]">
+                          <span>{new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          <span className="capitalize bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-bold">{o.status?.replace(/_/g, ' ')}</span>
+                        </div>
+                        {o.order_items && o.order_items.length > 0 && (
+                          <p className="text-[11px] text-gray-600 truncate">
+                            {o.order_items.map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')}
+                          </p>
+                        )}
                       </div>
                     ))
                   )}
