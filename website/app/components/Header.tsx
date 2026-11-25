@@ -28,9 +28,11 @@ interface HeaderProps {
   activeCategory: string;
   onCategoryChange: (id: string, name: string) => void;
   bottomSlot?: React.ReactNode; 
+  searchQuery?: string;
+  onSearchChange?: (q: string) => void;
 }
 
-export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderProps) => {
+export const Header = ({ activeCategory, onCategoryChange, bottomSlot, searchQuery, onSearchChange }: HeaderProps) => {
   const { user } = useAuth();
   const { location, setIsModalOpen } = useLocation();
   const { cart } = useCart();
@@ -228,6 +230,8 @@ export const Header = ({ activeCategory, onCategoryChange, bottomSlot }: HeaderP
             <input
               type="text"
               placeholder="Search cuts, fresh catch & delicacies..."
+              value={searchQuery || ''}
+              onChange={(e) => onSearchChange?.(e.target.value)}
               className="w-full bg-[#FFFDF9] text-gray-900 border border-[#E3D9C6] rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold outline-none shadow-sm placeholder:text-gray-400 placeholder:font-medium focus:border-amber-500"
             />
           </div>

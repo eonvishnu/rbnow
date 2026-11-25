@@ -27,6 +27,17 @@ export default function Home() {
 
   const { products, categories, loading } = useCatalog(activeCategory, activeSubCategory);
   const [currentSubCategories, setCurrentSubCategories] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery.trim()) return products;
+    const q = searchQuery.toLowerCase().trim();
+    return products.filter((p: any) =>
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.description || '').toLowerCase().includes(q) ||
+      (p.category || '').toLowerCase().includes(q)
+    );
+  }, [products, searchQuery]);
 
   useEffect(() => {
     if (activeSubBtnRef.current) {
@@ -73,6 +84,8 @@ export default function Home() {
       <Header
         activeCategory={activeCategory}
         onCategoryChange={handleCategoryChange}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
 
       {/* Banner Carousel (Top Hero) */}
@@ -138,7 +151,7 @@ export default function Home() {
              <h2 className="text-base sm:text-lg font-black uppercase text-emerald-950 tracking-tight flex items-center gap-2">
                <span>{activeSubCategory !== "all" ? `${activeCategoryTitle} › ${activeSubCategory}` : activeCategoryTitle}</span>
                <span className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full" suppressHydrationWarning>
-                 {products.length} Items
+                 {filteredProducts.length} Items
                </span>
              </h2>
              <p className="text-[11px] text-gray-500 font-medium mt-0.5">Fresh daily catches & authentic Bengal delicacies.</p>
@@ -156,20 +169,20 @@ export default function Home() {
               </div>
             ))}
           </div>
-        ) : products.length === 0 ? (
+        ) : filteredProducts.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-3xl p-12 text-center space-y-3 shadow-sm">
              <div className="w-16 h-16 bg-emerald-50 text-emerald-800 rounded-2xl flex items-center justify-center mx-auto">
                🍽️
              </div>
-             <h3 className="text-base font-black text-gray-900 uppercase">No Items in {activeCategoryTitle}</h3>
-             <p className="text-xs text-gray-400 font-medium max-w-sm mx-auto">Try selecting another category circle above or search for fresh catches.</p>
-             <button onClick={() => { setActiveCategory("all"); setActiveCategoryTitle("All Delicacies"); setActiveSubCategory("all"); }} className="bg-emerald-800 text-amber-300 font-bold px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider">
+             <h3 className="text-base font-black text-gray-900 uppercase">No Items Found {searchQuery ? `for "${searchQuery}"` : `in ${activeCategoryTitle}`}</h3>
+             <p className="text-xs text-gray-400 font-medium max-w-sm mx-auto">Try searching for another cut or selecting another category above.</p>
+             <button onClick={() => { setSearchQuery(""); setActiveCategory("all"); setActiveCategoryTitle("All Delicacies"); setActiveSubCategory("all"); }} className="bg-emerald-800 text-amber-300 font-bold px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider">
                View All Items
              </button>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
-            {products.map((product: any) => {
+            {filteredProducts.map((product: any) => {
               const selectedOptIdx = selectionMap[product.id] || 0;
               const currentOpt = product.options?.[selectedOptIdx] || product.options?.[0];
               const cartItemId = currentOpt?.id || `${product.id}-${selectedOptIdx}`;
