@@ -513,21 +513,21 @@ export default function CustomersPage() {
                   </div>
 
                   {/* Balance & ID Card */}
-                  <Card className="p-5 space-y-4 bg-gradient-to-br from-emerald-900 to-emerald-950 text-white">
+                  <Card className="p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-[10px] font-black uppercase text-emerald-300 tracking-wider">Wallet Balance</p>
-                        <p className="text-2xl font-black text-amber-300 mt-0.5">{formatCurrency(customerWallet)}</p>
+                        <p className="text-xs text-[#616161]">Wallet Balance</p>
+                        <p className="text-2xl font-semibold text-[#1a1a1a] mt-1 tabular-nums">{formatCurrency(customerWallet)}</p>
                       </div>
-                      <div className="w-10 h-10 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold">
+                      <div className="w-10 h-10 rounded-xl bg-gray-100 text-[#303030] flex items-center justify-center font-bold">
                         <Wallet size={20} />
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-emerald-800/80 flex items-center justify-between text-xs">
+                    <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
                       <div className="min-w-0">
-                        <p className="text-[10px] font-bold text-emerald-300 uppercase">Wallet ID</p>
-                        <p className="font-mono text-emerald-100 truncate max-w-[220px]">{customerWalletRecord?.id || 'Generating...'}</p>
+                        <p className="text-xs text-[#616161]">Wallet ID</p>
+                        <p className="font-mono text-[#1a1a1a] truncate max-w-[200px] mt-0.5">{customerWalletRecord?.id || 'Generating...'}</p>
                       </div>
                       {customerWalletRecord?.id && (
                         <button
@@ -536,7 +536,7 @@ export default function CustomersPage() {
                             setCopiedId(true);
                             setTimeout(() => setCopiedId(false), 2000);
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-amber-400 text-emerald-950 font-bold text-xs uppercase tracking-wider shrink-0 cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg bg-white text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 font-medium text-xs tracking-wider shrink-0 cursor-pointer"
                         >
                           {copiedId ? 'Copied!' : 'Copy ID'}
                         </button>
