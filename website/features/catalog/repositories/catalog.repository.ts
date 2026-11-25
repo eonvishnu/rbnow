@@ -4,7 +4,7 @@ export async function fetchCategoriesFromDb() {
   return await supabase
     .from("categories")
     .select("*")
-    .eq("status", "on")
+    .or("status.eq.on,status.is.null")
     .order("name", { ascending: true });
 }
 
@@ -28,5 +28,5 @@ export async function fetchSubCategoriesFromDb(parentId: string) {
     .from("categories")
     .select("id, name")
     .eq("parent_id", parentId)
-    .eq("status", "on");
+    .or("status.eq.on,status.is.null");
 }
