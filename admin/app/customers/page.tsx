@@ -647,6 +647,16 @@ export default function CustomersPage() {
                               {addr.name && <p className="font-semibold text-gray-900">Recipient: {addr.name}</p>}
                               <p className="text-[#616161]">{addr.house_no ? `${addr.house_no}, ` : ''}{addr.address || addr.area}, {addr.city}</p>
                               {addr.phone && <p className="text-[11px] text-gray-500">Phone: {addr.phone}</p>}
+                              {addr.latitude && addr.longitude && (
+                                <a
+                                  href={`https://www.google.com/maps?q=${addr.latitude},${addr.longitude}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-[#006B50] hover:underline mt-1"
+                                >
+                                  <MapPin size={12} /> View pin on map
+                                </a>
+                              )}
                             </div>
                           ))
                         )}
