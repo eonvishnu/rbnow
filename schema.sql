@@ -1694,13 +1694,13 @@ BEGIN
   VALUES (
     new.id,
     CASE WHEN new.email LIKE '%@royalbengal.internal' THEN NULL ELSE new.email END,
-    COALESCE(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'full_name', 'Member'),
+    COALESCE(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'full_name'),
     COALESCE(NULLIF(new.raw_user_meta_data->>'phone_number', ''), new.phone, ''),
     'customer'
   )
   ON CONFLICT (id) DO UPDATE SET
     email = CASE WHEN EXCLUDED.email LIKE '%@royalbengal.internal' THEN profiles.email ELSE EXCLUDED.email END,
-    display_name = COALESCE(NULLIF(EXCLUDED.display_name, 'Member'), profiles.display_name),
+    display_name = COALESCE(EXCLUDED.display_name, profiles.display_name),
     phone_number = COALESCE(NULLIF(EXCLUDED.phone_number, ''), profiles.phone_number);
   RETURN new;
 END;
