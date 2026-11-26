@@ -475,6 +475,11 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
       return;
     }
 
+    if (!form.buildingName.trim()) {
+      alert('Please enter Apartment / Society Name.');
+      return;
+    }
+
     let targetLabel = form.addressType.toUpperCase();
     if (form.addressType === 'other') {
       const custom = form.customLabel.trim().toUpperCase();
@@ -738,9 +743,10 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Apartment / Society Name</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Apartment / Society Name *</label>
                   <input
                     type="text"
+                    required
                     placeholder="e.g. My Home Bhooja"
                     value={form.buildingName}
                     onChange={(e) => setForm({ ...form, buildingName: e.target.value })}
