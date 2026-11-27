@@ -15,6 +15,7 @@ import {
   Map as MapIcon,
   ChevronRight
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthProvider';
 
 interface AddressMapPickerProps {
   onSave: (addressData: {
@@ -91,6 +92,8 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
     isVerified: false,
   });
 
+  const { userData } = useAuth();
+
   const isHomeUsed = useMemo(
     () => existingLabels.some(l => l.toUpperCase().trim() === 'HOME'),
     [existingLabels]
@@ -102,9 +105,12 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
 
   const defaultType = !isHomeUsed ? 'home' : (!isWorkUsed ? 'work' : 'other');
 
+  const profileName = (userData?.display_name && !userData.display_name.toLowerCase().startsWith('member')) ? userData.display_name : (defaultName && !defaultName.toLowerCase().startsWith('member') ? defaultName : '');
+  const profilePhone = userData?.phone_number || defaultPhone;
+
   const [form, setForm] = useState({
-    fullName: defaultName,
-    mobile: defaultPhone,
+    fullName: profileName,
+    mobile: profilePhone,
     floorHouseNo: '',
     buildingName: '',
     landmark: '',
