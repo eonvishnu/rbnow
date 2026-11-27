@@ -2485,15 +2485,13 @@ export default function AdminOrders() {
                   />
 
                   <p className="flex-1 text-[#303030] leading-relaxed text-xs">
-                    {selectedOrder.shipping?.houseNumber ||
-                    (selectedOrder.shipping as any)?.houseNo
-                      ? `${
-                          selectedOrder.shipping?.houseNumber ||
-                          (selectedOrder.shipping as any)?.houseNo
-                        }, `
-                      : ''}
-                    {selectedOrder.shipping?.address ||
-                      'No address on file'}
+                    {[
+                      selectedOrder.shipping?.houseNumber || (selectedOrder.shipping as any)?.houseNo,
+                      (selectedOrder.shipping as any)?.buildingName || (selectedOrder.shipping as any)?.building_name,
+                      selectedOrder.shipping?.address || (selectedOrder.shipping as any)?.area,
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}
                     <br />
                     {[
                       selectedOrder.shipping?.city,
