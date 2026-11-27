@@ -78,6 +78,15 @@ export async function updateVariantPricesAndStock(updates: ProductVariantQuickUp
   const adminId = session?.user?.id;
 
   const results = await Promise.all(updates.map(async (update) => {
+    const { data: oldVar } = await supabase
+      .from('product_variants')
+      .select('stock')
+      .eq('id', update.id)
+      .maybeSingle();
+
+    const oldStock = Number(oldVar?.stock || 0);
+    const diff = update.stock - oldStock;
+
     const { error } = await supabase
       .from('product_variants')
       .update({
@@ -87,6 +96,22 @@ export async function updateVariantPricesAndStock(updates: ProductVariantQuickUp
         updated_at: new Date().toISOString(),
       })
       .eq('id', update.id);
+
+    if (!error && diff !== 0) {
+      try {
+        await supabase.from('inventory_transactions').insert({
+          variant_id: update.id,
+          transaction_type: diff > 0 ? 'stock_adjustment' : 'stock_reduction',
+          quantity: Math.abs(diff),
+          reference_type: 'admin_quick_edit',
+          reference_id: adminId || null,
+          notes: `Admin adjusted stock from ${oldStock} to ${update.stock} (delta: ${diff > 0 ? '+' : ''}${diff})`,
+          created_at: new Date().toISOString(),
+        });
+      } catch (invErr) {
+        console.warn('Inventory transaction log warning:', invErr);
+      }
+    }
 
     return { id: update.id, error };
   }));
