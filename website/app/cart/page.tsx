@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthProvider';
 import { useLocation } from '@/context/LocationContext';
 import { useRouter } from 'next/navigation';
 import { getOrCreateBrowserId } from '@/lib/browserId';
+import { useStore } from "@/app/components/StoreGuard";
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -124,10 +125,13 @@ export default function CartPage() {
   const { cart, addToCart, removeFromCart, clearCart, removePurchasedItems } = useCart();
   const { user, userData, loading: authLoading } = useAuth();
   const { location, setIsModalOpen } = useLocation();
+  const { isOpen: isStoreOpen, message: storeClosedMsg } = useStore();
 
   const [checkoutState, setCheckoutState] = useState<CheckoutState>('cart_idle');
   const [checkoutError, setCheckoutError] = useState('');
   const [paymentResultMessage, setPaymentResultMessage] = useState('');
+
+  const isCartDisabled = checkoutState !== 'cart_idle' || !isStoreOpen;
 
   // Cart Upsells State (Powered by public.cart_upsells table IDs)
   const [recommended, setRecommended] = useState<any[]>([]);
@@ -508,6 +512,13 @@ export default function CartPage() {
     if (checkoutInProgressRef.current || authLoading || hasStockIssues) return;
     setCheckoutError('');
 
+    if (!isStoreOpen) {
+      setCheckoutError(storeClosedMsg || 'Store is currently closed. Orders cannot be placed at this time.');
+      checkoutInProgressRef.current = false;
+      setCheckoutState('cart_idle');
+      return;
+    }
+
     if (!user) {
       router.push(`/login?redirect=${encodeURIComponent('/cart')}`);
       return;
@@ -823,8 +834,6 @@ export default function CartPage() {
     }
   };
 
-  const isCartDisabled = checkoutState === 'creating_order' || checkoutState === 'payment_open' || checkoutState === 'verifying_payment' || checkoutState === 'payment_pending';
-
   return (
     <main className="min-h-screen bg-[#F5F7F6] text-[#17211D] pb-28 w-full max-w-[100vw] overflow-x-hidden selection:bg-[#FFC400] selection:text-[#004D3B]">
 
@@ -936,6 +945,19 @@ export default function CartPage() {
               >
                 <CreditCard size={16} /> Check Order Status
               </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Store Closed Banner */}
+        {!isStoreOpen && (
+          <div className="p-5 bg-rose-50 border border-rose-200 rounded-3xl flex items-center gap-4 text-xs font-bold text-rose-800 shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center shrink-0">
+              🔒
+            </div>
+            <div>
+              <p className="font-black uppercase tracking-tight text-sm">Store is currently closed</p>
+              <p className="text-[11px] font-medium text-rose-700 mt-0.5">{storeClosedMsg || 'We are not accepting new orders right now. Please check back during operating hours.'}</p>
             </div>
           </div>
         )}
