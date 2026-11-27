@@ -476,7 +476,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
     }
 
     if (!form.buildingName.trim()) {
-      alert('Please enter Apartment / Society Name.');
+      alert('Please enter Apartment / Building name.');
       return;
     }
 
@@ -743,7 +743,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Apartment / Society Name *</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Apartment / Building *</label>
                   <input
                     type="text"
                     required
