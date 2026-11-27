@@ -11,7 +11,7 @@ import {
   Printer, MapPin, Search, X, User, Phone, Box, Plus, RefreshCw,
   History, MessageSquare, PhoneCall, Store, Globe, Loader2,
   ChevronDown, Download, Copy, Check, CalendarClock, List,
-  Map as MapIcon, AlertCircle, PackageCheck, CheckCircle2,
+  Map as MapIcon, AlertCircle, PackageCheck, CheckCircle2, Sparkles,
 } from 'lucide-react';
 import {
   changeAdminOrderStatus,
@@ -293,6 +293,47 @@ export default function AdminOrders() {
       flash('error', err.message || 'Failed to update orders status in bulk.');
     } finally {
       setBulkUpdating(false);
+    }
+  };
+
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiResponse, setAiResponse] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const handleAskAi = async (customPrompt?: string) => {
+    const promptText = customPrompt || aiPrompt;
+    if (!promptText.trim()) return;
+
+    setAiLoading(true);
+    setAiResponse('');
+    try {
+      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+      const orderContext = filtered.slice(0, 15).map(o => `Order #${o.orderId}: ₹${o.total}, Status: ${o.status}, Customer: ${o.shipping?.name || o.userName}, Items: ${o.items.map(i => i.name).join(', ')}`).join('\n');
+
+      const systemPrompt = `You are Royal Bengal AI Operations Assistant. You help store managers manage gourmet orders, analyze dispatches, summarize fulfillment priorities, and draft customer support replies based on the following active orders:\n${orderContext}\n\nQuestion: ${promptText}`;
+
+      if (!apiKey) {
+        setAiResponse("Gemini API key is not configured in NEXT_PUBLIC_GEMINI_API_KEY. Please configure your Gemini API key in admin environment variables.");
+        setAiLoading(false);
+        return;
+      }
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: systemPrompt }] }]
+        })
+      });
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      setAiResponse(text ? text.trim() : 'No response from AI assistant.');
+    } catch (err: any) {
+      console.error(err);
+      setAiResponse(err.message || 'Failed to query AI assistant.');
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -1862,6 +1903,15 @@ export default function AdminOrders() {
             <span className="hidden sm:inline">Export</span>
           </button>
 
+          <button
+            type="button"
+            onClick={() => setShowAiModal(true)}
+            className="min-h-10 sm:min-h-9 px-3 inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-900 to-emerald-800 text-amber-300 text-sm font-bold shadow-sm transition-all hover:opacity-90 cursor-pointer"
+          >
+            <Sparkles size={15} />
+            <span className="hidden sm:inline">AI Assistant</span>
+          </button>
+
           <Link
             href="/orders/create"
             className="min-h-10 sm:min-h-9 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#006B50] hover:bg-[#00543f] text-sm font-semibold text-white transition-colors"
@@ -2861,6 +2911,75 @@ export default function AdminOrders() {
       )}
 
       {/* TOAST */}
+      {/* GEMINI AI ASSISTANT MODAL */}
+      {showAiModal && (
+        <div className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white text-gray-900 w-full max-w-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-gray-200 space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-4">
+              <h3 className="text-base font-black uppercase tracking-tight text-emerald-950 flex items-center gap-2">
+                <Sparkles className="text-amber-600" size={20} /> Gemini AI Operations Assistant
+              </h3>
+              <button onClick={() => setShowAiModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer">✕</button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleAskAi("Summarize current fulfillment priorities and bottlenecks across active orders.")}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  📊 Summarize Priorities
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAskAi("Draft a polite WhatsApp message to a customer regarding order delivery delay.")}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  💬 Draft WhatsApp Reply
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAskAi("What are the top ordered items and revenue trends in the current list?")}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  📈 Revenue &amp; Items Insight
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase text-gray-600">Ask Gemini AI</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Which orders need urgent dispatch priority?"
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAskAi()}
+                    className="flex-1 bg-gray-50 border border-gray-200 rounded-2xl p-3 text-xs font-semibold text-gray-900 outline-none focus:border-emerald-700"
+                  />
+                  <button
+                    type="button"
+                    disabled={aiLoading || !aiPrompt.trim()}
+                    onClick={() => handleAskAi()}
+                    className="bg-emerald-800 hover:bg-emerald-900 text-amber-300 font-bold px-5 py-3 rounded-2xl text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {aiLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                    <span>Ask</span>
+                  </button>
+                </div>
+              </div>
+
+              {aiResponse && (
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 text-xs text-gray-800 font-medium whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+                  {aiResponse}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div
           role="status"
