@@ -431,7 +431,7 @@ export default function ProductsPage() {
                 <th className="px-3 py-2.5 font-semibold">Category</th>
                 <th className="px-3 py-2.5 font-semibold">Channels</th>
                 <th className="px-3 py-2.5 font-semibold">Product type</th>
-                <th className="px-3 py-2.5 font-semibold pr-4">Vendor</th>
+                <th className="px-3 py-2.5 font-semibold pr-4">Sale mode</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
@@ -473,7 +473,11 @@ export default function ProductsPage() {
                       <td className="px-3 py-2.5 text-gray-600">{p.category || 'Uncategorized'}</td>
                       <td className="px-3 py-2.5 text-gray-600">2</td>
                       <td className="px-3 py-2.5 text-gray-600">{prodType}</td>
-                      <td className="px-3 py-2.5 text-gray-600 pr-4">Royal Bengal</td>
+                      <td className="px-3 py-2.5 text-gray-600 pr-4">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${p.sale_mode === 'preorder' ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`}>
+                          {p.sale_mode === 'preorder' ? 'Pre-order' : 'Regular'}
+                        </span>
+                      </td>
                     </tr>
                   );
                 })
