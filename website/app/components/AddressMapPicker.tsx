@@ -210,7 +210,9 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
       const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ location: { lat, lng } }, (res: any, status: string) => {
         if (status === 'OK' && res && res[0]) {
-          setLiveLocality(res[0].formatted_address || 'Selected location');
+          let addr = res[0].formatted_address || 'Selected location';
+          addr = addr.replace(/^[A-Z0-9]{4}\+[A-Z0-9]{2,3},\s*/i, '');
+          setLiveLocality(addr);
         } else {
           setLiveLocality('Selected location');
         }
@@ -295,6 +297,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   const handleSelectGooglePlace = async (item: any) => {
     if (!item?.place_id) return;
     const mainTitle = item.structured_formatting?.main_text || item.description?.split(',')[0] || '';
+    const fullDesc = item.description || '';
 
     try {
       const google = (window as any).google;
@@ -315,6 +318,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           setSuggestions([]);
           setSearchQuery('');
           setLocationError('');
+          if (fullDesc) setLiveLocality(fullDesc);
 
           if (mainTitle) {
             setForm(prev => ({ ...prev, buildingName: mainTitle }));
