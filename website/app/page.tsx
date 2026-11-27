@@ -289,7 +289,7 @@ export default function Home() {
       )}
 
       {/* Persistent Bottom Cart Bar */}
-      <CartBar />
+      {isStoreOpen && <CartBar />}
 
     </main>
   );
