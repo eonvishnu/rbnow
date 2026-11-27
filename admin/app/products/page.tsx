@@ -421,53 +421,129 @@ export default function ProductsPage() {
                 <th className="px-3 py-2.5 font-semibold">Status</th>
                 <th className="px-3 py-2.5 font-semibold">Inventory</th>
                 <th className="px-3 py-2.5 font-semibold">Category</th>
-                <th className="px-3 py-2.5 font-semibold">Channels</th>
-                <th className="px-3 py-2.5 font-semibold pr-4">Sale mode</th>
+                <th className="px-3 py-2.5 font-semibold text-right pr-4">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
               {loading ? (
-                <tr><td colSpan={7} className="p-8 text-center text-gray-400">Loading products...</td></tr>
+                <tr><td colSpan={6} className="p-8 text-center text-gray-400">Loading products...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7} className="p-12 text-center text-gray-500">No products match your search or filter.</td></tr>
+                <tr><td colSpan={6} className="p-12 text-center text-gray-500">No products match your search or filter.</td></tr>
               ) : (
                 filtered.slice(0, visible).map((p) => {
+                  const open = expandedId === p.id;
+                  const dirty = productDirty(p);
                   const totalStock = p.variants.reduce((s, v) => s + (Number(v.stock) || 0), 0);
                   const allOut = p.variants.length > 0 && totalStock <= 0;
                   return (
-                    <tr key={p.id} className={`hover:bg-gray-50/80 transition-colors group ${p.isAvailable ? '' : 'bg-[#fafafa]'}`}>
-                      <td className="py-2.5 pl-4 pr-2">
-                        <input type="checkbox" className="rounded border-gray-300 text-[#006B50] focus:ring-[#006B50] cursor-pointer" />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-[#f7f7f7] shrink-0 overflow-hidden border border-gray-200 flex items-center justify-center">
-                            {p.imageUrl ? <img src={p.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={16} className="text-gray-400" />}
+                    <React.Fragment key={p.id}>
+                      <tr className={`hover:bg-gray-50/80 transition-colors group ${p.isAvailable ? '' : 'bg-[#fafafa]'}`}>
+                        <td className="py-2.5 pl-4 pr-2">
+                          <input type="checkbox" className="rounded border-gray-300 text-[#006B50] focus:ring-[#006B50] cursor-pointer" />
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-[#f7f7f7] shrink-0 overflow-hidden border border-gray-200 flex items-center justify-center">
+                              {p.imageUrl ? <img src={p.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={16} className="text-gray-400" />}
+                            </div>
+                            <div className="min-w-0">
+                              <button onClick={() => openEditor(p)} className="font-semibold text-gray-900 hover:text-[#006B50] text-left cursor-pointer truncate max-w-xs block">
+                                {p.name}
+                              </button>
+                              <p className="text-[11px] text-gray-400">{p.variants.length} variant{p.variants.length === 1 ? '' : 's'} · {priceRange(p)}</p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <button onClick={() => openEditor(p)} className="font-semibold text-gray-900 hover:text-[#006B50] text-left cursor-pointer truncate max-w-xs block">
-                              {p.name}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${p.isAvailable ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-gray-100 text-gray-600'}`}>
+                            {p.isAvailable ? 'Active' : 'Draft'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-700">
+                          {allOut ? <span className="text-rose-600 font-bold">0 in stock</span> : `${totalStock} in stock`}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600">{p.category || 'Uncategorized'}</td>
+                        <td className="px-3 py-2.5 text-right pr-4">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => setExpandedId(open ? null : p.id)}
+                              className="px-2.5 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-800 text-[11px] font-semibold transition-colors cursor-pointer"
+                              title="Quick edit variants & stock"
+                            >
+                              Quick edit {dirty && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-700 ml-1" />}
                             </button>
-                            <p className="text-[11px] text-gray-400">{p.variants.length} variant{p.variants.length === 1 ? '' : 's'} · {priceRange(p)}</p>
+                            <button
+                              onClick={() => openEditor(p)}
+                              className="p-1.5 rounded-md text-gray-500 hover:text-emerald-800 hover:bg-emerald-50 transition-colors cursor-pointer"
+                              title="Edit product"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProduct(p)}
+                              className="p-1.5 rounded-md text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="Delete product"
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${p.isAvailable ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-gray-100 text-gray-600'}`}>
-                          {p.isAvailable ? 'Active' : 'Draft'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-700">
-                        {allOut ? <span className="text-rose-600 font-bold">0 in stock</span> : `${totalStock} in stock`}
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-600">{p.category || 'Uncategorized'}</td>
-                      <td className="px-3 py-2.5 text-gray-600">2</td>
-                      <td className="px-3 py-2.5 text-gray-600 pr-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${p.sale_mode === 'preorder' ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`}>
-                          {p.sale_mode === 'preorder' ? 'Pre-order' : 'Regular'}
-                        </span>
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+
+                      {open && (
+                        <tr className="bg-gray-50/80">
+                          <td colSpan={6} className="p-4">
+                            <div className="rounded-xl bg-white border border-gray-200 p-4 space-y-3 shadow-inner">
+                              <div className="flex items-center justify-between border-b pb-2">
+                                <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider">Quick Edit Variants — {p.name}</h4>
+                                <button onClick={() => setExpandedId(null)} className="text-gray-400 hover:text-gray-600 text-xs font-bold cursor-pointer">✕ Close</button>
+                              </div>
+                              <div className="grid grid-cols-[1fr_140px_120px] gap-3 px-1 text-xs font-bold text-gray-500 uppercase">
+                                <span>Variant / Unit</span><span>Price (₹)</span><span>Stock</span>
+                              </div>
+                              {p.variants.map((v) => {
+                                const d = draftOf(v);
+                                return (
+                                  <div key={v.id} className="grid grid-cols-[1fr_140px_120px] gap-3 items-center">
+                                    <span className="text-xs font-semibold text-gray-900 px-1">{v.unit}</span>
+                                    <input
+                                      inputMode="decimal"
+                                      value={d.price}
+                                      onChange={(e) => setDraft(v, 'price', e.target.value)}
+                                      className={inputCls}
+                                      aria-label={`${v.unit} price`}
+                                    />
+                                    <input
+                                      inputMode="numeric"
+                                      value={d.stock}
+                                      onChange={(e) => setDraft(v, 'stock', e.target.value)}
+                                      className={`${inputCls} ${Number(d.stock) < LOW_STOCK_THRESHOLD ? '!border-rose-500' : ''}`}
+                                      aria-label={`${v.unit} stock`}
+                                    />
+                                  </div>
+                                );
+                              })}
+                              <div className="flex items-center justify-end gap-2 pt-2">
+                                <button
+                                  onClick={() => discardQuick(p)}
+                                  disabled={!dirty || savingId === p.id}
+                                  className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
+                                >
+                                  Discard
+                                </button>
+                                <button
+                                  onClick={() => saveQuick(p)}
+                                  disabled={!dirty || savingId === p.id}
+                                  className="px-4 py-1.5 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-white text-xs font-bold transition-colors shadow-sm cursor-pointer disabled:opacity-40 flex items-center gap-1.5"
+                                >
+                                  {savingId === p.id ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Changes
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}
