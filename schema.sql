@@ -2011,3 +2011,23 @@ CREATE POLICY "Super admins can manage wallet transactions"
       WHERE id = auth.uid() AND role = 'super_admin'
     )
   );
+
+-- ----------------------------------------------------------------------------
+-- 20. INVENTORY TRANSACTIONS RLS POLICIES (AUTHENTICATED WRITE)
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.inventory_transactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admin write inventory_transactions" ON public.inventory_transactions;
+CREATE POLICY "Admin write inventory_transactions"
+ON public.inventory_transactions
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Admin read-only inventory_transactions" ON public.inventory_transactions;
+CREATE POLICY "Admin read-only inventory_transactions"
+ON public.inventory_transactions
+FOR SELECT
+TO authenticated
+USING (true);
