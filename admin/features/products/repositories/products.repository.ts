@@ -98,18 +98,18 @@ export async function updateVariantPricesAndStock(updates: ProductVariantQuickUp
       .eq('id', update.id);
 
     if (!error && diff !== 0) {
-      try {
-        await supabase.from('inventory_transactions').insert({
-          variant_id: update.id,
-          transaction_type: diff > 0 ? 'stock_adjustment' : 'stock_reduction',
-          quantity: Math.abs(diff),
-          reference_type: 'admin_quick_edit',
-          reference_id: adminId || null,
-          notes: `Admin adjusted stock from ${oldStock} to ${update.stock} (delta: ${diff > 0 ? '+' : ''}${diff})`,
-          created_at: new Date().toISOString(),
-        });
-      } catch (invErr) {
-        console.warn('Inventory transaction log warning:', invErr);
+      const { error: invErr } = await supabase.from('inventory_transactions').insert({
+        variant_id: update.id,
+        transaction_type: diff > 0 ? 'stock_adjustment' : 'stock_reduction',
+        quantity: Math.abs(diff),
+        reference_type: 'admin_quick_edit',
+        reference_id: adminId || null,
+        notes: `Admin adjusted stock from ${oldStock} to ${update.stock} (delta: ${diff > 0 ? '+' : ''}${diff})`,
+        created_at: new Date().toISOString(),
+      });
+      if (invErr) {
+        console.error('Inventory transaction insert error:', invErr);
+        throw invErr;
       }
     }
 
