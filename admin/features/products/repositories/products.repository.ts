@@ -77,6 +77,18 @@ export async function updateVariantPricesAndStock(updates: ProductVariantQuickUp
   const { data: { session } } = await supabase.auth.getSession();
   const adminId = session?.user?.id;
 
+  let adminName = 'Admin';
+  if (adminId) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('display_name, email')
+      .eq('id', adminId)
+      .maybeSingle();
+    if (profile) {
+      adminName = profile.display_name || profile.email || 'Admin';
+    }
+  }
+
   const results = await Promise.all(updates.map(async (update) => {
     const { data: oldVar } = await supabase
       .from('product_variants')
@@ -104,7 +116,7 @@ export async function updateVariantPricesAndStock(updates: ProductVariantQuickUp
         quantity: diff,
         reference_type: 'admin_quick_edit',
         reference_id: null,
-        notes: `Admin adjusted stock from ${oldStock} to ${update.stock} (delta: ${diff > 0 ? '+' : ''}${diff}) [Admin: ${adminId || 'unknown'}]`,
+        notes: `Admin adjusted stock from ${oldStock} to ${update.stock} (delta: ${diff > 0 ? '+' : ''}${diff}) [Admin: ${adminName}]`,
         created_at: new Date().toISOString(),
       });
       if (invErr) {
