@@ -34,7 +34,7 @@ export function generateProductOptions(p: any, activeCampaigns: any[], activeDis
         price: finalPrice,
         originalPrice: hasVariantDiscount ? rawPrice : (v.original_price ? Number(v.original_price) : undefined),
         discountPercent: variantDiscountPercent,
-        stockCount: activeCamp ? (activeCamp.max_quantity - activeCamp.reserved_quantity) : Number(v.stock),
+        stockCount: activeCamp ? (activeCamp.max_quantity - activeCamp.reserved_quantity) : Math.max(0, Number(v.stock || 0) - Number(v.committed_qty || 0)),
         sku: v.sku,
         preorderCampaign: activeCamp || null,
       };
