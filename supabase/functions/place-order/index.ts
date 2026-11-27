@@ -449,6 +449,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // Coupon validation
+      let appliedCouponId: string | null = null;
       if (couponCode && typeof couponCode === 'string') {
         const { data: coupon } = await supabase
           .from("coupons")
@@ -459,6 +460,7 @@ Deno.serve(async (req: Request) => {
 
         if (coupon && (!coupon.expiry_date || new Date(coupon.expiry_date) >= new Date())) {
           if (verifiedSubtotal >= Number(coupon.min_order_amount || 0)) {
+            appliedCouponId = coupon.id;
             if (coupon.discount_type === 'percentage') {
               discountAmount = Math.floor((verifiedSubtotal * Number(coupon.discount_value)) / 100);
               if (coupon.max_discount_amount) {
@@ -515,6 +517,7 @@ Deno.serve(async (req: Request) => {
         .insert({
           checkout_id: targetCheckoutId,
           user_id: finalUserId,
+          coupon_id: appliedCouponId,
           customer_name: details?.name || "Customer",
           customer_phone: details?.phone || "",
           delivery_address: details || {},
@@ -561,6 +564,18 @@ Deno.serve(async (req: Request) => {
       if (itemsErr) {
         await supabase.from("orders").delete().eq("id", order.id);
         return badRequest(itemsErr.message || "Failed to create order items.");
+      }
+
+      if (appliedCouponId) {
+        await supabase
+          .from("coupon_usages")
+          .insert({
+            coupon_id: appliedCouponId,
+            user_id: finalUserId,
+            phone_number: details?.phone || "",
+            browser_id: body.browserId || null,
+            order_id: order.id,
+          });
       }
     }
 
