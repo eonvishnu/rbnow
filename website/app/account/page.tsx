@@ -283,7 +283,7 @@ export default function AccountPage() {
                 <Headphones size={22} />
               </div>
               <div>
-                <h3 className="font-black text-gray-900 text-sm uppercase">Concierge Customer Support</h3>
+                <h3 className="font-black text-gray-900 text-sm uppercase">Customer Support</h3>
                 <p className="text-xs text-gray-500 font-medium">Direct WhatsApp & Phone assistance</p>
               </div>
             </div>

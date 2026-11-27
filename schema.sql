@@ -1938,3 +1938,67 @@ CREATE TRIGGER payment_gateways_updated_at BEFORE UPDATE ON public.payment_gatew
 CREATE TRIGGER set_payment_gateways_updated_at BEFORE UPDATE ON public.payment_gateways FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
 CREATE TRIGGER trg_auto_link_product_category BEFORE INSERT OR UPDATE OF category_name, category_id ON public.products FOR EACH ROW EXECUTE FUNCTION auto_link_product_category_fn();
 CREATE TRIGGER tr_protect_profile_columns BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION protect_profile_columns();
+
+-- ----------------------------------------------------------------------------
+-- 19. WALLET RLS POLICIES (SUPER ADMIN ONLY)
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.customer_wallets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wallet_transactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users and super admins can view wallets" ON public.customer_wallets;
+CREATE POLICY "Users and super admins can view wallets"
+  ON public.customer_wallets FOR SELECT
+  TO authenticated
+  USING (
+    user_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'super_admin'
+    )
+  );
+
+DROP POLICY IF EXISTS "Super admins can manage customer wallets" ON public.customer_wallets;
+CREATE POLICY "Super admins can manage customer wallets"
+  ON public.customer_wallets FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'super_admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'super_admin'
+    )
+  );
+
+DROP POLICY IF EXISTS "Users and super admins can view wallet transactions" ON public.wallet_transactions;
+CREATE POLICY "Users and super admins can view wallet transactions"
+  ON public.wallet_transactions FOR SELECT
+  TO authenticated
+  USING (
+    user_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'super_admin'
+    )
+  );
+
+DROP POLICY IF EXISTS "Super admins can manage wallet transactions" ON public.wallet_transactions;
+CREATE POLICY "Super admins can manage wallet transactions"
+  ON public.wallet_transactions FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'super_admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'super_admin'
+    )
+  );
