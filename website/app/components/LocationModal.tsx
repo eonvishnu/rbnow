@@ -278,59 +278,9 @@ export const LocationModal = () => {
             </div>
           )}
 
-          {/* Action: Use Current Location (Clean row/card) */}
-          <button
-            onClick={handleGPSClick}
-            disabled={isDetectingGPS}
-            className="w-full bg-[#e5f5ef] hover:bg-[#d5efe5] border border-[#bce2d3] rounded-2xl p-3.5 flex items-center gap-3.5 transition-all active:scale-[0.98] text-left shadow-xs cursor-pointer"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#004d3b] text-[#ffc400] flex items-center justify-center shrink-0 shadow-sm">
-              {isDetectingGPS ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18} className="fill-[#ffc400]" />}
-            </div>
-            <div>
-              <p className="text-xs font-black text-[#004d3b]">Use current location</p>
-              <p className="text-[10px] text-[#006b50] font-bold">Detect using device location</p>
-            </div>
-          </button>
-
-          {/* Search Results (Hidden for now) */}
-          {false && searchResults.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Search Results</h3>
-              <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm divide-y divide-dashed divide-gray-200">
-                {searchResults.map((item, i) => {
-                  const mainTitle = item.structured_formatting?.main_text || item.description?.split(',')[0] || 'Location';
-                  const subTitle = item.structured_formatting?.secondary_text || item.description || '';
-
-                  return (
-                    <div
-                      key={i}
-                      onClick={() => handleSelectPrediction(item)}
-                      className="p-3.5 hover:bg-emerald-50/60 cursor-pointer flex items-start gap-3 transition-colors text-xs"
-                    >
-                      <MapPin size={18} className="text-gray-700 shrink-0 mt-0.5" />
-                      <div className="min-w-0">
-                        <p className="font-extrabold text-gray-900 text-xs sm:text-sm truncate">{mainTitle}</p>
-                        <p className="text-[11px] text-gray-500 font-medium line-clamp-1 mt-0.5">{subTitle}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* Saved Customer Addresses & Add New Address */}
           <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Saved Addresses</h3>
-              <button
-                onClick={() => setShowMapPicker(true)}
-                className="inline-flex items-center gap-1.5 text-xs font-black text-[#004d3b] hover:underline cursor-pointer"
-              >
-                <Plus size={14} /> Add new address
-              </button>
-            </div>
+            <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Saved Addresses</h3>
 
             {savedAddresses.length > 0 && !searchQuery ? (
               <div className="space-y-2">
@@ -364,15 +314,18 @@ export const LocationModal = () => {
                 })}
               </div>
             ) : (
-              !searchQuery && (
-                <button
-                  onClick={() => setShowMapPicker(true)}
-                  className="w-full bg-[#ffc400] hover:bg-[#f5b800] text-[#004d3b] rounded-2xl p-3.5 flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm border border-amber-300 font-black text-xs cursor-pointer"
-                >
-                  <Plus size={16} /> Add new address
-                </button>
-              )
+              <div className="py-6 text-center bg-gray-50 border border-gray-200 rounded-2xl p-4">
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">No saved addresses found.</p>
+              </div>
             )}
+
+            {/* Big Add New Address Button */}
+            <button
+              onClick={() => setShowMapPicker(true)}
+              className="w-full bg-[#ffc400] hover:bg-[#f5b800] text-[#004d3b] rounded-2xl p-3.5 flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm border border-amber-300 font-black text-xs cursor-pointer mt-2"
+            >
+              <Plus size={16} /> Add new address
+            </button>
           </div>
 
           {/* Delivery Assurance Banner */}
