@@ -577,9 +577,8 @@ export default function CartPage() {
         total_price: item.price * item.qty,
       }));
 
-      const safeName = (userData?.display_name && !userData.display_name.toLowerCase().startsWith('member')) ? userData.display_name : '';
       const deliveryDetails = {
-        name: safeName || user.email || 'Customer',
+        name: userData?.display_name || user.email || 'Customer',
         phone: tenDigitPhone,
         lat,
         lng,

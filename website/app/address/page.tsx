@@ -223,7 +223,7 @@ export default function AddressesPage() {
             <AddressMapPicker
               onSave={handleSaveFromMap}
               onCancel={() => setShowMapPicker(false)}
-              defaultName={(userData?.display_name && !userData.display_name.toLowerCase().startsWith('member')) ? userData.display_name : ''}
+              defaultName={userData?.display_name || user?.email || ''}
               defaultPhone={userData?.phone_number || ''}
               existingLabels={addresses.map(a => a.type.toUpperCase())}
             />

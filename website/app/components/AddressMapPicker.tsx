@@ -94,10 +94,8 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
 
   const defaultType = !isHomeUsed ? 'home' : (!isWorkUsed ? 'work' : 'other');
 
-  const safeDefaultName = (defaultName && !defaultName.toLowerCase().startsWith('member')) ? defaultName : '';
-
   const [form, setForm] = useState({
-    fullName: safeDefaultName,
+    fullName: defaultName,
     mobile: defaultPhone,
     floorHouseNo: '',
     buildingName: '',
