@@ -5,6 +5,8 @@ export interface ProductVariant {
   price: number;
   original_price: number | null;
   stock: number | null;
+  committed?: number;
+  available?: number;
   sku: string | null;
   is_available: boolean | null;
 }

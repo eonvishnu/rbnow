@@ -9,14 +9,47 @@ import type {
 } from '../types/product';
 
 export async function listProducts() {
-  const { data, error } = await supabase
-    .from('products')
-    .select('id, name, category_id, category_name, description, image_url, is_available, sale_mode, expected_dispatch_date, preorder_limit, preorder_description, product_variants(id, product_id, unit, price, original_price, stock, sku, is_available)')
-    .order('name');
+  const [prodRes, itemsRes] = await Promise.all([
+    supabase
+      .from('products')
+      .select('id, name, category_id, category_name, description, image_url, is_available, sale_mode, expected_dispatch_date, preorder_limit, preorder_description, product_variants(id, product_id, unit, price, original_price, stock, sku, is_available)')
+      .order('name'),
+    supabase
+      .from('order_items')
+      .select('variant_id, quantity, orders!inner(status)')
+      .not('orders.status', 'in', '("delivered","completed","cancelled","pending_payment")')
+  ]);
 
-  if (error) throw error;
+  if (prodRes.error) throw prodRes.error;
 
-  return catalogProductRowSchema.array().parse(data);
+  const committedMap: Record<string, number> = {};
+  if (itemsRes.data) {
+    itemsRes.data.forEach((item: any) => {
+      if (item.variant_id) {
+        committedMap[item.variant_id] = (committedMap[item.variant_id] || 0) + (Number(item.quantity) || 0);
+      }
+    });
+  }
+
+  const rawProducts = catalogProductRowSchema.array().parse(prodRes.data);
+  return rawProducts.map((p: any) => ({
+    id: p.id,
+    name: p.name || 'Unnamed Product',
+    category_id: p.category_id,
+    category_name: p.category_name,
+    description: p.description,
+    image_url: p.image_url,
+    is_available: p.is_available,
+    sale_mode: p.sale_mode,
+    expected_dispatch_date: p.expected_dispatch_date,
+    preorder_limit: p.preorder_limit,
+    preorder_description: p.preorder_description,
+    product_variants: (p.product_variants || []).map((v: any) => ({
+      ...v,
+      committed: committedMap[v.id] || 0,
+      available: Math.max(0, (Number(v.stock) || 0) - (committedMap[v.id] || 0)),
+    }))
+  }));
 }
 
 export async function listProductCategories(): Promise<ProductCategory[]> {

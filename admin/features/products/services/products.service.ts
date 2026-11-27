@@ -41,7 +41,7 @@ export async function getProductCatalog(): Promise<{
     expected_dispatch_date: row.expected_dispatch_date,
     preorder_limit: row.preorder_limit,
     preorder_description: row.preorder_description,
-    variants: (row.product_variants || []).slice().sort((a, b) => a.price - b.price),
+    variants: (row.product_variants || []).slice().sort((a: any, b: any) => a.price - b.price),
   }));
 
   return { products, categories };

@@ -456,11 +456,21 @@ export default function ProductsPage() {
                         </td>
                         <td className="px-3 py-2.5">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${p.isAvailable ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-gray-100 text-gray-600'}`}>
-                            {p.isAvailable ? 'Active' : 'Draft'}
-                          </span>
+                          {p.isAvailable ? 'Active' : 'Inactive'}
+                        </span>
                         </td>
                         <td className="px-3 py-2.5 text-gray-700">
-                          {allOut ? <span className="text-rose-600 font-bold">0 in stock</span> : `${totalStock} in stock`}
+                          {(() => {
+                            const inHand = totalStock;
+                            const committed = p.variants.reduce((s, v) => s + (Number((v as any).committed) || 0), 0);
+                            const available = Math.max(0, inHand - committed);
+                            return (
+                              <div>
+                                <p className="font-bold text-gray-900">{available} available</p>
+                                <p className="text-[10px] text-gray-500 font-medium">{inHand} in hand · {committed} committed</p>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-2.5 text-gray-600">{p.category || 'Uncategorized'}</td>
                         <td className="px-3 py-2.5 text-right pr-4">
