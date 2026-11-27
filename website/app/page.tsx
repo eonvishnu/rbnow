@@ -12,9 +12,6 @@ import { ProductModal } from "./components/ProductModal";
 import { useCatalog } from "@/features/catalog/hooks/useCatalog";
 import { SubCategory } from "@/features/catalog/types/catalog.types";
 import { fetchSubCategoriesFromDb } from "@/features/catalog/repositories/catalog.repository";
-import Link from "next/link";
-import { useStore } from "./components/StoreGuard";
-import { Lock, Package, Headphones } from "lucide-react";
 
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState("all");
@@ -26,7 +23,6 @@ export default function Home() {
   const [selectionMap, setSelectionMap] = useState<Record<string, number>>({});
   
   const { cart, addToCart, removeFromCart } = useCart();
-  const { isOpen: isStoreOpen, message: storeClosedMsg } = useStore();
   const activeSubBtnRef = useRef<HTMLButtonElement>(null);
 
   const { products, categories, loading } = useCatalog(activeCategory, activeSubCategory);
@@ -92,95 +88,56 @@ export default function Home() {
         onSearchChange={setSearchQuery}
       />
 
-      {!isStoreOpen ? (
-        <div className="max-w-lg mx-auto p-8 sm:p-12 mt-16 bg-[#FFF9E8] border-2 border-amber-400 rounded-[36px] text-center space-y-6 shadow-2xl relative overflow-hidden m-4 sm:mx-auto">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-amber-200/30 rounded-full blur-3xl pointer-events-none" />
+      {/* Banner Carousel (Top Hero) */}
+      <BannerCarousel
+        onSelectCategory={(catName: string) => {
+          setActiveCategory(catName);
+          setActiveCategoryTitle(catName);
+          setActiveSubCategory("all");
+        }}
+      />
 
-          <div className="w-20 h-20 bg-rose-100 text-rose-800 rounded-full border-2 border-rose-300 flex items-center justify-center mx-auto shadow-md relative animate-pulse">
-            <Lock size={32} />
-          </div>
+      {/* Top Sticky Category Circles Bar */}
+      <CategoryNav
+        activeCategory={activeCategory}
+        onCategoryChange={handleCategoryChange}
+      />
 
-          <div className="space-y-2">
-            <span className="bg-amber-400 text-emerald-950 text-[10px] font-black uppercase px-3 py-1 rounded-full tracking-widest inline-block shadow-xs">
-              Operating Hours Notice
-            </span>
-            <h2 className="text-xl sm:text-2xl font-serif font-black text-emerald-950 uppercase tracking-tight">
-              We Are Closed Right Now
-            </h2>
-            <p className="text-xs sm:text-sm text-emerald-900/80 font-medium leading-relaxed max-w-sm mx-auto">
-              {storeClosedMsg || "Our store is currently closed for fresh daily orders and deliveries. Please check back later during operating hours."}
-            </p>
-          </div>
-
-          <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
-            <Link
-              href="/orders"
-              className="bg-emerald-800 hover:bg-emerald-900 text-amber-300 font-black px-6 py-3.5 rounded-2xl text-xs uppercase tracking-widest shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+      {/* Sticky Subcategories Filter Bar */}
+      {currentSubCategories.length > 0 && (
+        <div className="sticky top-[110px] z-25 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
+          <div className="max-w-7xl mx-auto flex gap-2.5 overflow-x-auto no-scrollbar items-center">
+            <button
+              onClick={() => setActiveSubCategory("all")}
+              className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                activeSubCategory === "all"
+                  ? "bg-[#ffc400] text-[#00382b] shadow-sm"
+                  : "bg-[#004d3b] text-emerald-100 border border-[#005a45] hover:bg-[#005a45]"
+              }`}
             >
-              <Package size={15} /> Check Past Orders
-            </Link>
-            <a
-              href="https://wa.me/916304076069"
-              target="_blank"
-              rel="noreferrer"
-              className="bg-white hover:bg-amber-50 text-emerald-950 border border-amber-300 font-black px-6 py-3.5 rounded-2xl text-xs uppercase tracking-widest shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Headphones size={15} /> Contact Support
-            </a>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Banner Carousel (Top Hero) */}
-          <BannerCarousel
-            onSelectCategory={(catName: string) => {
-              setActiveCategory(catName);
-              setActiveCategoryTitle(catName);
-              setActiveSubCategory("all");
-            }}
-          />
-
-          {/* Top Sticky Category Circles Bar */}
-          <CategoryNav
-            activeCategory={activeCategory}
-            onCategoryChange={handleCategoryChange}
-          />
-
-          {/* Sticky Subcategories Filter Bar */}
-          {currentSubCategories.length > 0 && (
-            <div className="sticky top-[110px] z-25 bg-[#00382b] py-2.5 px-3.5 border-b border-[#002a20] shadow-md">
-              <div className="max-w-7xl mx-auto flex gap-2.5 overflow-x-auto no-scrollbar items-center">
+              ALL
+            </button>
+            {currentSubCategories.map((sub: string | SubCategory, index: number) => {
+              const subName = typeof sub === "string" ? sub : sub.name;
+              const isActive = activeSubCategory.toLowerCase() === subName.toLowerCase();
+              return (
                 <button
-                  onClick={() => setActiveSubCategory("all")}
+                  ref={isActive ? activeSubBtnRef : null}
+                  key={index}
+                  onClick={() => setActiveSubCategory(subName)}
                   className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
-                    activeSubCategory === "all"
+                    isActive
                       ? "bg-[#ffc400] text-[#00382b] shadow-sm"
                       : "bg-[#004d3b] text-emerald-100 border border-[#005a45] hover:bg-[#005a45]"
                   }`}
                 >
-                  ALL
+                  {subName}
                 </button>
-                {currentSubCategories.map((sub: string | SubCategory, index: number) => {
-                  const subName = typeof sub === "string" ? sub : sub.name;
-                  const isActive = activeSubCategory.toLowerCase() === subName.toLowerCase();
-                  return (
-                    <button
-                      ref={isActive ? activeSubBtnRef : null}
-                      key={index}
-                      onClick={() => setActiveSubCategory(subName)}
-                      className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
-                        isActive
-                          ? "bg-[#ffc400] text-[#00382b] shadow-sm"
-                          : "bg-[#004d3b] text-emerald-100 border border-[#005a45] hover:bg-[#005a45]"
-                      }`}
-                    >
-                      {subName}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Products Container */}
       <div className="max-w-7xl mx-auto px-3.5 sm:px-6 pt-5 space-y-6">
@@ -272,8 +229,6 @@ export default function Home() {
         )}
 
       </div>
-        </>
-      )}
 
       {/* Product Customization Modal */}
       {selectedProduct && (
