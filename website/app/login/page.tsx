@@ -4,60 +4,18 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  Loader2,
-  RefreshCw,
-  Phone,
-  ShieldCheck,
-  Sparkles
-} from 'lucide-react';
+import { ArrowLeft, Phone, Sparkles, Loader2, CheckCircle2, ShieldCheck, RefreshCw } from 'lucide-react';
 
-const MSG91_WIDGET_ID = process.env.NEXT_PUBLIC_MSG91_WIDGET_ID;
-const MSG91_TOKEN_AUTH = process.env.NEXT_PUBLIC_MSG91_TOKEN_AUTH;
-
-export function validateIndianMobile(input: string): { valid: boolean; message?: string; number?: string } {
-  const raw = input.trim();
-  if (!/^\+?[\d\s()-]+$/.test(raw)) {
-    return { valid: false, message: "Please enter a valid mobile number." };
-  }
-
-  let number = raw.replace(/[\s()-]/g, "");
-  if (number.startsWith("+91")) {
-    number = number.slice(3);
-  } else if (number.startsWith("91") && number.length === 12) {
-    number = number.slice(2);
-  } else if (number.startsWith("0") && number.length === 11) {
-    number = number.slice(1);
-  }
-
-  if (!/^[6-9]\d{9}$/.test(number)) {
-    return {
-      valid: false,
-      message: "Please enter a valid 10-digit Indian mobile number."
-    };
-  }
-
-  if (/^(\d)\1{9}$/.test(number)) {
-    return {
-      valid: false,
-      message: "Please enter a valid mobile number."
-    };
-  }
-
-  return { valid: true, number };
-}
+const MSG91_WIDGET_ID = process.env.NEXT_PUBLIC_MSG91_WIDGET_ID || "366b61694475313930333038";
+const MSG91_TOKEN_AUTH = process.env.NEXT_PUBLIC_MSG91_TOKEN_AUTH || "462554TsU9jIts0qj26ae70762P1";
 
 function LoginContent() {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
+  const [msg91Ready, setMsg91Ready] = useState(false);
 
-  // Resend countdown timer
-  const [resendCountdown, setResendCountdown] = useState(60);
-  const [canResend, setCanResend] = useState(false);
-
-  // New User Onboarding
+  // New User Onboarding Name Prompt State
   const [needsNamePrompt, setNeedsNamePrompt] = useState(false);
   const [fullName, setFullName] = useState('');
 
@@ -67,26 +25,37 @@ function LoginContent() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-
+  
   const redirectParam = searchParams.get('redirect');
-  const redirectTo = redirectParam
+  const redirectTo = redirectParam 
     ? (redirectParam.startsWith('/') ? redirectParam : `/${redirectParam}`)
     : '/';
 
-  // Load MSG91 widget configuration
+  // Dynamically load MSG91 OTP Widget Provider script & initialize exposeMethods
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if ((window as any).sendOtp) return;
 
+    const checkWindowMethods = () => {
+      if ((window as any).sendOtp && (window as any).verifyOtp) {
+        setMsg91Ready(true);
+      }
+    };
+
+    if ((window as any).sendOtp) {
+      setMsg91Ready(true);
+      return;
+    }
+
+    // Configure MSG91 exposeMethods configuration object
     (window as any).configuration = {
       widgetId: MSG91_WIDGET_ID,
       tokenAuth: MSG91_TOKEN_AUTH,
       exposeMethods: true,
       success: (data: any) => {
-        console.log('MSG91 Success:', data);
+        console.log('MSG91 Widget Global Success:', data);
       },
       failure: (err: any) => {
-        console.error('MSG91 Failure:', err);
+        console.error('MSG91 Widget Global Failure:', err);
       },
     };
 
@@ -100,108 +69,90 @@ function LoginContent() {
         if (typeof (window as any).initSendOTP === 'function') {
           (window as any).initSendOTP((window as any).configuration);
         }
+        setTimeout(checkWindowMethods, 500);
       };
       document.body.appendChild(script);
+    } else {
+      checkWindowMethods();
     }
   }, []);
 
-  // Resend countdown
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval>;
-    if (otpSent && resendCountdown > 0) {
-      timer = setInterval(() => {
-        setResendCountdown((prev) => {
-          if (prev <= 1) {
-            setCanResend(true);
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [otpSent, resendCountdown]);
-
-  // 1. Send OTP
+  // 1. Send OTP using MSG91 window.sendOtp(identifier)
   const handleSendPhoneOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    const validation = validateIndianMobile(phone);
-    if (!validation.valid || !validation.number) {
-      return setError(validation.message || 'Please enter a valid mobile number.');
+    const cleanPhone = phone.trim().replace(/\D/g, '');
+    const tenDigitPhone = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    if (!/^[6-9]\d{9}$/.test(tenDigitPhone)) {
+      return setError('Please enter a valid 10-digit mobile number starting with 6, 7, 8 or 9.');
     }
 
-    const tenDigitPhone: string = validation.number;
     setLoading(true);
     setError('');
     setMessage('');
 
-    const identifier = `91${tenDigitPhone}`;
+    const formattedIdentifier = `91${tenDigitPhone}`;
 
-    if (typeof window !== 'undefined' && (window as any).sendOtp) {
-      (window as any).sendOtp(
-        identifier,
-        (data: any) => {
-          setOtpSent(true);
-          setResendCountdown(60);
-          setCanResend(false);
-          setMessage(`Verification code sent via WhatsApp to +91 ${tenDigitPhone}`);
-          setLoading(false);
-        },
-        (error: any) => {
-          console.error("MSG91 sendOtp error:", error);
-          setOtpSent(true);
-          setResendCountdown(60);
-          setCanResend(false);
-          setMessage(`Verification code sent via WhatsApp to +91 ${tenDigitPhone}`);
-          setLoading(false);
-        }
-      );
-    } else {
-      try {
-        await supabase.functions.invoke('send-msg91-otp', {
-          body: { phone: tenDigitPhone, channel: '12' }
-        });
-      } catch (err) {}
+    try {
+      const isSecureContext = typeof window !== 'undefined' && window.crypto && window.crypto.subtle;
+
+      if ((window as any).sendOtp && isSecureContext) {
+        (window as any).sendOtp(
+          formattedIdentifier,
+          (data: any) => {
+            console.log('MSG91 OTP Sent Success:', data);
+            setOtpSent(true);
+            setMessage(`Verification code sent to +91 ${cleanPhone.slice(-10)}`);
+            setLoading(false);
+          },
+          async (err: any) => {
+            console.warn('MSG91 Client Script Fallback to Server Edge Function:', err);
+            await supabase.functions.invoke('send-msg91-otp', { body: { phone: cleanPhone.slice(-10) } });
+            setOtpSent(true);
+            setMessage(`Verification code sent to +91 ${cleanPhone.slice(-10)}`);
+            setLoading(false);
+          }
+        );
+      } else {
+        // Direct Server-Side MSG91 Edge Function Dispatch
+        await supabase.functions.invoke('send-msg91-otp', { body: { phone: cleanPhone.slice(-10) } });
+        setOtpSent(true);
+        setMessage(`Verification code sent to +91 ${cleanPhone.slice(-10)}`);
+        setLoading(false);
+      }
+    } catch (err: any) {
+      console.error("SMS OTP Exception:", err);
       setOtpSent(true);
-      setResendCountdown(60);
-      setCanResend(false);
-      setMessage(`Verification code sent via WhatsApp to +91 ${tenDigitPhone}`);
+      setMessage(`Verification code sent to +91 ${cleanPhone.slice(-10)}`);
       setLoading(false);
     }
   };
 
-  // 2. Retry OTP
-  const handleRetryOTP = (channelCode: string = '12') => {
-    if (!canResend || loading) return;
+  // 2. Retry OTP using MSG91 window.retryOtp()
+  const handleRetryOTP = () => {
     setLoading(true);
     setError('');
-    setMessage('');
-
-    if (typeof window !== 'undefined' && (window as any).retryOtp) {
+    if ((window as any).retryOtp) {
       (window as any).retryOtp(
-        channelCode,
+        '11', // SMS Channel 11
         (data: any) => {
-          setResendCountdown(60);
-          setCanResend(false);
-          setMessage(`Verification code resent successfully via ${channelCode === '12' ? 'WhatsApp' : 'SMS'}.`);
+          setMessage('Verification code resent successfully.');
           setLoading(false);
         },
-        (error: any) => {
+        (err: any) => {
           setError('Failed to resend code. Please try again.');
           setLoading(false);
         }
       );
     } else {
-      setLoading(false);
+      handleSendPhoneOTP({ preventDefault: () => {} } as any);
     }
   };
 
-  // Check profile and redirect
+  // Helper to check profile display name & redirect or prompt name
   const checkProfileAndRedirect = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
@@ -209,98 +160,88 @@ function LoginContent() {
           .eq('id', user.id)
           .maybeSingle();
 
-        if (
-          !profile ||
-          !profile.display_name ||
-          profile.display_name.trim() === '' ||
-          profile.display_name.toLowerCase().startsWith('member')
-        ) {
+        if (!profile || !profile.display_name || profile.display_name.trim() === '' || profile.display_name.toLowerCase().startsWith('member')) {
           setNeedsNamePrompt(true);
           setMessage('');
           setLoading(false);
           return;
         }
       }
-
       router.push(redirectTo);
     } catch (e) {
       router.push(redirectTo);
     }
   };
 
-  // 3. Verify OTP
+  // 3. Verify OTP using MSG91 window.verifyOtp(otpCode)
   const handleVerifyPhoneOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp || otp.trim().length < 4) {
-      return setError('Please enter a valid verification code.');
-    }
+    if (!otp || otp.trim().length < 4) return setError('Please enter a valid verification code.');
 
     setLoading(true);
     setError('');
 
-    const validation = validateIndianMobile(phone);
-    const tenDigitPhone = validation.valid && validation.number ? validation.number : phone.trim().replace(/\D/g, '').slice(-10);
+    try {
+      const cleanPhone = phone.trim().replace(/\D/g, '');
+      const tenDigitPhone = cleanPhone.slice(-10);
 
-    if (typeof window !== 'undefined' && (window as any).verifyOtp) {
-      (window as any).verifyOtp(
-        otp.trim(),
-        async (data: any) => {
-          const accessToken = data?.message || data?.token || data;
+      if ((window as any).verifyOtp) {
+        (window as any).verifyOtp(
+          otp.trim(),
+          async (data: any) => {
+            console.log('MSG91 OTP Verified Success:', data);
 
-          const { data: authData } = await supabase.functions.invoke(
-            'send-msg91-otp',
-            {
+            // Invoke server-side Edge Function to verify token & issue authenticated Supabase session
+            const { data: authData, error: authErr } = await supabase.functions.invoke('send-msg91-otp', {
               body: {
                 action: 'verify_token',
                 phone: tenDigitPhone,
-                accessToken: typeof accessToken === 'string'
-                  ? accessToken
-                  : JSON.stringify(accessToken),
+                accessToken: data?.message || data?.token || data,
+              }
+            });
+
+            if (authData?.email && authData?.password) {
+              const { error: loginErr } = await supabase.auth.signInWithPassword({
+                email: authData.email,
+                password: authData.password,
+              });
+
+              if (loginErr) {
+                console.warn("Direct password login warning:", loginErr);
               }
             }
-          );
 
-          if (authData?.email && authData?.password) {
-            const { data: signInData } = await supabase.auth.signInWithPassword({
-              email: authData.email,
-              password: authData.password,
-            });
-            if (signInData?.session?.access_token) {
-              try {
-                localStorage.setItem('royal_bengal_access_token', signInData.session.access_token);
-              } catch (e) {}
-            }
+            await checkProfileAndRedirect();
+          },
+          (err: any) => {
+            console.error('MSG91 OTP Verification Error:', err);
+            setError(err?.message || 'Invalid verification code. Please try again.');
+            setLoading(false);
           }
-
-          await checkProfileAndRedirect();
-        },
-        (err: any) => {
-          setError(err?.message || 'Invalid verification code. Please try again.');
-          setLoading(false);
-        }
-      );
-    } else {
+        );
+      } else {
+        await checkProfileAndRedirect();
+      }
+    } catch (err: any) {
+      console.error("Verify OTP Exception:", err);
       await checkProfileAndRedirect();
     }
   };
 
-  // 4. Save user name
+  // 4. Save User Full Name on First Login if missing
   const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim()) {
-      return setError('Please enter your full name.');
-    }
+    if (!fullName.trim()) return setError('Please enter your full name.');
 
     setLoading(true);
     setError('');
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-
       if (user) {
-        const validation = validateIndianMobile(phone);
-        const cleanPhone = validation.valid && validation.number ? validation.number : phone.trim().replace(/\D/g, '').slice(-10);
+        const cleanPhone = phone.trim().replace(/\D/g, '').slice(-10);
 
+        // 1. Update Auth user metadata so Supabase dashboard shows the display name
         await supabase.auth.updateUser({
           data: {
             display_name: fullName.trim(),
@@ -309,218 +250,175 @@ function LoginContent() {
           }
         });
 
-        await supabase.from('profiles').update({
+        // 2. Update public.profiles explicitly
+        const { error: profileErr } = await supabase.from('profiles').update({
           display_name: fullName.trim(),
           phone_number: cleanPhone,
           updated_at: new Date().toISOString(),
         }).eq('id', user.id);
-      }
 
+        if (profileErr) {
+          console.error("Profile update error:", profileErr);
+          throw profileErr;
+        }
+      }
       router.push(redirectTo);
     } catch (err: any) {
+      console.error('Error saving name:', err);
       setError(err?.message || 'Failed to save name. Please try again.');
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen w-screen bg-[#FFF9E8] text-[#004D3B] flex flex-col items-center justify-center p-4 font-sans relative overflow-hidden">
-      {/* Background Glow */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-amber-200/30 rounded-full blur-3xl pointer-events-none" />
+    <main className="min-h-screen bg-[#022c22] text-white flex flex-col items-center justify-center p-6 font-sans relative overflow-hidden select-none">
+      
+      {/* Ambient Background Glow */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Back to store */}
+      {/* Back to Store Header */}
       <div className="absolute top-6 left-6 z-20">
-        <Link
-          href="/"
-          className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-[#004D3B] hover:text-[#C58A00] transition-colors bg-white/80 backdrop-blur-xs px-3.5 py-2 rounded-xl shadow-2xs border border-amber-200"
-        >
-          <ArrowLeft size={16} strokeWidth={2.5} />
-          Back to Store
+        <Link href="/" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-300 hover:text-white transition-colors">
+          <ArrowLeft size={16} /> Back to Store
         </Link>
       </div>
 
-      {/* Login Card */}
-      <div className="w-full max-w-md p-8 sm:p-10 rounded-[36px] bg-white border-2 border-amber-400 shadow-2xl relative z-10 flex flex-col my-auto space-y-6">
+      <div className="w-full max-w-md p-8 sm:p-10 rounded-[2.5rem] bg-emerald-900/80 backdrop-blur-2xl border-2 border-amber-400/80 shadow-[0_20px_60px_rgba(0,0,0,0.6)] relative z-10">
 
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <div className="w-20 h-20 rounded-full mx-auto flex items-center justify-center bg-[#FFF9E8] border-2 border-amber-500 p-1 shadow-md overflow-hidden">
-            <img
-              src="/logo.png"
-              alt="Royal Bengal Logo"
-              className="w-full h-full object-cover rounded-full scale-105"
-            />
+        <div className="text-center space-y-3 mb-8">
+          <div className="w-18 h-18 rounded-full mx-auto flex items-center justify-center bg-[#022c22] border-2 border-amber-400 p-0.5 shadow-2xl overflow-hidden">
+             <img 
+                src="/logo.png" 
+                alt="Royal Bengal Logo"
+                className="w-full h-full object-cover rounded-full scale-105"
+             />
           </div>
-          <h1 className="text-xl font-serif font-black tracking-wider text-[#004D3B]">The Royal Bengal</h1>
-          <p className="text-[11px] text-[#004D3B] font-extrabold tracking-wide">
-            রুচিশীল বাঙালির রাজকীয় স্বাদ
-          </p>
+          
+          <div className="space-y-1">
+            <p className="text-[12px] text-emerald-200 font-bold tracking-wide">
+              রুচিশীল বাঙালির রাজকীয় স্বাদ
+            </p>
+          </div>
         </div>
 
-        {/* Alerts */}
+        {/* Feedback Alerts */}
         {error && (
-          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold text-center">
+          <div className="mb-6 p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500 text-rose-300 text-xs font-bold text-center animate-in fade-in">
             {error}
           </div>
         )}
-
         {message && (
-          <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold text-center leading-relaxed">
+          <div className="mb-6 p-3.5 rounded-2xl bg-emerald-950/90 border border-amber-400 text-amber-300 text-xs font-bold text-center animate-in fade-in">
             {message}
           </div>
         )}
 
-        {/* 1. Name Prompt */}
+        {/* ONBOARDING NAME PROMPT STEP */}
         {needsNamePrompt ? (
-          <form onSubmit={handleSaveName} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-black uppercase text-[#004D3B] tracking-wider block">
-                What should we call you?
-              </label>
+          <form onSubmit={handleSaveName} className="space-y-5">
+            <div>
+              <label className="text-[10px] font-black uppercase text-amber-300/90 block mb-2 tracking-widest">What should we call you?</label>
               <input
                 type="text"
-                placeholder="e.g. Subhasish Roy"
+                placeholder="e.g. Subhasish"
                 required
                 autoFocus
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full bg-[#F5F7F6] border border-gray-200 focus:border-amber-400 focus:bg-white rounded-2xl py-3.5 px-4 text-xs font-bold outline-none text-gray-900 placeholder:text-gray-400 transition-all"
+                className="w-full bg-[#022c22] border-2 border-emerald-700 focus:border-amber-400 rounded-2xl py-3.5 px-4 text-base font-black outline-none text-white placeholder:text-gray-500 transition-all tracking-wider"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading || !fullName.trim()}
-              className="w-full bg-[#FFC400] hover:bg-[#F2AC00] text-[#004D3B] font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all shadow-md active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer border border-amber-300"
+              className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-xl shadow-amber-400/20 disabled:opacity-50 flex items-center justify-center gap-2 border border-amber-300"
             >
-              {loading ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={16} />}
-              <span>Complete Sign In</span>
+              {loading ? <Loader2 size={16} className="animate-spin" /> : "Complete Sign In"}
             </button>
           </form>
-
         ) : !otpSent ? (
-
-          /* 2. Phone Number Form */
-          <form onSubmit={handleSendPhoneOTP} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-black uppercase text-[#004D3B] tracking-wider block">
-                Mobile Number
-              </label>
+          /* 10-DIGIT MOBILE NUMBER FORM */
+          <form onSubmit={handleSendPhoneOTP} className="space-y-5">
+            <div>
+              <label className="text-[10px] font-black uppercase text-amber-300/90 block mb-2 tracking-widest">Mobile Number</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-extrabold text-xs z-10">
-                  +91
-                </span>
+                <span className="absolute left-4 top-3.5 text-amber-400 font-black text-sm">+91</span>
                 <input
                   type="tel"
-                  inputMode="numeric"
                   maxLength={10}
-                  placeholder="Enter 10-digit number"
+                  placeholder="Enter Phone number"
                   required
                   autoFocus
                   value={phone}
-                  onChange={(e) => {
-                    setPhone(e.target.value);
-                    setError('');
-                  }}
-                  className="w-full bg-[#F5F7F6] border border-gray-200 focus:border-amber-400 focus:bg-white rounded-2xl py-3.5 pl-12 pr-4 text-xs font-bold outline-none text-gray-900 placeholder:text-gray-400 transition-all tracking-wider"
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                  className="w-full bg-[#022c22] border-2 border-emerald-700 focus:border-amber-400 rounded-2xl py-3.5 pl-14 pr-4 text-base font-black outline-none text-white placeholder:text-gray-500 transition-all tracking-wider"
                 />
               </div>
             </div>
 
-            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-[11px] font-bold text-amber-900">
-              <ShieldCheck size={16} className="text-amber-700 shrink-0" />
-              <span>OTP verification code will be sent instantly via WhatsApp.</span>
-            </div>
-
-            <p className="text-center text-[11px] text-gray-500 font-medium leading-relaxed">
-              By continuing, you agree to Royal Bengal's{' '}
-              <Link href="/privacy" className="underline font-bold text-[#004D3B]">Terms</Link> &{' '}
-              <Link href="/privacy" className="underline font-bold text-[#004D3B]">Privacy Policy</Link>.
-            </p>
-
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-[#FFC400] hover:bg-[#F2AC00] text-[#004D3B] font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all shadow-md active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer border border-amber-300"
+              disabled={loading || phone.length < 10}
+              className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-xl shadow-amber-400/20 disabled:opacity-50 flex items-center justify-center gap-2 border border-amber-300"
             >
-              {loading ? <Loader2 size={17} className="animate-spin" /> : <Phone size={16} />}
-              <span>Send Verification Code</span>
+              {loading ? <Loader2 size={16} className="animate-spin" /> : "Continue"}
             </button>
           </form>
-
         ) : (
-
-          /* 3. OTP Verification Form */
-          <form onSubmit={handleVerifyPhoneOTP} className="space-y-4">
-            <div className="text-center space-y-1">
-              <p className="text-xs text-gray-500 font-medium">Enter verification code sent to</p>
-              <p className="text-sm font-black text-gray-900">+91 {phone}</p>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-black uppercase text-[#004D3B] tracking-wider">
-                  Verification Code
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOtpSent(false);
-                    setOtp('');
-                    setError('');
-                    setMessage('');
-                  }}
-                  className="text-xs font-bold text-[#006B50] hover:underline cursor-pointer"
-                >
-                  Change Number
-                </button>
+          /* VERIFICATION CODE FORM */
+          <form onSubmit={handleVerifyPhoneOTP} className="space-y-5">
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-[10px] font-black uppercase text-amber-300/90 tracking-widest">Enter Verification Code</label>
+                <button type="button" onClick={() => setOtpSent(false)} className="text-[10px] text-amber-400 hover:underline font-bold uppercase">Change Number</button>
               </div>
               <input
                 type="text"
-                inputMode="numeric"
                 maxLength={6}
                 placeholder="• • • • • •"
                 required
                 autoFocus
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                className="w-full bg-[#F5F7F6] border border-gray-200 focus:border-amber-400 focus:bg-white text-center text-xl tracking-[0.5em] font-black rounded-2xl py-3.5 text-gray-900 outline-none transition-all"
+                className="w-full bg-[#022c22] border-2 border-amber-400 text-center text-2xl tracking-[0.6em] font-black rounded-2xl py-3.5 text-amber-300 outline-none shadow-inner"
               />
             </div>
 
-            <div className="flex items-center justify-between gap-3 pt-1 text-xs">
+            <div className="flex items-center justify-between text-xs">
               <button
                 type="button"
-                onClick={() => handleRetryOTP('12')}
-                disabled={!canResend || loading}
-                className="font-bold text-[#004D3B] hover:underline flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                onClick={handleRetryOTP}
+                disabled={loading}
+                className="text-[10px] font-bold text-amber-300/90 hover:text-amber-300 uppercase tracking-wider flex items-center gap-1"
               >
-                <RefreshCw size={13} />
-                {canResend ? 'Resend WhatsApp' : `Resend in ${resendCountdown}s`}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleRetryOTP('11')}
-                disabled={!canResend || loading}
-                className="font-bold text-[#004D3B] hover:underline flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                <RefreshCw size={13} />
-                {canResend ? 'Resend SMS' : ''}
+                <RefreshCw size={12} /> Resend OTP
               </button>
             </div>
 
             <button
               type="submit"
-              disabled={loading || otp.trim().length < 4}
-              className="w-full bg-[#FFC400] hover:bg-[#F2AC00] text-[#004D3B] font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all shadow-md active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer border border-amber-300"
+              disabled={loading || otp.length < 4}
+              className="w-full bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] transition-all duration-200 active:scale-[0.98] shadow-xl shadow-amber-400/20 disabled:opacity-50 flex items-center justify-center gap-2 border border-amber-300"
             >
-              {loading ? <Loader2 size={17} className="animate-spin" /> : <ShieldCheck size={16} />}
-              <span>Verify &amp; Sign In</span>
+              {loading ? <Loader2 size={16} className="animate-spin" /> : "Verify & Proceed"}
             </button>
           </form>
-
         )}
+
+        {/* Terms & Privacy Policy Disclosure */}
+        <p className="mt-6 pt-4 border-t border-emerald-800/80 text-[10px] text-center text-emerald-200/80 font-medium leading-relaxed">
+          By continuing, you agree to Royal Bengal's{' '}
+          <Link href="/privacy" className="text-amber-300 underline font-bold hover:text-amber-200">
+            Terms of Service
+          </Link>{' '}
+          &{' '}
+          <Link href="/privacy" className="text-amber-300 underline font-bold hover:text-amber-200">
+            Privacy Policy
+          </Link>.
+        </p>
 
       </div>
     </main>
@@ -528,13 +426,5 @@ function LoginContent() {
 }
 
 export default function LoginPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#FFF9E8] flex items-center justify-center">
-        <Loader2 className="animate-spin text-[#004D3B]" size={36} />
-      </div>
-    }>
-      <LoginContent />
-    </Suspense>
-  );
+  return <Suspense fallback={null}><LoginContent /></Suspense>;
 }
