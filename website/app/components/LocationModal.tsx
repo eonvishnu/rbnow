@@ -173,6 +173,7 @@ export const LocationModal = () => {
             name: addressData.fullName,
             phone: addressData.mobile,
             house_no: addressData.houseNo,
+            building_name: addressData.buildingName,
             area: addressData.area,
             landmark: addressData.landmark,
             city: addressData.city,

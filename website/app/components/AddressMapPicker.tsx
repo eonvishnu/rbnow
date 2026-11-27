@@ -30,6 +30,7 @@ interface AddressMapPickerProps {
     latitude: number;
     longitude: number;
     addressType: string;
+    isDefault: boolean;
   }) => Promise<void>;
   onCancel: () => void;
   defaultPhone?: string;
@@ -116,6 +117,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
     landmark: '',
     addressType: defaultType,
     customLabel: '',
+    isDefault: false,
   });
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -550,6 +552,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
         latitude: lat,
         longitude: lng,
         addressType: targetLabel,
+        isDefault: form.isDefault,
       });
     } catch (err) {
       console.error(err);
@@ -805,6 +808,19 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                   onChange={(e) => setForm({ ...form, landmark: e.target.value })}
                   className="w-full bg-gray-50 border border-gray-200 focus:border-amber-400 focus:bg-white rounded-xl py-2.5 px-3.5 text-xs font-bold outline-none transition-all"
                 />
+              </div>
+
+              <div className="flex items-center gap-2.5 pt-2">
+                <input
+                  type="checkbox"
+                  id="isDefault"
+                  checked={form.isDefault}
+                  onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
+                  className="w-4 h-4 text-[#022c22] border-gray-300 rounded focus:ring-[#022c22] cursor-pointer"
+                />
+                <label htmlFor="isDefault" className="text-xs font-bold text-gray-700 cursor-pointer select-none">
+                  Make this my default delivery address
+                </label>
               </div>
             </div>
 

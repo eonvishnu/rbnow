@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS public.addresses (
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
   house_no TEXT NULL,
+  building_name TEXT NULL,
   area TEXT NULL,
   landmark TEXT NULL,
   city TEXT NULL,

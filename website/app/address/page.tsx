@@ -42,6 +42,7 @@ export default function AddressesPage() {
           fullName: a.name,
           mobile: a.phone,
           addressLine1: a.house_no,
+          buildingName: a.building_name,
           addressLine2: a.area,
           landmark: a.landmark,
           city: a.city,
@@ -66,6 +67,7 @@ export default function AddressesPage() {
     fullName: string;
     mobile: string;
     houseNo: string;
+    buildingName: string;
     area: string;
     landmark: string;
     city: string;
@@ -73,10 +75,18 @@ export default function AddressesPage() {
     latitude: number;
     longitude: number;
     addressType: string;
+    isDefault: boolean;
   }) => {
     if (!user) return;
 
     try {
+      if (addressData.isDefault) {
+        await supabase
+          .from('addresses')
+          .update({ is_default: false })
+          .eq('user_id', user.id);
+      }
+
       const { error } = await supabase
         .from('addresses')
         .insert({
@@ -84,6 +94,7 @@ export default function AddressesPage() {
           name: addressData.fullName,
           phone: addressData.mobile,
           house_no: addressData.houseNo,
+          building_name: addressData.buildingName,
           area: addressData.area,
           landmark: addressData.landmark,
           city: addressData.city,
@@ -91,6 +102,7 @@ export default function AddressesPage() {
           latitude: addressData.latitude,
           longitude: addressData.longitude,
           address_type: addressData.addressType,
+          is_default: addressData.isDefault,
         });
 
       if (error) throw error;
@@ -189,7 +201,7 @@ export default function AddressesPage() {
                                 <div>
                                     <h3 className="font-black text-gray-900 text-base">{addr.fullName}</h3>
                                     <p className="text-gray-600 text-xs font-medium mt-1 leading-relaxed">
-                                        {addr.addressLine1}, {addr.addressLine2 && `${addr.addressLine2}, `}
+                                        {addr.addressLine1}{addr.buildingName ? `, ${addr.buildingName}` : ''}, {addr.addressLine2 && `${addr.addressLine2}, `}
                                         {addr.landmark && `${addr.landmark}, `} <br />
                                         {addr.city} - <span className="font-extrabold text-gray-900">{addr.pincode}</span>
                                     </p>
