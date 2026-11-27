@@ -354,14 +354,6 @@ export default function ProductsPage() {
         </Link>
       </div>
 
-      {/* KPI STRIP */}
-      <Card className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-gray-200/80">
-        <Kpi label="Products" value={`${stats.total}`} sub={`${stats.active} active`} loading={loading} />
-        <Kpi label="Inventory value" value={formatCurrency(stats.value)} loading={loading} />
-        <Kpi label="Low stock variants" value={`${stats.low}`} sub={`under ${LOW_STOCK_THRESHOLD} left`} warn={stats.low > 0} loading={loading} />
-        <Kpi label="Out of stock variants" value={`${stats.out}`} warn={stats.out > 0} loading={loading} />
-      </Card>
-
       {/* LIST CARD */}
       <Card className="overflow-hidden">
         <div className="px-3 sm:px-4 pt-3 space-y-3">
@@ -430,20 +422,18 @@ export default function ProductsPage() {
                 <th className="px-3 py-2.5 font-semibold">Inventory</th>
                 <th className="px-3 py-2.5 font-semibold">Category</th>
                 <th className="px-3 py-2.5 font-semibold">Channels</th>
-                <th className="px-3 py-2.5 font-semibold">Product type</th>
                 <th className="px-3 py-2.5 font-semibold pr-4">Sale mode</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
               {loading ? (
-                <tr><td colSpan={8} className="p-8 text-center text-gray-400">Loading products...</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-gray-400">Loading products...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={8} className="p-12 text-center text-gray-500">No products match your search or filter.</td></tr>
+                <tr><td colSpan={7} className="p-12 text-center text-gray-500">No products match your search or filter.</td></tr>
               ) : (
                 filtered.slice(0, visible).map((p) => {
                   const totalStock = p.variants.reduce((s, v) => s + (Number(v.stock) || 0), 0);
                   const allOut = p.variants.length > 0 && totalStock <= 0;
-                  const prodType = getProductType(p.category);
                   return (
                     <tr key={p.id} className={`hover:bg-gray-50/80 transition-colors group ${p.isAvailable ? '' : 'bg-[#fafafa]'}`}>
                       <td className="py-2.5 pl-4 pr-2">
@@ -472,7 +462,6 @@ export default function ProductsPage() {
                       </td>
                       <td className="px-3 py-2.5 text-gray-600">{p.category || 'Uncategorized'}</td>
                       <td className="px-3 py-2.5 text-gray-600">2</td>
-                      <td className="px-3 py-2.5 text-gray-600">{prodType}</td>
                       <td className="px-3 py-2.5 text-gray-600 pr-4">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${p.sale_mode === 'preorder' ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`}>
                           {p.sale_mode === 'preorder' ? 'Pre-order' : 'Regular'}
