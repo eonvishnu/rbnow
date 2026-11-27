@@ -41,6 +41,14 @@ interface AddressMapPickerProps {
 // Default map center only (Hyderabad center) — never saved as address text
 const DEFAULT_CENTER = { lat: 17.3850, lng: 78.4867 };
 
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   onSave,
   onCancel,
@@ -200,27 +208,43 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
     }
   }, [initialLat]);
 
+  const [searchedPlaceName, setSearchedPlaceName] = useState('');
+  const [searchedPlaceCoords, setSearchedPlaceCoords] = useState<{ lat: number; lng: number } | null>(null);
+
   // Live reverse geocoding on map idle for address preview card
   useEffect(() => {
     if (!googleMapsLoaded || pickerStep !== 'map') return;
     const google = (window as any).google;
     if (!google?.maps?.Geocoder) return;
 
+    let active = true;
     const timer = setTimeout(() => {
       const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ location: { lat, lng } }, (res: any, status: string) => {
+        if (!active) return;
         if (status === 'OK' && res && res[0]) {
           let addr = res[0].formatted_address || 'Selected location';
           addr = addr.replace(/^[A-Z0-9]{4}\+[A-Z0-9]{2,3},\s*/i, '');
-          setLiveLocality(addr);
+
+          let finalAddr = addr;
+          if (searchedPlaceName && searchedPlaceCoords) {
+            const dist = getDistanceFromLatLonInKm(lat, lng, searchedPlaceCoords.lat, searchedPlaceCoords.lng);
+            if (dist < 0.2 && !addr.toLowerCase().includes(searchedPlaceName.toLowerCase())) {
+              finalAddr = `${searchedPlaceName}, ${addr}`;
+            }
+          }
+          setLiveLocality(finalAddr);
         } else {
-          setLiveLocality('Selected location');
+          setLiveLocality(searchedPlaceName ? `${searchedPlaceName}, Selected location` : 'Selected location');
         }
       });
     }, 300);
 
-    return () => clearTimeout(timer);
-  }, [lat, lng, googleMapsLoaded, pickerStep]);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [lat, lng, googleMapsLoaded, pickerStep, searchedPlaceName, searchedPlaceCoords]);
 
   // 1. Google Places Autocomplete Search (Strictly Telangana)
   useEffect(() => {
@@ -318,6 +342,8 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           setSuggestions([]);
           setSearchQuery('');
           setLocationError('');
+          setSearchedPlaceName(mainTitle);
+          setSearchedPlaceCoords({ lat: placeLat, lng: placeLng });
           if (fullDesc) setLiveLocality(fullDesc);
 
           if (mainTitle) {
