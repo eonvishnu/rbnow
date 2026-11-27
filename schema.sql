@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   price NUMERIC(10, 2) NOT NULL,
   original_price NUMERIC(10, 2) NULL,
   stock INTEGER NULL DEFAULT 0,
+  committed_qty INTEGER NOT NULL DEFAULT 0,
   sku TEXT NULL,
   is_available BOOLEAN NULL DEFAULT true,
   created_at TIMESTAMPTZ NULL DEFAULT now(),
@@ -166,7 +167,10 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   preorder_limit INTEGER NULL,
   preorder_reserved_qty INTEGER NOT NULL DEFAULT 0,
   CONSTRAINT product_variants_pkey PRIMARY KEY (id),
-  CONSTRAINT product_variants_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products (id) ON DELETE CASCADE
+  CONSTRAINT product_variants_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products (id) ON DELETE CASCADE,
+  CONSTRAINT product_variants_stock_nonnegative CHECK (stock >= 0),
+  CONSTRAINT product_variants_committed_nonnegative CHECK (committed_qty >= 0),
+  CONSTRAINT product_variants_committed_lte_stock CHECK (committed_qty <= stock)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS product_variants_pkey ON public.product_variants USING btree (id);
 CREATE INDEX IF NOT EXISTS idx_product_variants_preorder_enabled ON public.product_variants USING btree (preorder_enabled);
@@ -886,6 +890,12 @@ BEGIN
   UPDATE public.orders
   SET status = 'cancelled', updated_at = NOW()
   WHERE id = p_order_id AND status IS DISTINCT FROM 'cancelled';
+
+  -- Release committed_qty back to product variants
+  UPDATE public.product_variants
+  SET committed_qty = GREATEST(0, committed_qty - oi.quantity)
+  FROM public.order_items oi
+  WHERE oi.order_id = p_order_id AND product_variants.id = oi.variant_id;
 
   RETURN jsonb_build_object('success', true);
 END;

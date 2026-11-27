@@ -9,29 +9,14 @@ import type {
 } from '../types/product';
 
 export async function listProducts() {
-  const [prodRes, itemsRes] = await Promise.all([
-    supabase
-      .from('products')
-      .select('id, name, category_id, category_name, description, image_url, is_available, sale_mode, expected_dispatch_date, preorder_limit, preorder_description, product_variants(id, product_id, unit, price, original_price, stock, sku, is_available)')
-      .order('name'),
-    supabase
-      .from('order_items')
-      .select('variant_id, quantity, orders!inner(status)')
-      .not('orders.status', 'in', '("delivered","completed","cancelled","pending_payment")')
-  ]);
+  const { data, error } = await supabase
+    .from('products')
+    .select('id, name, category_id, category_name, description, image_url, is_available, sale_mode, expected_dispatch_date, preorder_limit, preorder_description, product_variants(id, product_id, unit, price, original_price, stock, committed_qty, sku, is_available)')
+    .order('name');
 
-  if (prodRes.error) throw prodRes.error;
+  if (error) throw error;
 
-  const committedMap: Record<string, number> = {};
-  if (itemsRes.data) {
-    itemsRes.data.forEach((item: any) => {
-      if (item.variant_id) {
-        committedMap[item.variant_id] = (committedMap[item.variant_id] || 0) + (Number(item.quantity) || 0);
-      }
-    });
-  }
-
-  const rawProducts = catalogProductRowSchema.array().parse(prodRes.data);
+  const rawProducts = catalogProductRowSchema.array().parse(data);
   return rawProducts.map((p: any) => ({
     id: p.id,
     name: p.name || 'Unnamed Product',
@@ -46,8 +31,8 @@ export async function listProducts() {
     preorder_description: p.preorder_description,
     product_variants: (p.product_variants || []).map((v: any) => ({
       ...v,
-      committed: committedMap[v.id] || 0,
-      available: Math.max(0, (Number(v.stock) || 0) - (committedMap[v.id] || 0)),
+      committed: Number(v.committed_qty) || 0,
+      available: Math.max(0, (Number(v.stock) || 0) - (Number(v.committed_qty) || 0)),
     }))
   }));
 }

@@ -566,6 +566,22 @@ Deno.serve(async (req: Request) => {
         return badRequest(itemsErr.message || "Failed to create order items.");
       }
 
+      for (const item of normalizedItems) {
+        if (!item.is_preorder && item.variant_id) {
+          const { data: varData } = await supabase
+            .from("product_variants")
+            .select("committed_qty")
+            .eq("id", item.variant_id)
+            .single();
+
+          const currentCommitted = Number(varData?.committed_qty || 0);
+          await supabase
+            .from("product_variants")
+            .update({ committed_qty: currentCommitted + item.quantity })
+            .eq("id", item.variant_id);
+        }
+      }
+
       if (appliedCouponId) {
         await supabase
           .from("coupon_usages")

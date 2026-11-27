@@ -68,6 +68,7 @@ export const productVariantRowSchema = z.object({
   price: z.coerce.number(),
   original_price: z.coerce.number().nullable(),
   stock: z.coerce.number().nullable(),
+  committed_qty: z.coerce.number().optional().nullable(),
   sku: z.string().nullable(),
   is_available: z.boolean().nullable(),
 });
