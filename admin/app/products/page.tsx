@@ -40,6 +40,14 @@ const priceRange = (p: AdminProduct) => {
   return min === max ? formatCurrency(min) : `${formatCurrency(min)} – ${formatCurrency(max)}`;
 };
 
+const getProductType = (catName?: string | null) => {
+  const c = (catName || '').toLowerCase();
+  if (c.includes('meat') || c.includes('fish') || c.includes('chicken') || c.includes('mutton')) return 'Meat';
+  if (c.includes('vegetable') || c.includes('fruit') || c.includes('veg')) return 'Vegetables';
+  if (c.includes('grocery') || c.includes('dal') || c.includes('oil') || c.includes('rice')) return 'Grocery';
+  return 'Delicacy';
+};
+
 const inputCls =
   'w-full min-h-11 sm:min-h-9 py-2 px-3 text-base sm:text-[13px] text-[#1a1a1a] placeholder:text-[#8a8a8a] bg-white rounded-lg shadow-[0_0_0_1px_rgba(0,0,0,0.2)] outline-none focus:shadow-[0_0_0_2px_#005bd3] transition-shadow';
 
@@ -412,130 +420,66 @@ export default function ProductsPage() {
           </div>
         </div>
 
-        <div className="mt-3 border-t border-gray-100 divide-y divide-gray-100">
-          {loading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="p-4"><div className="h-14 bg-gray-100 rounded-lg animate-pulse" /></div>
-            ))
-          ) : filtered.length === 0 ? (
-            <p className="py-14 text-center text-sm sm:text-[13px] text-[#616161]">
-              {products.length === 0 ? 'No products yet. Add your first one.' : 'No products match your search or filter.'}
-            </p>
-          ) : (
-            filtered.slice(0, visible).map((p) => {
-              const open = expandedId === p.id;
-              const dirty = productDirty(p);
-              const totalStock = p.variants.reduce((s, v) => s + (Number(v.stock) || 0), 0);
-              const allOut = p.variants.length > 0 && totalStock <= 0;
-              return (
-                <div key={p.id} className={p.isAvailable ? '' : 'bg-[#fafafa]'}>
-                  {/* main row */}
-                  <div className="p-3 sm:p-4 flex items-center gap-3 sm:gap-4">
-                    <div className={`h-14 w-14 rounded-lg bg-[#f7f7f7] shrink-0 overflow-hidden shadow-[0_0_0_1px_rgba(0,0,0,0.06)] flex items-center justify-center ${p.isAvailable ? '' : 'opacity-50 grayscale'}`}>
-                      {p.imageUrl ? <img src={p.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={20} className="text-[#8a8a8a]" />}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <h3 className={`text-sm font-semibold truncate ${p.isAvailable ? 'text-[#1a1a1a]' : 'text-[#8a8a8a]'}`}>{p.name}</h3>
-                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                        <Pill tone="bg-[#f1f1f1] text-[#303030]">{p.category || 'General'}</Pill>
-                        <Pill tone={p.isAvailable ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-[#e3e3e3] text-[#303030]'}>{p.isAvailable ? 'Active' : 'Disabled'}</Pill>
-                        {p.sale_mode === 'preorder' && <Pill tone="bg-amber-100 text-amber-900">Pre-order</Pill>}
-                        {!p.imageUrl && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">No image</Pill>}
-                        {allOut ? <Pill tone="bg-[#fed1d7] text-[#8e0b21]">Out of stock</Pill> : hasLowStock(p) && <Pill tone="bg-[#ffd6a4] text-[#5e4200]">Low stock</Pill>}
-                      </div>
-                    </div>
-
-                    <Switch on={p.isAvailable} disabled={togglingId === p.id} label={`${p.isAvailable ? 'Disable' : 'Enable'} ${p.name}`} onClick={() => handleToggle(p)} />
-                  </div>
-
-                  {/* summary + actions */}
-                  <div className="px-3 sm:px-4 pb-3 sm:pb-4 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm sm:text-[13px] text-[#616161]">
-                      {p.variants.length} {p.variants.length === 1 ? 'variant' : 'variants'} · {priceRange(p)} · {totalStock} in stock
-                    </p>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setExpandedId(open ? null : p.id)}
-                        className="min-h-9 py-1.5 px-3 inline-flex items-center gap-1.5 rounded-lg bg-white text-sm sm:text-[13px] font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50"
-                        aria-expanded={open}
-                      >
-                        Quick edit <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
-                        {dirty && <span className="w-2 h-2 rounded-full bg-[#005bd3]" />}
-                      </button>
-                      <button
-                        onClick={() => openEditor(p)}
-                        className="min-h-9 py-1.5 px-3 inline-flex items-center gap-1.5 rounded-lg bg-white text-sm sm:text-[13px] font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50"
-                      >
-                        <Pencil size={13} /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteProduct(p)}
-                        className="p-2 rounded-lg text-[#8a8a8a] hover:text-[#8e0b21] hover:bg-[#fed1d7]/50 transition-colors"
-                        aria-label={`Delete ${p.name}`}
-                        title="Delete product"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* quick edit panel */}
-                  {open && (
-                    <div className="mx-3 sm:mx-4 mb-3 sm:mb-4 rounded-lg bg-[#f7f7f7] p-3 space-y-3">
-                      <div className="hidden sm:grid grid-cols-[1fr_140px_120px] gap-3 px-1 text-xs font-medium text-[#616161]">
-                        <span>Variant</span><span>Price (₹)</span><span>Stock</span>
-                      </div>
-                      {p.variants.map((v) => {
-                        const d = draftOf(v);
-                        return (
-                          <div key={v.id} className="grid grid-cols-2 sm:grid-cols-[1fr_140px_120px] gap-x-3 gap-y-1.5 items-center">
-                            <span className="col-span-2 sm:col-span-1 text-sm sm:text-[13px] font-semibold text-[#1a1a1a] px-1">{v.unit}</span>
-                            <label className="block">
-                              <span className="sm:hidden text-xs text-[#616161]">Price (₹)</span>
-                              <input
-                                inputMode="decimal"
-                                value={d.price}
-                                onChange={(e) => setDraft(v, 'price', e.target.value)}
-                                className={inputCls}
-                                aria-label={`${v.unit} price`}
-                              />
-                            </label>
-                            <label className="block">
-                              <span className="sm:hidden text-xs text-[#616161]">Stock</span>
-                              <input
-                                inputMode="numeric"
-                                value={d.stock}
-                                onChange={(e) => setDraft(v, 'stock', e.target.value)}
-                                className={`${inputCls} ${Number(d.stock) < LOW_STOCK_THRESHOLD ? '!shadow-[0_0_0_1px_#e22c38]' : ''}`}
-                                aria-label={`${v.unit} stock`}
-                              />
-                            </label>
+        <div className="overflow-x-auto mt-3">
+          <table className="w-full text-left text-xs sm:text-[12.5px] tabular-nums">
+            <thead>
+              <tr className="bg-[#f7faf8] text-[#64736c] border-y border-gray-200/80 font-medium">
+                <th className="py-2.5 pl-4 pr-2 w-8"><span className="sr-only">Select</span></th>
+                <th className="px-3 py-2.5 font-semibold">Product</th>
+                <th className="px-3 py-2.5 font-semibold">Status</th>
+                <th className="px-3 py-2.5 font-semibold">Inventory</th>
+                <th className="px-3 py-2.5 font-semibold">Category</th>
+                <th className="px-3 py-2.5 font-semibold">Channels</th>
+                <th className="px-3 py-2.5 font-semibold">Product type</th>
+                <th className="px-3 py-2.5 font-semibold pr-4">Vendor</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {loading ? (
+                <tr><td colSpan={8} className="p-8 text-center text-gray-400">Loading products...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={8} className="p-12 text-center text-gray-500">No products match your search or filter.</td></tr>
+              ) : (
+                filtered.slice(0, visible).map((p) => {
+                  const totalStock = p.variants.reduce((s, v) => s + (Number(v.stock) || 0), 0);
+                  const allOut = p.variants.length > 0 && totalStock <= 0;
+                  const prodType = getProductType(p.category);
+                  return (
+                    <tr key={p.id} className={`hover:bg-gray-50/80 transition-colors group ${p.isAvailable ? '' : 'bg-[#fafafa]'}`}>
+                      <td className="py-2.5 pl-4 pr-2">
+                        <input type="checkbox" className="rounded border-gray-300 text-[#006B50] focus:ring-[#006B50] cursor-pointer" />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-lg bg-[#f7f7f7] shrink-0 overflow-hidden border border-gray-200 flex items-center justify-center">
+                            {p.imageUrl ? <img src={p.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={16} className="text-gray-400" />}
                           </div>
-                        );
-                      })}
-                      <div className="flex items-center justify-end gap-2 pt-1">
-                        <button
-                          onClick={() => discardQuick(p)}
-                          disabled={!dirty || savingId === p.id}
-                          className="min-h-9 py-1.5 px-3 rounded-lg bg-white text-sm sm:text-[13px] font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50 disabled:opacity-40"
-                        >
-                          Discard
-                        </button>
-                        <button
-                          onClick={() => saveQuick(p)}
-                          disabled={!dirty || savingId === p.id}
-                          className="min-h-9 py-1.5 px-4 rounded-lg bg-[#303030] hover:bg-[#1a1a1a] text-sm sm:text-[13px] font-medium text-white disabled:opacity-40 inline-flex items-center gap-1.5"
-                        >
-                          {savingId === p.id ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
+                          <div className="min-w-0">
+                            <button onClick={() => openEditor(p)} className="font-semibold text-gray-900 hover:text-[#006B50] text-left cursor-pointer truncate max-w-xs block">
+                              {p.name}
+                            </button>
+                            <p className="text-[11px] text-gray-400">{p.variants.length} variant{p.variants.length === 1 ? '' : 's'} · {priceRange(p)}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${p.isAvailable ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-gray-100 text-gray-600'}`}>
+                          {p.isAvailable ? 'Active' : 'Draft'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-gray-700">
+                        {allOut ? <span className="text-rose-600 font-bold">0 in stock</span> : `${totalStock} in stock`}
+                      </td>
+                      <td className="px-3 py-2.5 text-gray-600">{p.category || 'Uncategorized'}</td>
+                      <td className="px-3 py-2.5 text-gray-600">2</td>
+                      <td className="px-3 py-2.5 text-gray-600">{prodType}</td>
+                      <td className="px-3 py-2.5 text-gray-600 pr-4">Royal Bengal</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
 
         {!loading && filtered.length > 0 && (
