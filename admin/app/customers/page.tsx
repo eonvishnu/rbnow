@@ -62,6 +62,22 @@ export default function CustomersPage() {
   const [walletReason, setWalletReason] = useState('');
   const [walletSubmitting, setWalletSubmitting] = useState(false);
   const [walletMsg, setWalletMsg] = useState<{ success: boolean; text: string } | null>(null);
+  const [totalLiability, setTotalLiability] = useState<number>(0);
+
+  useEffect(() => {
+    const fetchLiability = async () => {
+      try {
+        const { data } = await supabase.from('customer_wallets').select('balance');
+        if (data) {
+          const sum = data.reduce((acc, w) => acc + Number(w.balance || 0), 0);
+          setTotalLiability(sum);
+        }
+      } catch (err) {
+        console.error('Error fetching total liability:', err);
+      }
+    };
+    fetchLiability();
+  }, []);
 
   useEffect(() => {
     const run = async () => {
@@ -447,11 +463,12 @@ export default function CustomersPage() {
       </div>
 
       {/* KPI STRIP */}
-      <Card className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-gray-200/80">
+      <Card className="grid grid-cols-2 lg:grid-cols-5 divide-x divide-y lg:divide-y-0 divide-gray-200/80">
         <Kpi label="Total customers" value={totalCount.toLocaleString('en-IN')} loading={loading} />
         <Kpi label="Average lifetime value" value={formatCurrency(stats.avgLtv)} loading={loading} />
         <Kpi label="Repeat customer rate" value={`${stats.repeatRate}%`} loading={loading} />
         <Kpi label="VIP customers (₹5,000+)" value={String(stats.vip)} loading={loading} />
+        <Kpi label="Store credit liability" value={formatCurrency(totalLiability)} loading={loading} />
       </Card>
 
       {/* TABLE CARD */}

@@ -236,7 +236,6 @@ function AdminShell({ children }: { children: React.ReactNode }) {
               <div className="space-y-0.5">
                 <SectionLabel>Customers</SectionLabel>
                 <SidebarLink href="/customers" label="Customers" icon={<Users size={17} />} />
-                <SidebarLink href="/wallets" label="Store credit" icon={<Wallet size={17} />} />
               </div>
             )}
 
