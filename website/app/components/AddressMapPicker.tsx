@@ -294,6 +294,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
   // 2. Resolve selected prediction's place_id to Lat/Lng
   const handleSelectGooglePlace = async (item: any) => {
     if (!item?.place_id) return;
+    const mainTitle = item.structured_formatting?.main_text || item.description?.split(',')[0] || '';
 
     try {
       const google = (window as any).google;
@@ -314,6 +315,10 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
           setSuggestions([]);
           setSearchQuery('');
           setLocationError('');
+
+          if (mainTitle) {
+            setForm(prev => ({ ...prev, buildingName: mainTitle }));
+          }
 
           if (googleMapRef.current) {
             googleMapRef.current.setCenter({ lat: placeLat, lng: placeLng });
