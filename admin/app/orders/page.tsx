@@ -309,15 +309,28 @@ export default function AdminOrders() {
     setAiResponse('');
     try {
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
-      const orderContext = filtered.slice(0, 15).map(o => `Order #${o.orderId}: ₹${o.total}, Status: ${o.status}, Customer: ${o.shipping?.name || o.userName}, Items: ${o.items.map(i => i.name).join(', ')}`).join('\n');
-
-      const systemPrompt = `You are Royal Bengal AI Operations Assistant. You help store managers manage gourmet orders, analyze dispatches, summarize fulfillment priorities, and draft customer support replies based on the following active orders:\n${orderContext}\n\nQuestion: ${promptText}`;
-
       if (!apiKey) {
         setAiResponse("Gemini API key is not configured in NEXT_PUBLIC_GEMINI_API_KEY. Please configure your Gemini API key in admin environment variables.");
         setAiLoading(false);
         return;
       }
+
+      // Fetch live summary directly from Supabase database tables for comprehensive context
+      const [
+        { data: activeOrders },
+        { data: walletData },
+        { data: lowStockVariants }
+      ] = await Promise.all([
+        supabase.from('orders').select('id, order_number, total, status, created_at, customer_name, customer_phone').order('created_at', { ascending: false }).limit(30),
+        supabase.from('customer_wallets').select('balance'),
+        supabase.from('product_variants').select('id, unit, stock, committed_qty, price, products(name)').lt('stock', 10).limit(20)
+      ]);
+
+      const totalLiability = (walletData || []).reduce((acc, w) => acc + Number(w.balance || 0), 0);
+      const ordersSummary = (activeOrders || []).map(o => `Order #${o.order_number || o.id.slice(0,6)}: ₹${o.total}, Status: ${o.status}, Customer: ${o.customer_name}, Date: ${new Date(o.created_at).toLocaleString()}`).join('\n');
+      const lowStockSummary = (lowStockVariants || []).map(v => `${(v.products as any)?.name} (${v.unit}): Stock ${v.stock}, Committed ${v.committed_qty}`).join('\n');
+
+      const systemPrompt = `You are Royal Bengal AI Operations Assistant, an expert e-commerce store manager. You have direct access to live store database metrics:\n\n-- RECENT ORDERS --\n${ordersSummary}\n\n-- TOTAL STORE CREDIT LIABILITY --\n₹${totalLiability}\n\n-- LOW STOCK ITEMS --\n${lowStockSummary}\n\nQuestion: ${promptText}`;
 
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
