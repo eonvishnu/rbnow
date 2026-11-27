@@ -100,8 +100,8 @@ export async function updateVariantPricesAndStock(updates: ProductVariantQuickUp
     if (!error && diff !== 0) {
       const { error: invErr } = await supabase.from('inventory_transactions').insert({
         variant_id: update.id,
-        transaction_type: diff > 0 ? 'stock_adjustment' : 'stock_reduction',
-        quantity: Math.abs(diff),
+        transaction_type: 'adjustment',
+        quantity: diff,
         reference_type: 'admin_quick_edit',
         reference_id: null,
         notes: `Admin adjusted stock from ${oldStock} to ${update.stock} (delta: ${diff > 0 ? '+' : ''}${diff}) [Admin: ${adminId || 'unknown'}]`,
