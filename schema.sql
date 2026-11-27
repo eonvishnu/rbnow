@@ -1880,7 +1880,7 @@ BEGIN
   WHERE id = auth.uid() AND role = 'super_admin';
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Unauthorized: Only super admins can adjust customer wallets';
+    RAISE EXCEPTION 'You are not authorized. Only system can add or deduct wallets automatically.';
   END IF;
 
   -- Lock wallet row for update to prevent concurrent race conditions
@@ -1940,21 +1940,20 @@ CREATE TRIGGER trg_auto_link_product_category BEFORE INSERT OR UPDATE OF categor
 CREATE TRIGGER tr_protect_profile_columns BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION protect_profile_columns();
 
 -- ----------------------------------------------------------------------------
--- 19. WALLET RLS POLICIES (ADMIN VIEW, SUPER ADMIN MANAGE)
+-- 19. WALLET RLS POLICIES (SUPER ADMIN ONLY)
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.customer_wallets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wallet_transactions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users and super admins can view wallets" ON public.customer_wallets;
-DROP POLICY IF EXISTS "Users and admins can view wallets" ON public.customer_wallets;
-CREATE POLICY "Users and admins can view wallets"
+CREATE POLICY "Users and super admins can view wallets"
   ON public.customer_wallets FOR SELECT
   TO authenticated
   USING (
     user_id = auth.uid()
     OR EXISTS (
       SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND (role = 'super_admin' OR role = 'admin')
+      WHERE id = auth.uid() AND role = 'super_admin'
     )
   );
 
@@ -1976,15 +1975,14 @@ CREATE POLICY "Super admins can manage customer wallets"
   );
 
 DROP POLICY IF EXISTS "Users and super admins can view wallet transactions" ON public.wallet_transactions;
-DROP POLICY IF EXISTS "Users and admins can view wallet transactions" ON public.wallet_transactions;
-CREATE POLICY "Users and admins can view wallet transactions"
+CREATE POLICY "Users and super admins can view wallet transactions"
   ON public.wallet_transactions FOR SELECT
   TO authenticated
   USING (
     user_id = auth.uid()
     OR EXISTS (
       SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND (role = 'super_admin' OR role = 'admin')
+      WHERE id = auth.uid() AND role = 'super_admin'
     )
   );
 
