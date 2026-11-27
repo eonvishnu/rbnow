@@ -15,7 +15,7 @@ import { fetchSubCategoriesFromDb } from "@/features/catalog/repositories/catalo
 
 import Link from "next/link";
 import { useStore } from "./components/StoreGuard";
-import { Lock, Package, Headphones } from "lucide-react";
+import { Lock, Package, Headphones, Loader2 } from "lucide-react";
 
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState("all");
@@ -27,10 +27,13 @@ export default function Home() {
   const [selectionMap, setSelectionMap] = useState<Record<string, number>>({});
   
   const { cart, addToCart, removeFromCart } = useCart();
-  const { isOpen: isStoreOpen, message: storeClosedMsg } = useStore();
+  const { isOpen: isStoreOpen, message: storeClosedMsg, loading: storeLoading } = useStore();
   const activeSubBtnRef = useRef<HTMLButtonElement>(null);
 
-  const { products, categories, loading } = useCatalog(activeCategory, activeSubCategory);
+  const { products, categories, loading } = useCatalog(
+    isStoreOpen ? activeCategory : 'none',
+    isStoreOpen ? activeSubCategory : 'none'
+  );
   const [currentSubCategories, setCurrentSubCategories] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -81,6 +84,15 @@ export default function Home() {
     setActiveCategoryTitle(name);
     setActiveSubCategory("all");
   };
+
+  if (storeLoading) {
+    return (
+      <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center space-y-4">
+        <Loader2 size={36} className="animate-spin text-emerald-800" />
+        <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Checking store status...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 pb-32 transition-colors duration-300 w-full max-w-[100vw] overflow-x-clip">
