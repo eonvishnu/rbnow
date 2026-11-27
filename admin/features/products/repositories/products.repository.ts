@@ -103,12 +103,12 @@ export async function updateVariantPricesAndStock(updates: ProductVariantQuickUp
         transaction_type: diff > 0 ? 'stock_adjustment' : 'stock_reduction',
         quantity: Math.abs(diff),
         reference_type: 'admin_quick_edit',
-        reference_id: adminId || null,
-        notes: `Admin adjusted stock from ${oldStock} to ${update.stock} (delta: ${diff > 0 ? '+' : ''}${diff})`,
+        reference_id: null,
+        notes: `Admin adjusted stock from ${oldStock} to ${update.stock} (delta: ${diff > 0 ? '+' : ''}${diff}) [Admin: ${adminId || 'unknown'}]`,
         created_at: new Date().toISOString(),
       });
       if (invErr) {
-        console.error('Inventory transaction insert error:', invErr);
+        console.error('Inventory transaction insert error details:', invErr.message, invErr.details, invErr.hint, invErr.code);
         throw invErr;
       }
     }
