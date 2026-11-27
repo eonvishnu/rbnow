@@ -11,7 +11,7 @@ import {
   Printer, MapPin, Search, X, User, Phone, Box, Plus, RefreshCw,
   History, MessageSquare, PhoneCall, Store, Globe, Loader2,
   ChevronDown, Download, Copy, Check, CalendarClock, List,
-  Map as MapIcon, AlertCircle, PackageCheck,
+  Map as MapIcon, AlertCircle, PackageCheck, CheckCircle2,
 } from 'lucide-react';
 import {
   changeAdminOrderStatus,
@@ -269,6 +269,32 @@ export default function AdminOrders() {
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [bulkStatus, setBulkStatus] = useState('confirmed');
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+
+  const handleBulkStatusUpdate = async () => {
+    if (selected.size === 0 || bulkUpdating) return;
+    if (!confirm(`Update status of ${selected.size} selected orders to "${pretty(bulkStatus)}"?`)) return;
+
+    setBulkUpdating(true);
+    try {
+      const ids = Array.from(selected);
+      for (const id of ids) {
+        const order = orders.find(o => o.id === id);
+        if (order && order.status !== bulkStatus) {
+          await changeAdminOrderStatus(id, bulkStatus);
+        }
+      }
+      setOrders(prev => prev.map(o => selected.has(o.id) ? { ...o, status: bulkStatus } : o));
+      flash('success', `Successfully updated ${selected.size} orders to ${pretty(bulkStatus)}.`);
+      setSelected(new Set());
+    } catch (err: any) {
+      console.error('Bulk status update error:', err);
+      flash('error', err.message || 'Failed to update orders status in bulk.');
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
 
   const [replacingItemId, setReplacingItemId] = useState<string | null>(null);
   const [replacementSearch, setReplacementSearch] = useState('');
@@ -2058,10 +2084,31 @@ export default function AdminOrders() {
                 Export item summary CSV
               </button>
 
+              <div className="flex items-center gap-2">
+                <select
+                  value={bulkStatus}
+                  onChange={(e) => setBulkStatus(e.target.value)}
+                  className="h-9 px-3 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-900 outline-none cursor-pointer uppercase"
+                >
+                  {STATUSES.map(s => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={bulkUpdating}
+                  onClick={handleBulkStatusUpdate}
+                  className="min-h-9 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#004d3b] hover:bg-[#00382b] text-amber-300 text-xs sm:text-[13px] font-bold shadow-sm transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {bulkUpdating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  Update status ({selected.size})
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setSelected(new Set())}
-                className="ml-auto text-xs sm:text-[13px] font-semibold text-[#006B50] hover:underline"
+                className="ml-auto text-xs sm:text-[13px] font-semibold text-[#006B50] hover:underline cursor-pointer"
               >
                 Clear selection
               </button>
