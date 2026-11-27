@@ -163,9 +163,17 @@ export const LocationModal = () => {
     latitude: number;
     longitude: number;
     addressType: string;
+    isDefault: boolean;
   }) => {
     try {
       if (user) {
+        if (addressData.isDefault) {
+          await supabase
+            .from('addresses')
+            .update({ is_default: false })
+            .eq('user_id', user.id);
+        }
+
         const { error } = await supabase
           .from('addresses')
           .insert({
@@ -181,6 +189,7 @@ export const LocationModal = () => {
             latitude: addressData.latitude,
             longitude: addressData.longitude,
             address_type: addressData.addressType,
+            is_default: addressData.isDefault,
           });
 
         if (error) console.error("Database save error:", error);
