@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   unit TEXT NOT NULL,
   price NUMERIC(10, 2) NOT NULL,
   original_price NUMERIC(10, 2) NULL,
-  stock INTEGER NULL DEFAULT 0,
+  stock INTEGER NOT NULL DEFAULT 0,
   committed_qty INTEGER NOT NULL DEFAULT 0,
   sku TEXT NULL,
   is_available BOOLEAN NULL DEFAULT true,
@@ -169,8 +169,7 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   CONSTRAINT product_variants_pkey PRIMARY KEY (id),
   CONSTRAINT product_variants_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products (id) ON DELETE CASCADE,
   CONSTRAINT product_variants_stock_nonnegative CHECK (stock >= 0),
-  CONSTRAINT product_variants_committed_nonnegative CHECK (committed_qty >= 0),
-  CONSTRAINT product_variants_committed_lte_stock CHECK (committed_qty <= stock)
+  CONSTRAINT product_variants_committed_nonnegative CHECK (committed_qty >= 0)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS product_variants_pkey ON public.product_variants USING btree (id);
 CREATE INDEX IF NOT EXISTS idx_product_variants_preorder_enabled ON public.product_variants USING btree (preorder_enabled);
