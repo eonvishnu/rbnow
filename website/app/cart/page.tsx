@@ -950,8 +950,8 @@ export default function CartPage() {
               <p className="text-[10px] font-black uppercase text-[#75817B] tracking-wider">
                 {hasValidAddress ? 'Delivering to' : 'Delivery Address Required'}
               </p>
-              <p className="text-xs font-bold text-[#17211D] mt-0.5">
-                {hasValidAddress ? `${location.houseNumber}, ${location.area || ''}, ${location.city || 'Hyderabad'}` : 'Select delivery address'}
+              <p className="text-xs font-bold text-[#17211D] mt-0.5 leading-relaxed">
+                {hasValidAddress ? `${location.houseNumber ? location.houseNumber + ', ' : ''}${(location as any).buildingName ? (location as any).buildingName + ', ' : ''}${location.area || ''}, ${location.city || 'Hyderabad'}${location.pincode ? ' - ' + location.pincode : ''}` : 'Select delivery address'}
               </p>
             </div>
           </div>

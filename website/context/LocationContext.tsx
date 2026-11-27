@@ -9,6 +9,7 @@ export interface LocationData {
   label: string;
   address: string;
   houseNumber?: string;
+  buildingName?: string;
   area?: string;
   city: string;
   pincode: string;
@@ -97,8 +98,9 @@ export const LocationProvider = ({ children }: { children: React.ReactNode }) =>
         const mapped = data.map(a => ({
           id: a.id,
           label: a.address_type ? a.address_type.toUpperCase() : 'HOME',
-          address: `${a.house_no ? a.house_no + ', ' : ''}${a.area || ''}, ${a.city}${a.pincode ? ' - ' + a.pincode : ''}`,
+          address: `${a.house_no ? a.house_no + ', ' : ''}${a.building_name ? a.building_name + ', ' : ''}${a.area || ''}, ${a.city}${a.pincode ? ' - ' + a.pincode : ''}`,
           houseNumber: a.house_no,
+          buildingName: a.building_name,
           area: a.area,
           city: a.city,
           pincode: a.pincode,
