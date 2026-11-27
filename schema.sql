@@ -1694,7 +1694,7 @@ BEGIN
   VALUES (
     new.id,
     CASE WHEN new.email LIKE '%@royalbengal.internal' THEN NULL ELSE new.email END,
-    COALESCE(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'full_name', 'Member'),
+    NULLIF(COALESCE(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'full_name'), 'Member'),
     COALESCE(NULLIF(new.raw_user_meta_data->>'phone_number', ''), new.phone, ''),
     'customer'
   )
