@@ -220,14 +220,7 @@ export default function AccountPage() {
                 <Package size={22} />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-black text-gray-900 text-sm uppercase">My Orders & Receipts</h3>
-                  {ordersCount > 0 && (
-                    <span className="bg-emerald-800 text-amber-300 text-[9px] font-black px-2 py-0.5 rounded-full">
-                      {ordersCount}
-                    </span>
-                  )}
-                </div>
+                <h3 className="font-black text-gray-900 text-sm uppercase">My Orders & Receipts</h3>
                 <p className="text-xs text-gray-500 font-medium">Track active dispatches and order history</p>
               </div>
             </div>
@@ -241,14 +234,7 @@ export default function AccountPage() {
                 <MapPin size={22} />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-black text-gray-900 text-sm uppercase">Saved Addresses</h3>
-                  {addressesCount > 0 && (
-                    <span className="bg-amber-400 text-emerald-950 text-[9px] font-black px-2 py-0.5 rounded-full">
-                      {addressesCount}
-                    </span>
-                  )}
-                </div>
+                <h3 className="font-black text-gray-900 text-sm uppercase">Saved Addresses</h3>
                 <p className="text-xs text-gray-500 font-medium">Manage home, work & map pin locations</p>
               </div>
             </div>
