@@ -81,6 +81,21 @@ export async function listReplacementProducts() {
 }
 
 export async function updateOrderStatus(orderId: string, status: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const adminId = session?.user?.id;
+
+  let adminName = 'Admin';
+  if (adminId) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('display_name, email')
+      .eq('id', adminId)
+      .maybeSingle();
+    if (profile) {
+      adminName = profile.display_name || profile.email || 'Admin';
+    }
+  }
+
   const { error } = await supabase
     .from('orders')
     .update({ status, updated_at: new Date().toISOString() })
@@ -90,7 +105,8 @@ export async function updateOrderStatus(orderId: string, status: string) {
   const { error: historyError } = await supabase.from('order_status_history').insert({
     order_id: orderId,
     status,
-    notes: `Order status updated to ${status} by Admin`,
+    notes: `Order status updated to ${status} by ${adminName}`,
+    created_by: adminId || null,
   });
   if (historyError) throw historyError;
 }
