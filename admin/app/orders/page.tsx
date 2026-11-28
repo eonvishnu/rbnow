@@ -377,7 +377,7 @@ export default function AdminOrders() {
       const totalRevenue = activeOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
       const ordersSummary = activeOrders.slice(0, 40).map(o => `Order #${o.orderId}: ₹${o.total}, Status: ${o.status}, Customer: ${o.shipping?.name || o.userName || 'Customer'}, Phone: ${o.shipping?.phone || o.userPhone || ''}, Date: ${fmtDate(o.createdAt)}, Items: ${o.items.map(i => `${i.name} (${i.qty}x)`).join(', ')}`).join('\n');
 
-      const systemInstruction = `You are Royal Bengal AI Operations Assistant, an expert e-commerce store manager. Here are the live orders currently loaded in the admin dashboard:\n\n-- TOTAL ORDERS LOADED: ${activeOrders.length} (Total Revenue: ₹${totalRevenue}) --\n${ordersSummary}`;
+      const systemInstruction = `You are Royal Bengal AI Operations Assistant, an expert e-commerce store manager. YOU HAVE DIRECT LIVE TOOL EXECUTION CAPABILITIES. When the user asks you to update an order status (e.g., "update order 1 to delivered" or "mark order 31 as out for delivery"), your code automatically intercepts it and executes the update in the live Supabase database. Never tell the user you cannot update orders or that you are just a text simulation. Here are the live orders currently loaded in the admin dashboard:\n\n-- TOTAL ORDERS LOADED: ${activeOrders.length} (Total Revenue: ₹${totalRevenue}) --\n${ordersSummary}`;
 
       const contents = [
         { role: 'user', parts: [{ text: systemInstruction }] },
