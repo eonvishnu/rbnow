@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { splitOrderItem } from '@/lib/fulfillment';
 import { OrdersMapView } from '@/components/OrdersMapView';
@@ -214,6 +215,7 @@ const inputCls =
 const OPERATIONAL_STATUSES = new Set(STATUSES.map((s) => s.value));
 
 export default function AdminOrders() {
+  const router = useRouter();
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [products, setProducts] = useState<ReplacementProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -267,7 +269,6 @@ export default function AdminOrders() {
     date: string;
   } | null>(null);
 
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [bulkStatus, setBulkStatus] = useState('confirmed');
   const [bulkUpdating, setBulkUpdating] = useState(false);
@@ -405,14 +406,6 @@ export default function AdminOrders() {
     }
   };
 
-  const [replacingItemId, setReplacingItemId] = useState<string | null>(null);
-  const [replacementSearch, setReplacementSearch] = useState('');
-  const [selectedReplacementVariant, setSelectedReplacementVariant] = useState('');
-  const [replaceReason, setReplaceReason] = useState(
-    'Product unavailable - replaced with customer consent'
-  );
-  const [isSwapping, setIsSwapping] = useState(false);
-
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<{
     type: 'error' | 'success';
@@ -535,39 +528,6 @@ export default function AdminOrders() {
     if (q) setSearchQuery(q);
     if (bq) setBatchFilter(bq);
   }, []);
-
-  const selectedOrder = useMemo(
-    () => orders.find((o) => o.id === selectedOrderId) || null,
-    [orders, selectedOrderId]
-  );
-
-  // Drawer keyboard handling and body scroll locking.
-  useEffect(() => {
-    if (!selectedOrderId) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSwapping) {
-        setSelectedOrderId(null);
-      }
-    };
-
-    window.addEventListener('keydown', onKey);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [selectedOrderId, isSwapping]);
-
-  useEffect(() => {
-    setReplacingItemId(null);
-    setReplacementSearch('');
-    setRescheduling(null);
-    setSplitting(null);
-  }, [selectedOrderId]);
 
   // ---------- Filtering ----------
 
@@ -775,77 +735,6 @@ export default function AdminOrders() {
       flash('error', 'Failed to update order status.');
     } finally {
       setUpdatingStatusId(null);
-    }
-  };
-
-  // ---------- Item replacement ----------
-
-  const replacementOptions = useMemo(() => {
-    const q = replacementSearch.trim().toLowerCase();
-
-    return products
-      .map((p) => ({
-        ...p,
-        product_variants: p.product_variants || [],
-      }))
-      .filter(
-        (p) =>
-          p.product_variants.length > 0 &&
-          (!q || String(p.name).toLowerCase().includes(q))
-      );
-  }, [products, replacementSearch]);
-
-  useEffect(() => {
-    const flat = replacementOptions.flatMap((p) =>
-      p.product_variants.map((v) => v.id)
-    );
-
-    if (!flat.includes(selectedReplacementVariant)) {
-      setSelectedReplacementVariant(flat[0] || '');
-    }
-  }, [replacementOptions, selectedReplacementVariant]);
-
-  const handleExecuteSwapItem = async (oldItem: AdminOrderItem) => {
-    if (!selectedOrder) return;
-
-    if (
-      ['delivered', 'unavailable'].includes(itemStatus(oldItem)) ||
-      ['delivered', 'cancelled'].includes(selectedOrder.status)
-    ) {
-      return flash(
-        'error',
-        'This item can no longer be replaced from the Orders workspace.'
-      );
-    }
-
-    if (!selectedReplacementVariant) {
-      return flash('error', 'Select a replacement variant.');
-    }
-
-    setIsSwapping(true);
-
-    try {
-      await swapAdminOrderItem({
-        order: selectedOrder,
-        item: oldItem,
-        replacementVariantId: selectedReplacementVariant,
-        reason: replaceReason,
-      });
-
-      flash('success', 'Item replaced');
-      setReplacingItemId(null);
-      await load(true);
-    } catch (error) {
-      console.error(error);
-
-      flash(
-        'error',
-        error instanceof Error
-          ? error.message
-          : 'Item replacement failed'
-      );
-    } finally {
-      setIsSwapping(false);
     }
   };
 
@@ -1884,22 +1773,6 @@ export default function AdminOrders() {
     );
   };
 
-  const sortedItems = selectedOrder
-    ? [...selectedOrder.items].sort((a, b) =>
-        String(itemDate(selectedOrder, a) || '').localeCompare(
-          String(itemDate(selectedOrder, b) || '')
-        )
-      )
-    : [];
-
-  const multiDates = selectedOrder
-    ? new Set(
-        selectedOrder.items.map(
-          (i) => itemDate(selectedOrder, i) || ''
-        )
-      ).size > 1
-    : false;
-
   return (
     <div className="space-y-5">
       {/* HEADER */}
@@ -2053,7 +1926,7 @@ export default function AdminOrders() {
 
           <OrdersMapView
             orders={filtered}
-            onSelectOrder={(id: string) => setSelectedOrderId(id)}
+            onSelectOrder={(id: string) => router.push(`/orders/${id}`)}
           />
         </Card>
       ) : (
@@ -2299,11 +2172,11 @@ export default function AdminOrders() {
                       role="button"
                       tabIndex={0}
                       aria-label={`Open order ${o.orderId}`}
-                      onClick={() => setSelectedOrderId(o.id)}
+                      onClick={() => router.push(`/orders/${o.id}`)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          setSelectedOrderId(o.id);
+                          router.push(`/orders/${o.id}`);
                         }
                       }}
                       className={`cursor-pointer transition-colors focus-visible:outline-none focus-visible:bg-[#e5f5ef] ${
@@ -2411,11 +2284,11 @@ export default function AdminOrders() {
                   role="button"
                   tabIndex={0}
                   aria-label={`Open order ${o.orderId}`}
-                  onClick={() => setSelectedOrderId(o.id)}
+                  onClick={() => router.push(`/orders/${o.id}`)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      setSelectedOrderId(o.id);
+                      router.push(`/orders/${o.id}`);
                     }
                   }}
                   className="p-4 space-y-3 active:bg-[#f7faf8] focus-visible:outline-none focus-visible:bg-[#e5f5ef]"
@@ -2504,481 +2377,6 @@ export default function AdminOrders() {
         </Card>
       )}
 
-      {/* ORDER DRAWER */}
-      {selectedOrder && (
-        <>
-          <div
-            className="fixed inset-0 bg-[#10231b]/45 backdrop-blur-[2px] z-[60] transition-opacity"
-            onClick={() => !isSwapping && setSelectedOrderId(null)}
-            aria-hidden="true"
-          />
-
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="order-drawer-title"
-            className="fixed inset-y-0 right-0 w-full max-w-xl bg-[#f5f8f6] shadow-2xl z-[70] flex flex-col animate-in slide-in-from-right duration-200"
-          >
-            {/* DRAWER HEADER */}
-            <div className="px-4 sm:px-5 py-4 bg-white border-b border-[#e5ece8] flex items-start justify-between gap-3 shrink-0">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2
-                    id="order-drawer-title"
-                    className="text-lg font-bold text-[#17211d]"
-                  >
-                    Order #{selectedOrder.orderId}
-                  </h2>
-
-                  <Pill
-                    tone={
-                      STATUS_TONE[selectedOrder.status] ||
-                      'bg-[#eeeeee] text-[#444444]'
-                    }
-                  >
-                    {pretty(selectedOrder.status)}
-                  </Pill>
-                </div>
-
-                <p className="text-xs text-[#75817b] mt-1 flex items-center gap-1.5">
-                  {sourceIcon(String(selectedOrder.orderSource))}
-                  {sourceLabel(String(selectedOrder.orderSource))}
-                  <span>·</span>
-                  {fmtDate(selectedOrder.createdAt)}
-                </p>
-
-                <div className="mt-2">
-                  <span
-                    className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${paymentStatusTone(selectedOrder.paymentStatus)}`}
-                  >
-                    Payment: {paymentStatusLabel(selectedOrder.paymentStatus)}
-                  </span>
-                </div>
-
-                {fulfillmentReady && orderDelivery(selectedOrder) && (
-                  <p className="text-xs text-[#303030] mt-2 flex items-center gap-1.5">
-                    <CalendarClock
-                      size={12}
-                      className="text-[#006B50]"
-                    />
-                    Delivery {fmtDay(orderDelivery(selectedOrder))}
-                    {batchName(selectedOrder)
-                      ? ` · ${batchName(selectedOrder)}`
-                      : ''}
-                  </p>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOrderId(null)}
-                disabled={isSwapping}
-                className="p-2 -mr-2 rounded-xl text-[#64736c] hover:text-[#17211d] hover:bg-[#f0f5f2] disabled:opacity-50"
-                aria-label="Close order details"
-              >
-                <X size={19} />
-              </button>
-            </div>
-
-            {/* DRAWER BODY */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-[13px]">
-              {/* 1. REGISTERED PROFILE (PROFILES TABLE) */}
-              <Card className="p-4 space-y-2">
-                <h3 className="text-xs font-black uppercase text-[#64736c] tracking-wider flex items-center gap-1.5">
-                  <User size={14} className="text-[#006B50]" /> Registered Profile
-                </h3>
-                <p className="text-sm font-black text-[#17211d]">
-                  {selectedOrder.userName || 'Guest User'}
-                </p>
-                <p className="text-xs text-[#64736c] flex items-center gap-1.5">
-                  <Phone size={12} />
-                  {selectedOrder.userPhone ? `+91 ${selectedOrder.userPhone}` : 'No phone on profile'}
-                </p>
-              </Card>
-
-              {/* 2. ORDER RECIPIENT & DELIVERY DETAILS (ORDERS TABLE) */}
-              <Card className="p-4 space-y-3">
-                <h3 className="text-xs font-black uppercase text-[#64736c] tracking-wider flex items-center gap-1.5">
-                  <MapPin size={14} className="text-[#006B50]" /> Order Recipient &amp; Delivery
-                </h3>
-
-                <div>
-                  <p className="text-xs font-bold text-[#17211d]">
-                    {selectedOrder.shipping?.name || selectedOrder.userName || '—'}
-                  </p>
-                  <p className="text-xs text-[#64736c] flex items-center gap-1.5 mt-0.5">
-                    <Phone size={12} />
-                    {selectedOrder.shipping?.phone || selectedOrder.userPhone || '—'}
-                  </p>
-                </div>
-
-                {(() => {
-                  const phone =
-                    selectedOrder.shipping?.phone ||
-                    selectedOrder.userPhone ||
-                    '';
-
-                  const ten = toIndianPhone(phone);
-
-                  return ten ? (
-                    <div className="flex gap-2">
-                      <a
-                        href={`tel:+91${ten}`}
-                        className="min-h-10 py-2 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#e5f5ef] text-sm font-semibold text-[#00543f] hover:bg-[#d6eee3]"
-                      >
-                        <PhoneCall size={14} />
-                        Call
-                      </a>
-
-                      <a
-                        href={`https://wa.me/91${ten}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-h-10 py-2 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[#e5f5ef] text-sm font-semibold text-[#00543f] hover:bg-[#d6eee3]"
-                      >
-                        <MessageSquare size={14} />
-                        WhatsApp
-                      </a>
-                    </div>
-                  ) : null;
-                })()}
-
-                <div className="pt-3 border-t border-gray-100 flex gap-2 items-start">
-                  <MapPin
-                    size={16}
-                    className="text-[#006B50] shrink-0 mt-0.5"
-                  />
-
-                  <p className="flex-1 text-[#303030] leading-relaxed text-xs">
-                    {[
-                      selectedOrder.shipping?.houseNumber || (selectedOrder.shipping as any)?.houseNo,
-                      (selectedOrder.shipping as any)?.buildingName || (selectedOrder.shipping as any)?.building_name,
-                      selectedOrder.shipping?.address || (selectedOrder.shipping as any)?.area,
-                    ]
-                      .filter(Boolean)
-                      .join(', ')}
-                    <br />
-                    {[
-                      selectedOrder.shipping?.city,
-                      selectedOrder.shipping?.pincode,
-                    ]
-                      .filter(Boolean)
-                      .join(' - ')}
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={() => copyAddress(selectedOrder)}
-                    className="p-2 -m-1 rounded-lg text-[#64736c] hover:bg-[#f0f5f2]"
-                    aria-label="Copy customer address"
-                    title="Copy address"
-                  >
-                    {copied ? (
-                      <Check
-                        size={15}
-                        className="text-[#006B50]"
-                      />
-                    ) : (
-                      <Copy size={15} />
-                    )}
-                  </button>
-                </div>
-
-                <SingleOrderMiniMap
-                  lat={
-                    (selectedOrder.shipping as any)?.lat ??
-                    (selectedOrder.shipping as any)?.latitude
-                  }
-                  lng={
-                    (selectedOrder.shipping as any)?.lng ??
-                    (selectedOrder.shipping as any)?.longitude
-                  }
-                  address={selectedOrder.shipping?.address}
-                  orderId={selectedOrder.orderId}
-                />
-              </Card>
-
-              {/* ITEMS */}
-              <Card className="overflow-hidden">
-                <div className="px-4 py-3.5 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Box size={16} className="text-[#006B50]" />
-                    <h3 className="text-sm font-bold text-[#17211d]">
-                      Items ({selectedOrder.items.length})
-                    </h3>
-                  </div>
-
-                  {fulfillmentReady && (
-                    <span className="text-[11px] text-[#75817b]">
-                      Item-level fulfilment
-                    </span>
-                  )}
-                </div>
-
-                <div className="divide-y divide-gray-100 border-t border-gray-100">
-                  {sortedItems.map((item, i) => {
-                    const currentItemStatus = itemStatus(item);
-
-                    const canSwap =
-                      !['delivered', 'unavailable'].includes(
-                        currentItemStatus
-                      ) &&
-                      !['delivered', 'cancelled'].includes(
-                        selectedOrder.status
-                      );
-
-                    const dThis = itemDate(selectedOrder, item);
-
-                    const showHead =
-                      fulfillmentReady &&
-                      multiDates &&
-                      (i === 0 ||
-                        dThis !==
-                          itemDate(selectedOrder, sortedItems[i - 1]));
-
-                    return (
-                      <div
-                        key={item.id || i}
-                        className="p-4 space-y-3"
-                      >
-                        {showHead && (
-                          <p className="text-xs font-semibold text-[#00543f] bg-[#e5f5ef] rounded-lg px-3 py-2 w-fit flex items-center gap-1.5">
-                            <CalendarClock size={12} />
-                            Delivery {fmtDay(dThis)}
-                          </p>
-                        )}
-
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-semibold text-[#17211d]">
-                              {item.name}
-                            </p>
-
-                            <p className="text-xs text-[#75817b] mt-1">
-                              {item.unit} · {formatCurrency(item.price)} ×{' '}
-                              {item.qty}
-                            </p>
-                          </div>
-
-                          <p className="font-semibold text-[#17211d] tabular-nums whitespace-nowrap">
-                            {formatCurrency(item.subtotal)}
-                          </p>
-                        </div>
-
-                        {renderFulfillment(selectedOrder, item)}
-
-                        {replacingItemId === item.id ? (
-                          <div className="rounded-xl border border-[#e5ece8] bg-[#f8faf9] p-3 space-y-2.5">
-                            <p className="font-semibold text-[#17211d]">
-                              Replace {item.name}
-                            </p>
-
-                            <input
-                              value={replacementSearch}
-                              onChange={(e) =>
-                                setReplacementSearch(e.target.value)
-                              }
-                              placeholder="Search replacement product"
-                              className={inputCls}
-                            />
-
-                            <select
-                              value={selectedReplacementVariant}
-                              onChange={(e) =>
-                                setSelectedReplacementVariant(
-                                  e.target.value
-                                )
-                              }
-                              className={`${inputCls} cursor-pointer`}
-                            >
-                              {replacementOptions.length === 0 && (
-                                <option value="">
-                                  No matching products
-                                </option>
-                              )}
-
-                              {replacementOptions.map((p) => (
-                                <optgroup
-                                  key={p.id}
-                                  label={p.name}
-                                >
-                                  {p.product_variants.map((v) => (
-                                    <option
-                                      key={v.id}
-                                      value={v.id}
-                                    >
-                                      {v.unit} — ₹{v.price}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              ))}
-                            </select>
-
-                            <input
-                              value={replaceReason}
-                              onChange={(e) =>
-                                setReplaceReason(e.target.value)
-                              }
-                              placeholder="Reason for replacement"
-                              className={inputCls}
-                            />
-
-                            <div className="flex gap-2 pt-0.5">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleExecuteSwapItem(item)
-                                }
-                                disabled={
-                                  isSwapping ||
-                                  !selectedReplacementVariant
-                                }
-                                className="flex-1 min-h-10 rounded-lg bg-[#006B50] hover:bg-[#00543f] text-sm font-semibold text-white disabled:opacity-50 inline-flex items-center justify-center gap-2"
-                              >
-                                {isSwapping ? (
-                                  <>
-                                    <Loader2
-                                      size={14}
-                                      className="animate-spin"
-                                    />
-                                    Replacing…
-                                  </>
-                                ) : (
-                                  'Confirm replacement'
-                                )}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setReplacingItemId(null)
-                                }
-                                disabled={isSwapping}
-                                className="min-h-10 px-3 rounded-lg bg-white text-sm font-medium text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-gray-50"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : canSwap ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setReplacingItemId(item.id)
-                            }
-                            className="min-h-9 py-2 px-3 inline-flex items-center gap-1.5 rounded-lg bg-white text-xs font-semibold text-[#006B50] shadow-[0_0_0_1px_rgba(0,107,80,0.22)] hover:bg-[#e5f5ef]"
-                          >
-                            <RefreshCw size={13} />
-                            Replace item
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* TOTALS */}
-                {(() => {
-                  const sub = selectedOrder.items.reduce(
-                    (s, i) => s + (Number(i.subtotal) || 0),
-                    0
-                  );
-
-                  const extra = Number(selectedOrder.total) - sub;
-
-                  return (
-                    <div className="border-t border-gray-100 p-4 space-y-2">
-                      <div className="flex justify-between text-[#64736c]">
-                        <span>Subtotal</span>
-                        <span className="tabular-nums">
-                          {formatCurrency(sub)}
-                        </span>
-                      </div>
-
-                      {Math.abs(extra) > 0.5 && (
-                        <div className="flex justify-between text-[#64736c]">
-                          <span>Delivery & other</span>
-                          <span className="tabular-nums">
-                            {formatCurrency(extra)}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between font-bold text-[#17211d] text-sm pt-2 border-t border-gray-100">
-                        <span>Order total</span>
-                        <span className="tabular-nums">
-                          {formatCurrency(selectedOrder.total)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </Card>
-
-              {/* ITEM CHANGE HISTORY */}
-              {selectedOrder.itemChanges &&
-                selectedOrder.itemChanges.length > 0 && (
-                  <Card className="p-4">
-                    <h3 className="text-sm font-bold text-[#17211d] flex items-center gap-2 mb-4">
-                      <History
-                        size={15}
-                        className="text-[#006B50]"
-                      />
-                      Item changes
-                    </h3>
-
-                    <ol className="relative border-l border-[#dce7e1] ml-1.5 space-y-4">
-                      {selectedOrder.itemChanges.map((ch, i) => (
-                        <li key={i} className="pl-4 relative">
-                          <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#006B50] ring-2 ring-white" />
-
-                          <p className="font-semibold text-[#17211d]">
-                            {pretty(ch.change_type)}
-                            {ch.reason ? ` · ${ch.reason}` : ''}
-                          </p>
-
-                          <p className="text-xs text-[#64736c] mt-1">
-                            ₹{ch.old_unit_price} → ₹
-                            {ch.new_unit_price}
-                          </p>
-
-                          <p className="text-xs text-[#8a8a8a] mt-1">
-                            {fmtDate(ch.created_at)}
-                          </p>
-                        </li>
-                      ))}
-                    </ol>
-                  </Card>
-                )}
-            </div>
-
-            {/* DRAWER FOOTER */}
-            <div className="p-4 bg-white border-t border-[#e5ece8] shrink-0 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => printOrder(selectedOrder)}
-                className="min-h-11 sm:min-h-10 px-3 inline-flex items-center gap-1.5 rounded-lg bg-white text-sm font-semibold text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-[#f5f8f6]"
-              >
-                <Printer size={14} />
-                Print
-              </button>
-
-              <div className="flex-1 min-w-[160px]">
-                <StatusSelect
-                  order={selectedOrder}
-                  busy={updatingStatusId === selectedOrder.id}
-                  onChange={(s) =>
-                    handleStatusChange(selectedOrder, s)
-                  }
-                  block
-                />
-              </div>
-            </div>
-          </aside>
-        </>
-      )}
-
-      {/* TOAST */}
       {/* GEMINI AI ASSISTANT MODAL */}
       {showAiModal && (
         <div className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
