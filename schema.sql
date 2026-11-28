@@ -619,11 +619,16 @@ CREATE TABLE IF NOT EXISTS public.fulfillment_items (
   fulfillment_id UUID NOT NULL,
   order_item_id UUID NOT NULL,
   quantity NUMERIC(10, 2) NOT NULL,
+  quantity_delivered NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  quantity_damaged NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  damage_disposition TEXT NULL DEFAULT 'investigating'::text,
   hold_reason TEXT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT fulfillment_items_pkey PRIMARY KEY (id),
   CONSTRAINT fulfillment_items_fulfillment_id_fkey FOREIGN KEY (fulfillment_id) REFERENCES public.fulfillments (id) ON DELETE CASCADE,
-  CONSTRAINT fulfillment_items_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES public.order_items (id) ON DELETE CASCADE
+  CONSTRAINT fulfillment_items_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES public.order_items (id) ON DELETE CASCADE,
+  CONSTRAINT fulfillment_items_quantities_nonnegative CHECK (quantity_delivered >= 0 AND quantity_damaged >= 0),
+  CONSTRAINT fulfillment_items_quantities_invariant CHECK ((quantity_delivered + quantity_damaged) <= quantity)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS fulfillment_items_pkey ON public.fulfillment_items USING btree (id);
 
@@ -909,6 +914,7 @@ CREATE OR REPLACE FUNCTION public.allocate_fulfillment_item(p_fulfillment_id uui
 AS $function$
 DECLARE
   v_fulfillment_user_id uuid;
+  v_batch_status text;
   v_order_user_id uuid;
   v_qty_ordered numeric;
   v_qty_fulfilled numeric;
@@ -917,14 +923,25 @@ DECLARE
   v_open_holds numeric;
   v_available numeric;
 BEGIN
-  SELECT user_id INTO v_fulfillment_user_id
+  -- 1. Batch-first locking
+  SELECT status, user_id INTO v_batch_status, v_fulfillment_user_id
   FROM public.fulfillments
-  WHERE id = p_fulfillment_id;
+  WHERE id = p_fulfillment_id
+  FOR UPDATE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Fulfillment batch not found.';
   END IF;
 
+  IF v_batch_status NOT IN ('preparing', 'ready_for_dispatch') THEN
+    RAISE EXCEPTION 'Cannot allocate items to a batch with status %.', v_batch_status;
+  END IF;
+
+  IF p_quantity IS NULL OR p_quantity <= 0 THEN
+    RAISE EXCEPTION 'Allocation quantity must be greater than zero.';
+  END IF;
+
+  -- 2. Lock order item
   SELECT o.user_id, oi.quantity, oi.quantity_fulfilled, oi.quantity_cancelled
   INTO v_order_user_id, v_qty_ordered, v_qty_fulfilled, v_qty_cancelled
   FROM public.order_items oi
@@ -1031,8 +1048,12 @@ BEGIN
     RAISE EXCEPTION 'Fulfillment batch not found.';
   END IF;
 
-  IF v_status = 'delivered' THEN
-    RAISE EXCEPTION 'Cannot cancel a fulfillment batch that has already been delivered.';
+  IF v_status IN ('out_for_delivery', 'delivered') THEN
+    RAISE EXCEPTION 'Cannot cancel an out-for-delivery or delivered fulfillment batch.';
+  END IF;
+
+  IF v_status = 'cancelled' THEN
+    RETURN jsonb_build_object('success', true, 'message', 'Fulfillment batch was already cancelled.');
   END IF;
 
   UPDATE public.fulfillments
@@ -1133,6 +1154,10 @@ BEGIN
     RAISE EXCEPTION 'Fulfillment batch not found.';
   END IF;
 
+  IF v_status = 'cancelled' THEN
+    RAISE EXCEPTION 'Cannot complete delivery for a cancelled fulfillment batch.';
+  END IF;
+
   IF v_status = 'delivered' THEN
     RETURN jsonb_build_object('success', true, 'message', 'Fulfillment was already marked delivered.');
   END IF;
@@ -1147,6 +1172,7 @@ BEGIN
     SELECT order_item_id, quantity
     FROM public.fulfillment_items
     WHERE fulfillment_id = p_fulfillment_id
+    ORDER BY order_item_id ASC
   LOOP
     UPDATE public.order_items
     SET quantity_fulfilled = quantity_fulfilled + v_item.quantity

@@ -174,3 +174,21 @@ export async function cancelFulfillmentBatchRpc(fulfillmentId: string, reason: s
     throw new Error(data.message || 'Batch cancellation failed');
   }
 }
+
+export async function updateFulfillmentItemQuantities(input: {
+  fulfillmentItemId: string;
+  quantityDelivered: number;
+  quantityDamaged: number;
+  damageDisposition?: string;
+}): Promise<void> {
+  const { error } = await supabase
+    .from('fulfillment_items')
+    .update({
+      quantity_delivered: input.quantityDelivered,
+      quantity_damaged: input.quantityDamaged,
+      damage_disposition: input.damageDisposition || 'investigating',
+    })
+    .eq('id', input.fulfillmentItemId);
+
+  if (error) throw error;
+}
