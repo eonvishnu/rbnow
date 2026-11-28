@@ -21,13 +21,14 @@ export const Footer = () => {
       });
   }, []);
 
-  // Hide footer on orders, cart, checkout, account, login, and admin routes
+  // Hide footer on orders, cart, checkout, account, login, address, and admin routes
   if (
     pathname.startsWith('/orders') ||
     pathname.startsWith('/cart') ||
     pathname.startsWith('/checkout') ||
     pathname.startsWith('/account') ||
     pathname.startsWith('/login') ||
+    pathname.startsWith('/address') ||
     pathname.startsWith('/admin')
   ) {
     return null;

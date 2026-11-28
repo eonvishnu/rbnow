@@ -171,7 +171,7 @@ export default function AddressesPage() {
                 </Link>
                 <div>
                   <h1 className="text-lg sm:text-xl font-serif font-black uppercase tracking-wider text-white">Saved Addresses</h1>
-                  <p className="text-[10px] text-amber-200/90 font-bold uppercase tracking-widest hidden sm:block">Manage your express delivery locations</p>
+                  <p className="text-[10px] text-amber-200/90 font-bold uppercase tracking-widest hidden sm:block">Manage your delivery Addresses</p>
                 </div>
             </div>
             {!showMapPicker && (
