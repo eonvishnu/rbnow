@@ -60,7 +60,7 @@ BEGIN
     wallet_id,
     user_id,
     amount,
-    transaction_type,
+    type,
     description,
     performed_by
   ) VALUES (
