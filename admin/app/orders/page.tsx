@@ -325,50 +325,41 @@ export default function AdminOrders() {
       }
 
       const activeOrders = orders || [];
+      const lowerPrompt = promptText.toLowerCase();
 
-      // Check if user is asking to update an order status directly
-      const updateMatch = promptText.match(/update\s+(?:order\s+)?#?([a-z0-9\-_]+)\s+(?:status\s+)?to\s+([a-z_\s]+)/i) ||
-                          promptText.match(/mark\s+(?:order\s+)?#?([a-z0-9\-_]+)\s+as\s+([a-z_\s]+)/i) ||
-                          promptText.match(/change\s+(?:order\s+)?#?([a-z0-9\-_]+)\s+to\s+([a-z_\s]+)/i);
+      // Flexible natural language matcher for order status updates
+      const matchedOrder = activeOrders.find(o => {
+        const orderIdStr = String(o.orderId).toLowerCase();
+        const numOnly = orderIdStr.replace(/\D/g, '');
+        return lowerPrompt.includes(orderIdStr) ||
+               (numOnly && lowerPrompt.includes(numOnly)) ||
+               lowerPrompt.includes(`order #${numOnly}`) ||
+               lowerPrompt.includes(`order ${numOnly}`);
+      });
 
-      if (updateMatch) {
-        const queryId = updateMatch[1].trim().toLowerCase();
-        const rawStatus = updateMatch[2].trim().toLowerCase().replace(/\s+/g, '_');
+      const isStatusIntent = lowerPrompt.includes('deliver') || lowerPrompt.includes('cancel') || lowerPrompt.includes('out') || lowerPrompt.includes('confirm') || lowerPrompt.includes('process') || lowerPrompt.includes('status') || lowerPrompt.includes('mark') || lowerPrompt.includes('update');
 
-        let targetStatus = rawStatus;
-        if (rawStatus.includes('out') || rawStatus.includes('delivery')) targetStatus = 'out_for_delivery';
-        else if (rawStatus.includes('deliver')) targetStatus = 'delivered';
-        else if (rawStatus.includes('cancel')) targetStatus = 'cancelled';
-        else if (rawStatus.includes('confirm')) targetStatus = 'confirmed';
-        else if (rawStatus.includes('process')) targetStatus = 'processing';
-        else if (rawStatus.includes('prepare')) targetStatus = 'preparing';
-        else if (rawStatus.includes('ready')) targetStatus = 'ready_for_delivery';
+      if (matchedOrder && isStatusIntent) {
+        let targetStatus = 'confirmed';
+        if (lowerPrompt.includes('deliver')) targetStatus = 'delivered';
+        else if (lowerPrompt.includes('cancel')) targetStatus = 'cancelled';
+        else if (lowerPrompt.includes('out') || lowerPrompt.includes('dispatch')) targetStatus = 'out_for_delivery';
+        else if (lowerPrompt.includes('confirm')) targetStatus = 'confirmed';
+        else if (lowerPrompt.includes('process')) targetStatus = 'processing';
+        else if (lowerPrompt.includes('prepare')) targetStatus = 'preparing';
+        else if (lowerPrompt.includes('ready')) targetStatus = 'ready_for_delivery';
 
-        const targetOrder = activeOrders.find(o =>
-          String(o.orderId).toLowerCase() === queryId ||
-          String(o.id).toLowerCase() === queryId ||
-          String(o.orderId).toLowerCase().includes(queryId)
-        );
-
-        if (targetOrder) {
-          try {
-            await changeAdminOrderStatus(targetOrder.id, targetStatus);
-            setOrders(prev => prev.map(o => o.id === targetOrder.id ? { ...o, status: targetStatus } : o));
-            const successMsg = `✅ Successfully updated Order #${targetOrder.orderId} status to **${pretty(targetStatus)}** in your live database! The dashboard has been updated.`;
-            setMessages([...newMessages, { role: 'model', text: successMsg }]);
-            setAiLoading(false);
-            clearTimeout(timeoutId);
-            return;
-          } catch (dbErr: any) {
-            const failMsg = `❌ Failed to update Order #${targetOrder.orderId}: ${dbErr.message || 'Database error'}`;
-            setMessages([...newMessages, { role: 'model', text: failMsg }]);
-            setAiLoading(false);
-            clearTimeout(timeoutId);
-            return;
-          }
-        } else {
-          const notFoundMsg = `I couldn't find an order matching "#${queryId}" in the currently loaded orders list. Please check the order ID/number and try again.`;
-          setMessages([...newMessages, { role: 'model', text: notFoundMsg }]);
+        try {
+          await changeAdminOrderStatus(matchedOrder.id, targetStatus);
+          setOrders(prev => prev.map(o => o.id === matchedOrder.id ? { ...o, status: targetStatus } : o));
+          const successMsg = `✅ Successfully updated Order #${matchedOrder.orderId} status to **${pretty(targetStatus)}** in your live database! The dashboard has been updated.`;
+          setMessages([...newMessages, { role: 'model', text: successMsg }]);
+          setAiLoading(false);
+          clearTimeout(timeoutId);
+          return;
+        } catch (dbErr: any) {
+          const failMsg = `❌ Failed to update Order #${matchedOrder.orderId}: ${dbErr.message || 'Database error'}`;
+          setMessages([...newMessages, { role: 'model', text: failMsg }]);
           setAiLoading(false);
           clearTimeout(timeoutId);
           return;
