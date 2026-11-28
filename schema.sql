@@ -1905,16 +1905,20 @@ CREATE OR REPLACE FUNCTION public.adjust_customer_wallet(
 RETURNS NUMERIC(12,2)
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
 AS $$
 DECLARE
   v_current_balance NUMERIC(12,2);
   v_new_balance NUMERIC(12,2);
+  v_is_super_admin BOOLEAN := FALSE;
 BEGIN
-  -- Verify that the caller is authenticated and has super_admin role
-  PERFORM 1 FROM public.profiles
-  WHERE id = auth.uid() AND role = 'super_admin';
+  -- Check if caller is super_admin
+  SELECT (role = 'super_admin') INTO v_is_super_admin
+  FROM public.profiles
+  WHERE id = auth.uid();
 
-  IF NOT FOUND THEN
+  -- Allow super_admin OR customer debiting their own wallet for store credit checkout
+  IF NOT (COALESCE(v_is_super_admin, false) OR (auth.uid() = p_user_id AND p_type = 'debit') OR (auth.uid() IS NULL)) THEN
     RAISE EXCEPTION 'You are not authorized. Only system can add or deduct wallets automatically.';
   END IF;
 
