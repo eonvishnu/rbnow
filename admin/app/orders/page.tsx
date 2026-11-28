@@ -340,7 +340,7 @@ export default function AdminOrders() {
 
       const systemPrompt = `You are Royal Bengal AI Operations Assistant, an expert e-commerce store manager. You have direct access to live store database metrics:\n\n-- RECENT ORDERS --\n${ordersSummary}\n\n-- TOTAL STORE CREDIT LIABILITY --\n₹${totalLiability}\n\n-- LOW STOCK ITEMS --\n${lowStockSummary}\n\nQuestion: ${promptText}`;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
