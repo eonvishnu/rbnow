@@ -319,28 +319,13 @@ export default function AdminOrders() {
         return;
       }
 
-      // Fetch live summary directly from Supabase database tables for comprehensive context
-      const [
-        ordersRes,
-        walletRes,
-        variantsRes
-      ] = await Promise.all([
-        supabase.from('orders').select('id, order_number, total, status, created_at, customer_name, customer_phone').order('created_at', { ascending: false }).limit(20),
-        supabase.from('customer_wallets').select('balance'),
-        supabase.from('product_variants').select('id, unit, stock, committed_qty, price, products(name)').limit(20)
-      ]);
+      const activeOrders = orders || [];
+      const totalRevenue = activeOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+      const ordersSummary = activeOrders.slice(0, 40).map(o => `Order #${o.orderId}: ₹${o.total}, Status: ${o.status}, Customer: ${o.shipping?.name || o.userName || 'Customer'}, Phone: ${o.shipping?.phone || o.userPhone || ''}, Date: ${fmtDate(o.createdAt)}, Items: ${o.items.map(i => `${i.name} (${i.qty}x)`).join(', ')}`).join('\n');
 
-      const activeOrders = ordersRes.data || [];
-      const walletData = walletRes.data || [];
-      const lowStockVariants = (variantsRes.data || []).filter((v: any) => Number(v.stock || 0) < 10);
+      const systemPrompt = `You are Royal Bengal AI Operations Assistant, an expert e-commerce store manager. Here are the live orders currently loaded in the admin dashboard:\n\n-- TOTAL ORDERS LOADED: ${activeOrders.length} (Total Revenue: ₹${totalRevenue}) --\n${ordersSummary}\n\nQuestion: ${promptText}`;
 
-      const totalLiability = walletData.reduce((acc, w) => acc + Number(w.balance || 0), 0);
-      const ordersSummary = activeOrders.map(o => `Order #${o.order_number || o.id.slice(0,6)}: ₹${o.total}, Status: ${o.status}, Customer: ${o.customer_name}, Date: ${new Date(o.created_at).toLocaleString()}`).join('\n');
-      const lowStockSummary = lowStockVariants.map(v => `${(v.products as any)?.name} (${v.unit}): Stock ${v.stock}, Committed ${v.committed_qty}`).join('\n');
-
-      const systemPrompt = `You are Royal Bengal AI Operations Assistant, an expert e-commerce store manager. You have direct access to live store database metrics:\n\n-- RECENT ORDERS --\n${ordersSummary}\n\n-- TOTAL STORE CREDIT LIABILITY --\n₹${totalLiability}\n\n-- LOW STOCK ITEMS --\n${lowStockSummary}\n\nQuestion: ${promptText}`;
-
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
