@@ -1,40 +1,39 @@
 1:"$Sreact.fragment"
 2:"/_next/static/chunks/044oej8201s7u.js"
-3:"/_next/static/chunks/0admcvjko0ph0.js"
-4:"/_next/static/chunks/36_ehzadsgdkm.js"
-5:"/_next/static/chunks/1la-jx2-g0oqj.js"
-6:I[13871,["$2","$3","$4","$5"],"AuthProvider"]
-7:"LocationProvider"
-8:I[2918,["$2","$3","$4","$5"],"$7"]
-9:I[35452,["$2","$3","$4","$5"],"CartProvider"]
-a:I[23232,["$2","$3","$4","$5"],"default"]
-b:I[12559,["$2","$3","$4","$5"],"default"]
-c:I[87180,["$2","$3","$4","$5"],"default"]
-d:I[42045,["$2","$3","$4","$5"],"default"]
-e:I[86864,["$2","$3","$4","$5"],"Footer"]
-f:I[92742,["$2","$3","$4","$5"],"BottomNav"]
-10:I[64296,["$2","$3","$4","$5"],"LocationModal"]
-14:I[30101,["$2","$3","$4","$5"],"ClientPageRoot"]
-15:"/_next/static/chunks/0lnonzjaqbwll.js"
-16:I[7711,["$2","$3","$4","$5","$15"],"default"]
-19:I[19400,["$2","$3","$4","$5"],"OutletBoundary"]
-1a:"$Sreact.suspense"
-1c:"ViewportBoundary"
-1d:I[19400,["$2","$3","$4","$5"],"$1c"]
-1f:"MetadataBoundary"
-20:I[19400,["$2","$3","$4","$5"],"$1f"]
-22:I[89192,["$2","$3","$4","$5"],"default",1]
-:HL["/_next/static/chunks/3qhb_qj0f-13y.css","style"]
+3:"/_next/static/chunks/1la-jx2-g0oqj.js"
+4:"/_next/static/chunks/302sw_a7bd9j_.js"
+5:I[13871,["$2","$3","$4"],"AuthProvider"]
+6:"LocationProvider"
+7:I[2918,["$2","$3","$4"],"$6"]
+8:I[35452,["$2","$3","$4"],"CartProvider"]
+9:I[23232,["$2","$3","$4"],"default"]
+a:I[12559,["$2","$3","$4"],"default"]
+b:I[87180,["$2","$3","$4"],"default"]
+c:I[42045,["$2","$3","$4"],"default"]
+d:I[86864,["$2","$3","$4"],"Footer"]
+e:I[92742,["$2","$3","$4"],"BottomNav"]
+f:I[64296,["$2","$3","$4"],"LocationModal"]
+13:I[30101,["$2","$3","$4"],"ClientPageRoot"]
+14:"/_next/static/chunks/0lnonzjaqbwll.js"
+15:I[7711,["$2","$3","$4","$14"],"default"]
+18:I[19400,["$2","$3","$4"],"OutletBoundary"]
+19:"$Sreact.suspense"
+1b:"ViewportBoundary"
+1c:I[19400,["$2","$3","$4"],"$1b"]
+1e:"MetadataBoundary"
+1f:I[19400,["$2","$3","$4"],"$1e"]
+21:I[89192,["$2","$3","$4"],"default",1]
+:HL["/_next/static/chunks/00zc-6_yx9zr4.css","style"]
 :HL["/_next/static/media/07a39a8a4660cc7c-s.p.0r6juujl39pe6.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/_next/static/media/605ce01b664af129-s.p.0wgildi0cnwt9.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
-12:X
-13:[["children",{"s":"__PAGE__","h":512,"d":{"r":["$","$1","c",{"children":[["$","$L14",null,{"Component":"$16","serverProvidedParams":{"searchParams":{},"params":{},"promises":["$@17","$@18"]}}],[["$","script","script-0",{"src":"/_next/static/chunks/0lnonzjaqbwll.js","async":true,"nonce":"$undefined"}]],["$","$L19",null,{"children":["$","$1a",null,{"name":"Next.MetadataOutlet","children":"$@1b"}]}]]}],"p":false,"v":null}}]]
-11:[["children",{"s":"account","h":512,"d":{"r":["$","$1","c",{"children":[null,["$","$Lc",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$Ld",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","forbidden":"$undefined","unauthorized":"$undefined"}]]}],"p":false,"v":"$12"},"c":"$Q13"}]]
-0:{"P":null,"c":["","account"],"q":"","i":false,"t":{"t":{"s":"","h":528,"d":{"r":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/3qhb_qj0f-13y.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}],["$","script","script-0",{"src":"/_next/static/chunks/044oej8201s7u.js","async":true,"nonce":"$undefined"}],["$","script","script-1",{"src":"/_next/static/chunks/0admcvjko0ph0.js","async":true,"nonce":"$undefined"}],["$","script","script-2",{"src":"/_next/static/chunks/36_ehzadsgdkm.js","async":true,"nonce":"$undefined"}],["$","script","script-3",{"src":"/_next/static/chunks/1la-jx2-g0oqj.js","async":true,"nonce":"$undefined"}]],["$","html",null,{"lang":"en","className":"overflow-x-clip antialiased","children":["$","body",null,{"className":"T19VSG_variable _8Li5zG_variable bg-[#FAF6EE] text-gray-900 overflow-x-clip max-w-[100vw] min-h-screen flex flex-col","children":["$","$L6",null,{"children":["$","$L8",null,{"children":["$","$L9",null,{"children":["$","$La",null,{"children":[["$","$Lb",null,{}],["$","div",null,{"className":"flex flex-col min-h-screen w-full max-w-[100vw] overflow-x-clip","children":[["$","main",null,{"className":"flex-grow w-full pb-16 md:pb-0","children":["$","$Lc",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$Ld",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":[[["$","title",null,{"children":"404: This page could not be found."}],["$","div",null,{"style":{"fontFamily":"system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif,\"Apple Color Emoji\",\"Segoe UI Emoji\"","height":"100vh","textAlign":"center","display":"flex","flexDirection":"column","alignItems":"center","justifyContent":"center"},"children":["$","div",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}"}}],["$","h1",null,{"className":"next-error-h1","style":{"display":"inline-block","margin":"0 20px 0 0","padding":"0 23px 0 0","fontSize":24,"fontWeight":500,"verticalAlign":"top","lineHeight":"49px"},"children":404}],["$","div",null,{"style":{"display":"inline-block"},"children":["$","h2",null,{"style":{"fontSize":14,"fontWeight":400,"lineHeight":"49px","margin":0},"children":"This page could not be found."}]}]]}]}]],[]],"forbidden":"$undefined","unauthorized":"$undefined"}]}],["$","$Le",null,{}],["$","$Lf",null,{}],["$","$L10",null,{}]]}]]}]}]}]}]}]}]]}],"p":false,"v":null},"c":"$Q11"},"h":{"r":["$","$1","h",{"children":[null,["$","$L1d",null,{"children":"$L1e"}],["$","$L20",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$1a",null,{"name":"Next.Metadata","children":"$L21"}]}],null]}],["$","meta",null,{"name":"next-size-adjust","content":""}]]}],"p":false,"v":null}},"m":"$undefined","G":["$22",[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/3qhb_qj0f-13y.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}]]],"S":true,"r":"$undefined","s":"$undefined","a":"$undefined","l":"$undefined","p":"$undefined","d":"$undefined","b":"EtOUkk7pM3rhwVrUxY-Xb"}
-12:C
-17:{}
-18:"$13:0:1:d:r:props:children:0:props:serverProvidedParams:params"
-1e:[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover"}],["$","meta","2",{"name":"theme-color","content":"#f7efda"}]]
-23:I[18516,["$2","$3","$4","$5"],"IconMark"]
-1b:null
-21:[["$","title","0",{"children":"Royal Bengal | Culinary Excellence"}],["$","meta","1",{"name":"description","content":"Boutique sourcing and premium delivery of the finest cuts, fresh catches & authentic groceries."}],["$","link","2",{"rel":"manifest","href":"/manifest.json","crossOrigin":"$undefined"}],["$","meta","3",{"name":"mobile-web-app-capable","content":"yes"}],["$","meta","4",{"name":"apple-mobile-web-app-title","content":"Royal Bengal"}],["$","meta","5",{"name":"apple-mobile-web-app-status-bar-style","content":"black-translucent"}],["$","link","6",{"rel":"icon","href":"/favicon.ico?favicon.1noi0sz9oy7sd.ico","sizes":"48x48","type":"image/x-icon"}],["$","link","7",{"rel":"apple-touch-icon","href":"/icons/icon-192x192.png"}],["$","$L23","8",{}]]
+11:X
+12:[["children",{"s":"__PAGE__","h":512,"d":{"r":["$","$1","c",{"children":[["$","$L13",null,{"Component":"$15","serverProvidedParams":{"searchParams":{},"params":{},"promises":["$@16","$@17"]}}],[["$","script","script-0",{"src":"/_next/static/chunks/0lnonzjaqbwll.js","async":true,"nonce":"$undefined"}]],["$","$L18",null,{"children":["$","$19",null,{"name":"Next.MetadataOutlet","children":"$@1a"}]}]]}],"p":false,"v":null}}]]
+10:[["children",{"s":"account","h":512,"d":{"r":["$","$1","c",{"children":[null,["$","$Lb",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$Lc",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","forbidden":"$undefined","unauthorized":"$undefined"}]]}],"p":false,"v":"$11"},"c":"$Q12"}]]
+0:{"P":null,"c":["","account"],"q":"","i":false,"t":{"t":{"s":"","h":528,"d":{"r":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/00zc-6_yx9zr4.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}],["$","script","script-0",{"src":"/_next/static/chunks/044oej8201s7u.js","async":true,"nonce":"$undefined"}],["$","script","script-1",{"src":"/_next/static/chunks/1la-jx2-g0oqj.js","async":true,"nonce":"$undefined"}],["$","script","script-2",{"src":"/_next/static/chunks/302sw_a7bd9j_.js","async":true,"nonce":"$undefined"}]],["$","html",null,{"lang":"en","className":"overflow-x-clip antialiased","children":["$","body",null,{"className":"T19VSG_variable _8Li5zG_variable bg-[#FAF6EE] text-gray-900 overflow-x-clip max-w-[100vw] min-h-screen flex flex-col","children":["$","$L5",null,{"children":["$","$L7",null,{"children":["$","$L8",null,{"children":["$","$L9",null,{"children":[["$","$La",null,{}],["$","div",null,{"className":"flex flex-col min-h-screen w-full max-w-[100vw] overflow-x-clip","children":[["$","main",null,{"className":"flex-grow w-full pb-16 md:pb-0","children":["$","$Lb",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$Lc",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":[[["$","title",null,{"children":"404: This page could not be found."}],["$","div",null,{"style":{"fontFamily":"system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif,\"Apple Color Emoji\",\"Segoe UI Emoji\"","height":"100vh","textAlign":"center","display":"flex","flexDirection":"column","alignItems":"center","justifyContent":"center"},"children":["$","div",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}"}}],["$","h1",null,{"className":"next-error-h1","style":{"display":"inline-block","margin":"0 20px 0 0","padding":"0 23px 0 0","fontSize":24,"fontWeight":500,"verticalAlign":"top","lineHeight":"49px"},"children":404}],["$","div",null,{"style":{"display":"inline-block"},"children":["$","h2",null,{"style":{"fontSize":14,"fontWeight":400,"lineHeight":"49px","margin":0},"children":"This page could not be found."}]}]]}]}]],[]],"forbidden":"$undefined","unauthorized":"$undefined"}]}],["$","$Ld",null,{}],["$","$Le",null,{}],["$","$Lf",null,{}]]}]]}]}]}]}]}]}]]}],"p":false,"v":null},"c":"$Q10"},"h":{"r":["$","$1","h",{"children":[null,["$","$L1c",null,{"children":"$L1d"}],["$","$L1f",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$19",null,{"name":"Next.Metadata","children":"$L20"}]}],null]}],["$","meta",null,{"name":"next-size-adjust","content":""}]]}],"p":false,"v":null}},"m":"$undefined","G":["$21",[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/00zc-6_yx9zr4.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}]]],"S":true,"r":"$undefined","s":"$undefined","a":"$undefined","l":"$undefined","p":"$undefined","d":"$undefined","b":"aFCptaEMfWL7b-vpZ0Qz2"}
+11:C
+16:{}
+17:"$12:0:1:d:r:props:children:0:props:serverProvidedParams:params"
+1d:[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover"}],["$","meta","2",{"name":"theme-color","content":"#f7efda"}]]
+22:I[18516,["$2","$3","$4"],"IconMark"]
+1a:null
+20:[["$","title","0",{"children":"Royal Bengal | Culinary Excellence"}],["$","meta","1",{"name":"description","content":"Boutique sourcing and premium delivery of the finest cuts, fresh catches & authentic groceries."}],["$","link","2",{"rel":"manifest","href":"/manifest.json","crossOrigin":"$undefined"}],["$","meta","3",{"name":"mobile-web-app-capable","content":"yes"}],["$","meta","4",{"name":"apple-mobile-web-app-title","content":"Royal Bengal"}],["$","meta","5",{"name":"apple-mobile-web-app-status-bar-style","content":"black-translucent"}],["$","link","6",{"rel":"icon","href":"/favicon.ico?favicon.1noi0sz9oy7sd.ico","sizes":"48x48","type":"image/x-icon"}],["$","link","7",{"rel":"apple-touch-icon","href":"/icons/icon-192x192.png"}],["$","$L22","8",{}]]

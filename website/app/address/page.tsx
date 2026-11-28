@@ -14,7 +14,10 @@ import {
   Briefcase, 
   Phone,
   Sparkles,
-  Map
+  CheckCircle2,
+  Navigation,
+  Building,
+  Check
 } from 'lucide-react';
 
 export default function AddressesPage() {
@@ -34,6 +37,7 @@ export default function AddressesPage() {
         .from('addresses')
         .select('*')
         .eq('user_id', user.id)
+        .order('is_default', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -49,7 +53,8 @@ export default function AddressesPage() {
           pincode: a.pincode,
           latitude: a.latitude,
           longitude: a.longitude,
-          type: a.address_type,
+          type: a.address_type || 'home',
+          isDefault: a.is_default || false,
         })));
       }
     } catch (err) {
@@ -80,7 +85,7 @@ export default function AddressesPage() {
     if (!user) return;
 
     try {
-      if (addressData.isDefault) {
+      if (addressData.isDefault || addresses.length === 0) {
         await supabase
           .from('addresses')
           .update({ is_default: false })
@@ -102,7 +107,7 @@ export default function AddressesPage() {
           latitude: addressData.latitude,
           longitude: addressData.longitude,
           address_type: addressData.addressType,
-          is_default: addressData.isDefault,
+          is_default: addressData.isDefault || addresses.length === 0,
         });
 
       if (error) throw error;
@@ -115,8 +120,27 @@ export default function AddressesPage() {
     }
   };
 
+  const handleSetDefault = async (id: string) => {
+    if (!user) return;
+    try {
+      await supabase
+        .from('addresses')
+        .update({ is_default: false })
+        .eq('user_id', user.id);
+
+      const { error } = await supabase
+        .from('addresses')
+        .update({ is_default: true })
+        .eq('id', id);
+
+      if (!error) fetchAddresses();
+    } catch (err) {
+      console.error('Failed to set default address:', err);
+    }
+  };
+
   const handleDelete = async (id: string) => {
-    if (confirm("Delete this address?")) {
+    if (confirm("Are you sure you want to delete this address?")) {
       const { error } = await supabase
         .from('addresses')
         .delete()
@@ -128,116 +152,143 @@ export default function AddressesPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center space-y-4">
-        <div className="w-10 h-10 border-4 border-amber-400 border-t-emerald-800 rounded-full animate-spin" />
-        <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Loading Addresses...</p>
+      <div className="min-h-screen bg-[#F5F7F6] flex flex-col items-center justify-center space-y-4">
+        <div className="w-10 h-10 border-4 border-amber-400 border-t-[#004D3B] rounded-full animate-spin" />
+        <p className="text-gray-500 text-xs font-black uppercase tracking-widest">Loading Saved Addresses...</p>
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 pb-28 text-gray-900">
+    <main className="min-h-screen bg-[#F5F7F6] pb-28 text-gray-900 font-sans">
       
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-amber-100 px-6 py-4 shadow-sm">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
+      {/* Header Banner */}
+      <header className="sticky top-0 z-30 bg-[#004D3B] text-white px-6 py-5 shadow-md">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
-                <Link href="/" className="p-2 -ml-2 text-gray-500 hover:text-emerald-800 hover:bg-emerald-50 rounded-full transition-all">
-                    <ArrowLeft size={20} />
+                <Link href="/" className="p-2 -ml-2 text-amber-300 hover:text-white hover:bg-white/10 rounded-full transition-all">
+                    <ArrowLeft size={22} />
                 </Link>
-                <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-emerald-950">Saved Addresses</h1>
+                <div>
+                  <h1 className="text-lg sm:text-xl font-serif font-black uppercase tracking-wider text-white">Saved Addresses</h1>
+                  <p className="text-[10px] text-amber-200/90 font-bold uppercase tracking-widest hidden sm:block">Manage your express delivery locations</p>
+                </div>
             </div>
-            {addresses.length > 0 && !showMapPicker && (
+            {!showMapPicker && (
                 <button 
                   onClick={() => setShowMapPicker(true)}
-                  className="w-9 h-9 bg-emerald-800 text-amber-300 rounded-2xl flex items-center justify-center hover:bg-emerald-900 transition-colors shadow-md border border-amber-400/40"
+                  className="bg-gradient-to-r from-emerald-800 to-emerald-900 hover:from-emerald-900 hover:to-emerald-950 text-amber-300 px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all shadow-md border border-amber-400/40 inline-flex items-center gap-2 cursor-pointer"
                 >
-                    <Plus size={18} />
+                    <Plus size={16} /> <span>Add New</span>
                 </button>
             )}
         </div>
       </header>
 
-      <div className="max-w-2xl mx-auto p-4 sm:p-6">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
         
         {/* VIEW MODE: List Addresses */}
         {!showMapPicker ? (
             <div className="space-y-4">
 
                 {addresses.length === 0 ? (
-                    <div className="text-center py-16 bg-white border border-gray-200 rounded-[32px] p-8 shadow-sm">
-                        <div className="w-20 h-20 bg-emerald-50 rounded-3xl border border-emerald-100 flex items-center justify-center mx-auto mb-6">
-                            <MapPin className="text-emerald-700" size={40} />
+                    <div className="text-center py-16 bg-white border border-[#E3EAE6] rounded-3xl p-8 shadow-sm space-y-5">
+                        <div className="w-20 h-20 bg-[#F5F7F6] rounded-3xl border border-[#E3EAE6] flex items-center justify-center mx-auto text-[#004D3B]">
+                            <MapPin size={40} />
                         </div>
-                        <h3 className="text-gray-900 font-black text-xl uppercase tracking-tight">No Saved Addresses</h3>
-                        <p className="text-gray-500 text-xs font-medium uppercase tracking-widest mt-2 mb-8">Pin delivery location on map for express checkout</p>
+                        <div>
+                          <h3 className="text-gray-900 font-black text-lg uppercase tracking-tight">No Saved Addresses Found</h3>
+                          <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mt-1 max-w-sm mx-auto">Pin your location on map for instant 1-click express checkout</p>
+                        </div>
                         <button 
                             onClick={() => setShowMapPicker(true)}
-                            className="bg-emerald-800 text-amber-300 px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-900/20 hover:bg-emerald-900 transition-all flex items-center gap-2 mx-auto cursor-pointer"
+                            className="bg-[#004D3B] hover:bg-[#00382B] text-amber-300 px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg transition-all inline-flex items-center gap-2 cursor-pointer"
                         >
-                            <Plus size={16} /> Add new address
+                            <Plus size={16} /> Add Delivery Address
                         </button>
                     </div>
                 ) : (
-                    addresses.map((addr) => (
-                        <div key={addr.id} className="bg-white border border-amber-200/80 rounded-[28px] p-5 shadow-sm hover:shadow-md transition-all group relative">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {addresses.map((addr) => (
+                        <div key={addr.id} className={`bg-white border rounded-3xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative ${addr.isDefault ? 'border-[#004D3B] ring-2 ring-[#004D3B]/10' : 'border-[#E3EAE6]'}`}>
                             
-                            {/* Type Badge */}
-                            <div className="absolute top-5 right-5 flex items-center gap-2">
-                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${
+                            {/* Badges Header */}
+                            <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-3 mb-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
                                     addr.type === 'work' 
                                     ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                                    : 'bg-emerald-50 text-emerald-800 border border-amber-200'
+                                    : addr.type === 'home'
+                                    ? 'bg-emerald-50 text-[#004D3B] border border-emerald-200'
+                                    : 'bg-purple-50 text-purple-800 border border-purple-200'
                                 }`}>
-                                    {addr.type === 'work' ? <Briefcase size={10} /> : <Home size={10} />}
+                                    {addr.type === 'work' ? <Briefcase size={11} /> : addr.type === 'home' ? <Home size={11} /> : <Building size={11} />}
                                     {addr.type}
                                 </span>
+                                {addr.isDefault && (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
+                                    <Sparkles size={10} /> Default
+                                  </span>
+                                )}
+                              </div>
+
+                              <button
+                                  onClick={() => handleDelete(addr.id)}
+                                  className="text-gray-400 hover:text-rose-600 p-1 rounded-lg transition-colors cursor-pointer"
+                                  title="Delete address"
+                              >
+                                  <Trash2 size={16} />
+                              </button>
                             </div>
 
-                            <div className="flex items-start gap-4 pr-20">
-                                <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-800 border border-amber-200 shrink-0">
-                                    <MapPin size={24} />
-                                </div>
-                                <div>
-                                    <h3 className="font-black text-gray-900 text-base">{addr.fullName}</h3>
-                                    <p className="text-gray-600 text-xs font-medium mt-1 leading-relaxed">
-                                        {addr.addressLine1}{addr.buildingName ? `, ${addr.buildingName}` : ''}, {addr.addressLine2 && `${addr.addressLine2}, `}
-                                        {addr.landmark && `${addr.landmark}, `} <br />
-                                        {addr.city} - <span className="font-extrabold text-gray-900">{addr.pincode}</span>
-                                    </p>
+                            {/* Address Details */}
+                            <div className="space-y-2 flex-1">
+                              <h3 className="font-black text-gray-900 text-base">{addr.fullName}</h3>
+                              <p className="text-gray-700 text-xs font-medium leading-relaxed">
+                                <span className="font-bold text-gray-900">{addr.addressLine1}</span>
+                                {addr.buildingName ? `, ${addr.buildingName}` : ''}
+                                {addr.addressLine2 ? `, ${addr.addressLine2}` : ''}
+                                {addr.landmark ? ` (Near ${addr.landmark})` : ''}
+                                <br />
+                                {addr.city} - <span className="font-black text-gray-900">{addr.pincode}</span>
+                              </p>
 
-                                    {addr.latitude && addr.longitude && (
-                                      <p className="text-[10px] font-bold text-emerald-800 bg-emerald-50/80 px-2.5 py-0.5 rounded-md inline-block mt-2 border border-emerald-200">
-                                        📍 Map Coordinates: {addr.latitude.toFixed(4)}, {addr.longitude.toFixed(4)}
-                                      </p>
-                                    )}
+                              {addr.latitude && addr.longitude && (
+                                <p className="text-[10px] font-bold text-[#004D3B] bg-emerald-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1 border border-emerald-200">
+                                  <Navigation size={10} /> GPS Pinned: {addr.latitude.toFixed(4)}, {addr.longitude.toFixed(4)}
+                                </p>
+                              )}
 
-                                    <p className="text-xs font-bold text-gray-400 mt-3 flex items-center gap-1">
-                                        <Phone size={12} /> {addr.mobile}
-                                    </p>
-                                </div>
+                              <p className="text-xs font-bold text-gray-500 flex items-center gap-1 pt-1">
+                                  <Phone size={12} className="text-emerald-800" /> +91 {addr.mobile}
+                              </p>
                             </div>
 
-                            <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
-                                <button 
-                                    onClick={() => handleDelete(addr.id)}
-                                    className="text-xs font-bold text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-xl flex items-center gap-1 transition-colors"
+                            {/* Footer Action: Set Default */}
+                            {!addr.isDefault && (
+                              <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
+                                <button
+                                  onClick={() => handleSetDefault(addr.id)}
+                                  className="text-xs font-bold text-[#004D3B] hover:text-[#00382B] hover:underline inline-flex items-center gap-1 cursor-pointer"
                                 >
-                                    <Trash2 size={14} /> Delete
+                                  <Check size={13} /> Set as default address
                                 </button>
-                            </div>
+                              </div>
+                            )}
+
                         </div>
-                    ))
+                      ))}
+                    </div>
                 )}
             </div>
         ) : (
-            // INTERACTIVE MAP PICKER MODE
+            /* INTERACTIVE MAP PICKER MODE */
             <AddressMapPicker
               onSave={handleSaveFromMap}
               onCancel={() => setShowMapPicker(false)}
               defaultName={(userData?.display_name && !userData.display_name.toLowerCase().startsWith('member')) ? userData.display_name : ''}
               defaultPhone={userData?.phone_number || ''}
-              existingLabels={addresses.map(a => a.type.toUpperCase())}
+              existingLabels={addresses.map(a => (a.type || '').toUpperCase())}
             />
         )}
 
