@@ -1926,7 +1926,7 @@ export default function AdminOrders() {
 
           <OrdersMapView
             orders={filtered}
-            onSelectOrder={(id: string) => router.push(`/orders/${id}`)}
+            onSelectOrder={(id: string) => router.push(`/orders/detail?id=${id}`)}
           />
         </Card>
       ) : (
@@ -2172,11 +2172,11 @@ export default function AdminOrders() {
                       role="button"
                       tabIndex={0}
                       aria-label={`Open order ${o.orderId}`}
-                      onClick={() => router.push(`/orders/${o.id}`)}
+                      onClick={() => router.push(`/orders/detail?id=${o.id}`)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          router.push(`/orders/${o.id}`);
+                          router.push(`/orders/detail?id=${o.id}`);
                         }
                       }}
                       className={`cursor-pointer transition-colors focus-visible:outline-none focus-visible:bg-[#e5f5ef] ${
@@ -2284,11 +2284,11 @@ export default function AdminOrders() {
                   role="button"
                   tabIndex={0}
                   aria-label={`Open order ${o.orderId}`}
-                  onClick={() => router.push(`/orders/${o.id}`)}
+                  onClick={() => router.push(`/orders/detail?id=${o.id}`)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      router.push(`/orders/${o.id}`);
+                      router.push(`/orders/detail?id=${o.id}`);
                     }
                   }}
                   className="p-4 space-y-3 active:bg-[#f7faf8] focus-visible:outline-none focus-visible:bg-[#e5f5ef]"

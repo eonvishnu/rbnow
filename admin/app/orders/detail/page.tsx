@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Printer, MapPin, Search, X, User, Phone, Box, Plus, RefreshCw,
@@ -35,10 +35,10 @@ const STATUS_TONE: Record<string, string> = {
 
 const pretty = (s: string) => (s || '').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
-export default function OrderDetailClient() {
-  const params = useParams();
+function OrderDetailContent() {
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const orderId = params.id as string;
+  const orderId = searchParams.get('id') || '';
 
   const [order, setOrder] = useState<AdminOrder | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,10 +52,14 @@ export default function OrderDetailClient() {
   };
 
   const fetchOrder = async () => {
+    if (!orderId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const orders = await listAdminOrders();
-      const found = orders.find(o => o.id === orderId || o.orderId === orderId);
+      const found = orders.find(o => o.id === orderId || o.orderId === orderId || o.id.includes(orderId));
       setOrder(found || null);
     } catch (err: any) {
       console.error('Error fetching order details:', err);
@@ -66,7 +70,7 @@ export default function OrderDetailClient() {
   };
 
   useEffect(() => {
-    if (orderId) fetchOrder();
+    fetchOrder();
   }, [orderId]);
 
   const handleStatusChange = async (newStatus: string) => {
@@ -119,6 +123,7 @@ export default function OrderDetailClient() {
     return (
       <main className="min-h-screen bg-[#F5F7F6] p-6 text-center space-y-4">
         <h1 className="text-lg font-bold text-gray-800">Order not found</h1>
+        <p className="text-xs text-gray-500">Could not locate an order for ID: {orderId || 'None provided'}</p>
         <Link href="/orders" className="text-xs font-bold text-[#006B50] underline">← Back to Orders</Link>
       </main>
     );
@@ -303,5 +308,13 @@ export default function OrderDetailClient() {
 
       </div>
     </main>
+  );
+}
+
+export default function OrderDetailPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#F5F7F6] flex items-center justify-center"><Loader2 className="animate-spin text-[#006B50]" size={36} /></div>}>
+      <OrderDetailContent />
+    </Suspense>
   );
 }
