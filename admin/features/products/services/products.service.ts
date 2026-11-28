@@ -56,10 +56,6 @@ export function hasLowStock(product: AdminProduct) {
 }
 
 export async function setProductAvailability(product: AdminProduct, isAvailable: boolean) {
-  if (isAvailable && !product.imageUrl) {
-    throw new Error('Add an image before enabling this product.');
-  }
-
   await updateProductAvailability(product.id, isAvailable);
 }
 

@@ -157,7 +157,6 @@ export default function ProductsPage() {
   // ---------- enable / disable ----------
   const handleToggle = async (p: AdminProduct) => {
     const next = !p.isAvailable;
-    if (next && !p.imageUrl) return flash('error', 'Add an image before enabling this product.');
     setTogglingId(p.id);
     setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, isAvailable: next } : x)));
     try {
@@ -455,9 +454,24 @@ export default function ProductsPage() {
                           </div>
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${p.isAvailable ? 'bg-[#cdfed4] text-[#014b40]' : 'bg-gray-100 text-gray-600'}`}>
-                          {p.isAvailable ? 'Active' : 'Inactive'}
-                        </span>
+                          <button
+                            type="button"
+                            disabled={togglingId === p.id}
+                            onClick={() => handleToggle(p)}
+                            title={`Click to ${p.isAvailable ? 'disable' : 'enable'} ${p.name}`}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95 disabled:opacity-50 ${
+                              p.isAvailable
+                                ? 'bg-[#cdfed4] text-[#014b40] hover:bg-[#b8f7c1]'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            }`}
+                          >
+                            {togglingId === p.id ? (
+                              <Loader2 size={11} className="animate-spin" />
+                            ) : (
+                              <span className={`w-1.5 h-1.5 rounded-full ${p.isAvailable ? 'bg-[#014b40]' : 'bg-gray-500'}`} />
+                            )}
+                            <span>{p.isAvailable ? 'Active' : 'Inactive'}</span>
+                          </button>
                         </td>
                         <td className="px-3 py-2.5 text-gray-700">
                           {(() => {
