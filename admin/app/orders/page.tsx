@@ -801,9 +801,9 @@ export default function AdminOrders() {
     const total = Number(o.total || 0);
 
     const address = [
-      o.shipping?.houseNumber ||
-        (o.shipping as any)?.houseNo,
-      o.shipping?.address,
+      o.shipping?.houseNumber || (o.shipping as any)?.houseNo || (o.shipping as any)?.house_number,
+      (o.shipping as any)?.buildingName || (o.shipping as any)?.building_name || (o.shipping as any)?.building,
+      o.shipping?.address || (o.shipping as any)?.area,
       [o.shipping?.city, o.shipping?.pincode]
         .filter(Boolean)
         .join(' - '),
@@ -1244,9 +1244,9 @@ export default function AdminOrders() {
       o.shipping?.name || o.userName,
       o.shipping?.phone || o.userPhone,
       [
-        o.shipping?.houseNumber ||
-          (o.shipping as any)?.houseNo,
-        o.shipping?.address,
+        o.shipping?.houseNumber || (o.shipping as any)?.houseNo || (o.shipping as any)?.house_number,
+        (o.shipping as any)?.buildingName || (o.shipping as any)?.building_name || (o.shipping as any)?.building,
+        o.shipping?.address || (o.shipping as any)?.area,
       ]
         .filter(Boolean)
         .join(', '),

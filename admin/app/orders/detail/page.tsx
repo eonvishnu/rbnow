@@ -94,9 +94,9 @@ function OrderDetailContent() {
     const text = [
       s.name,
       s.phone,
-      s.houseNumber || (s as any).houseNo,
-      (s as any).buildingName || (s as any).building_name,
-      s.address,
+      s.houseNumber || (s as any).houseNo || (s as any).house_number,
+      (s as any).buildingName || (s as any).building_name || (s as any).building || (s as any).flat,
+      s.address || (s as any).area,
       s.city,
       s.pincode
     ].filter(Boolean).join(', ');
@@ -240,8 +240,8 @@ function OrderDetailContent() {
                 <p className="text-sm font-black text-gray-900">{order.shipping?.name || order.userName || '—'}</p>
                 <p className="text-xs text-gray-700 font-medium mt-1 leading-relaxed">
                   {[
-                    order.shipping?.houseNumber || (order.shipping as any)?.houseNo,
-                    (order.shipping as any)?.buildingName || (order.shipping as any)?.building_name,
+                    order.shipping?.houseNumber || (order.shipping as any)?.houseNo || (order.shipping as any)?.house_number,
+                    (order.shipping as any)?.buildingName || (order.shipping as any)?.building_name || (order.shipping as any)?.building || (order.shipping as any)?.flat,
                     order.shipping?.address || (order.shipping as any)?.area,
                   ].filter(Boolean).join(', ')}
                   <br />

@@ -511,6 +511,21 @@ Deno.serve(async (req: Request) => {
       orderTotal = Math.max(0, subtotalAfterDiscount + deliveryFee - storeCreditUsed);
       amountInPaise = Math.round(orderTotal * 100);
 
+      const deliveryAddressObj = {
+        name: details?.name || "Customer",
+        phone: details?.phone || "",
+        houseNumber: details?.houseNumber || details?.houseNo || "",
+        houseNo: details?.houseNo || details?.houseNumber || "",
+        buildingName: details?.buildingName || details?.building_name || details?.building || "",
+        building_name: details?.buildingName || details?.building_name || details?.building || "",
+        address: details?.address || details?.area || "",
+        area: details?.area || details?.address || "",
+        city: details?.city || "",
+        pincode: details?.pincode || "",
+        lat: details?.lat || 0,
+        lng: details?.lng || 0,
+      };
+
       const targetCheckoutId = crypto.randomUUID();
       const { data: newOrder, error: orderErr } = await supabase
         .from("orders")
@@ -520,7 +535,7 @@ Deno.serve(async (req: Request) => {
           coupon_id: appliedCouponId,
           customer_name: details?.name || "Customer",
           customer_phone: details?.phone || "",
-          delivery_address: details || {},
+          delivery_address: deliveryAddressObj,
           subtotal: verifiedSubtotal,
           delivery_fee: deliveryFee,
           discount: discountAmount,

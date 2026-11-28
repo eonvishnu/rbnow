@@ -597,6 +597,9 @@ export default function CartPage() {
         city: trimmedCity,
         pincode: trimmedPincode,
         houseNo: location.houseNumber || '',
+        houseNumber: location.houseNumber || '',
+        buildingName: location.buildingName || (location as any).building_name || '',
+        building_name: location.buildingName || (location as any).building_name || '',
         address: location.address,
       };
 
