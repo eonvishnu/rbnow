@@ -325,6 +325,55 @@ export default function AdminOrders() {
       }
 
       const activeOrders = orders || [];
+
+      // Check if user is asking to update an order status directly
+      const updateMatch = promptText.match(/update\s+(?:order\s+)?#?([a-z0-9\-_]+)\s+(?:status\s+)?to\s+([a-z_\s]+)/i) ||
+                          promptText.match(/mark\s+(?:order\s+)?#?([a-z0-9\-_]+)\s+as\s+([a-z_\s]+)/i) ||
+                          promptText.match(/change\s+(?:order\s+)?#?([a-z0-9\-_]+)\s+to\s+([a-z_\s]+)/i);
+
+      if (updateMatch) {
+        const queryId = updateMatch[1].trim().toLowerCase();
+        const rawStatus = updateMatch[2].trim().toLowerCase().replace(/\s+/g, '_');
+
+        let targetStatus = rawStatus;
+        if (rawStatus.includes('out') || rawStatus.includes('delivery')) targetStatus = 'out_for_delivery';
+        else if (rawStatus.includes('deliver')) targetStatus = 'delivered';
+        else if (rawStatus.includes('cancel')) targetStatus = 'cancelled';
+        else if (rawStatus.includes('confirm')) targetStatus = 'confirmed';
+        else if (rawStatus.includes('process')) targetStatus = 'processing';
+        else if (rawStatus.includes('prepare')) targetStatus = 'preparing';
+        else if (rawStatus.includes('ready')) targetStatus = 'ready_for_delivery';
+
+        const targetOrder = activeOrders.find(o =>
+          String(o.orderId).toLowerCase() === queryId ||
+          String(o.id).toLowerCase() === queryId ||
+          String(o.orderId).toLowerCase().includes(queryId)
+        );
+
+        if (targetOrder) {
+          try {
+            await changeAdminOrderStatus(targetOrder.id, targetStatus);
+            setOrders(prev => prev.map(o => o.id === targetOrder.id ? { ...o, status: targetStatus } : o));
+            const successMsg = `✅ Successfully updated Order #${targetOrder.orderId} status to **${pretty(targetStatus)}** in your live database! The dashboard has been updated.`;
+            setMessages([...newMessages, { role: 'model', text: successMsg }]);
+            setAiLoading(false);
+            clearTimeout(timeoutId);
+            return;
+          } catch (dbErr: any) {
+            const failMsg = `❌ Failed to update Order #${targetOrder.orderId}: ${dbErr.message || 'Database error'}`;
+            setMessages([...newMessages, { role: 'model', text: failMsg }]);
+            setAiLoading(false);
+            clearTimeout(timeoutId);
+            return;
+          }
+        } else {
+          const notFoundMsg = `I couldn't find an order matching "#${queryId}" in the currently loaded orders list. Please check the order ID/number and try again.`;
+          setMessages([...newMessages, { role: 'model', text: notFoundMsg }]);
+          setAiLoading(false);
+          clearTimeout(timeoutId);
+          return;
+        }
+      }
       const totalRevenue = activeOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
       const ordersSummary = activeOrders.slice(0, 40).map(o => `Order #${o.orderId}: ₹${o.total}, Status: ${o.status}, Customer: ${o.shipping?.name || o.userName || 'Customer'}, Phone: ${o.shipping?.phone || o.userPhone || ''}, Date: ${fmtDate(o.createdAt)}, Items: ${o.items.map(i => `${i.name} (${i.qty}x)`).join(', ')}`).join('\n');
 
