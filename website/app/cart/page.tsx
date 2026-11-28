@@ -1176,29 +1176,7 @@ export default function CartPage() {
 
           {/* Left Column: Coupon & Store Credit */}
           <div className="space-y-5">
-            {/* Store Credit Option */}
-            {user && storeCreditBalance > 0 && (
-              <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E3EAE6] shadow-sm space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-[#004D3B] flex items-center gap-2">
-                  <Wallet size={15} /> Store Credit
-                </h3>
-                <div className="flex items-center justify-between p-3.5 bg-[#F5F7F6] rounded-2xl border border-[#E3EAE6]">
-                  <div>
-                    <p className="text-xs font-black text-[#17211D]">Available Balance: ₹{storeCreditBalance}</p>
-                    <p className="text-[10px] text-[#75817B] font-medium mt-0.5">Use store credit to pay for this order</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={useStoreCredit}
-                      onChange={(e) => setUseStoreCredit(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#004D3B]" />
-                  </label>
-                </div>
-              </div>
-            )}
+            {/* Store Credit Option (Temporarily hidden in UI) */}
 
             {/* Coupon Input */}
             <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E3EAE6] shadow-sm space-y-3">
